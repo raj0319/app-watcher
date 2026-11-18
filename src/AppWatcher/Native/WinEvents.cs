@@ -7,14 +7,23 @@ namespace AppWatcher.Native;
 internal static class Win32
 {
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint EVENT_SYSTEM_MENUSTART = 0x0004;
+    public const uint EVENT_SYSTEM_MENUEND = 0x0005;
+    public const uint EVENT_SYSTEM_MENUPOPUPSTART = 0x0006;
+    public const uint EVENT_SYSTEM_MENUPOPUPEND = 0x0007;
     public const uint EVENT_OBJECT_CREATE = 0x8000;
     public const uint EVENT_OBJECT_DESTROY = 0x8001;
     public const uint EVENT_OBJECT_SHOW = 0x8002;
     public const uint EVENT_OBJECT_HIDE = 0x8003;
+    public const uint EVENT_OBJECT_FOCUS = 0x8005;
+    public const uint EVENT_OBJECT_STATECHANGE = 0x800A;
     public const uint EVENT_OBJECT_NAMECHANGE = 0x800C;
+    public const uint EVENT_OBJECT_INVOKED = 0x8013;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
     public const int OBJID_WINDOW = 0;
+    public const int OBJID_CLIENT = -4;
+    public const int OBJID_MENU = -3;
     public const uint GA_ROOT = 2;
 
     public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);

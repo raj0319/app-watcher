@@ -15,10 +15,23 @@ public static class Exporter
         var raw = Path.Combine(root, "docs", "raw");
         foreach (var d in new[] { "screens", "tasks", "probes", "memory" }) Directory.CreateDirectory(Path.Combine(raw, d));
 
-        // screens: copy as recorded (already in the screen template format)
+        // screens: copy as recorded (already in the screen template format), with the learned menu path and predecessor filled in
         if (Directory.Exists(paths.Screens))
             foreach (var f in Directory.GetFiles(paths.Screens, "*.md"))
-                File.Copy(f, Path.Combine(raw, "screens", Path.GetFileName(f)), true);
+            {
+                var dest = Path.Combine(raw, "screens", Path.GetFileName(f));
+                var info = result.Screens.FirstOrDefault(s => s.File == "screens/" + Path.GetFileName(f));
+                if (info is null) { File.Copy(f, dest, true); continue; }
+                File.WriteAllText(dest, FillHeader(File.ReadAllText(f), info));
+            }
+
+        // the one picture per screen, when screenshots are on
+        var shots = Path.Combine(paths.Screens, "shots");
+        if (Directory.Exists(shots))
+        {
+            Directory.CreateDirectory(Path.Combine(raw, "screens", "shots"));
+            foreach (var f in Directory.GetFiles(shots, "*.png")) File.Copy(f, Path.Combine(raw, "screens", "shots", Path.GetFileName(f)), true);
+        }
 
         // tasks: one per learned flow
         foreach (var flow in result.Flows)
@@ -53,6 +66,18 @@ public static class Exporter
         return (root, zip);
     }
 
+    /// <summary>Replaces the "(observed, not probed)" / "unknown" header lines of a screen record with what the learner found.</summary>
+    public static string FillHeader(string markdown, ScreenInfo info)
+    {
+        var lines = markdown.Split('\n').ToList();
+        for (var i = 0; i < Math.Min(lines.Count, 12); i++)
+        {
+            if (lines[i].StartsWith("**Menu path:**") && info.MenuPath is not null) lines[i] = $"**Menu path:** {info.MenuPath} (menu item selected before the window opened, seen {info.MenuPaths.GetValueOrDefault(info.MenuPath)}×)\r".TrimEnd('\r') + (lines[i].EndsWith('\r') ? "\r" : "");
+            else if (lines[i].StartsWith("**Reached from:**") && info.ReachedFrom is not null) lines[i] = $"**Reached from:** {info.ReachedFrom}{(info.ReachedFromCount > 0 ? $" (seen {info.ReachedFromCount}×)" : "")}" + (lines[i].EndsWith('\r') ? "\r" : "");
+        }
+        return string.Join('\n', lines);
+    }
+
     public static string Task(FlowStat flow, LearnResult r)
     {
         var sb = new StringBuilder();
@@ -72,7 +97,9 @@ public static class Exporter
             n++;
             var controls = flow.StepControls.TryGetValue(win, out var c) ? string.Join(", ", c.Select(x => $"{x.name} ({x.count}×)")) : "";
             var next = n < flow.CommonPath.Count ? flow.CommonPath[n] : r.MainWindow ?? "";
-            sb.AppendLine($"| {n} | {win} | {controls} | (values not exported) | next window: {next} |");
+            var screen = r.Screens.FirstOrDefault(s => s.Title == win);
+            var typed = screen is null ? "" : string.Join(", ", screen.FieldTypes.Take(6).Select(ft => $"{ft.Key}: {ft.Value}"));
+            sb.AppendLine($"| {n} | {win} | {controls} | {(typed.Length > 0 ? typed : "(values not exported)")} | next window: {next} |");
         }
         if (flow.BackFrom is not null) sb.AppendLine().AppendLine($"Users most often go back from step \"{flow.BackFrom}\" ({flow.BackFromCount}×).");
         sb.AppendLine();

@@ -1,0 +1,17 @@
+{
+  "name": "infragistics",
+  "description": "Infragistics (UltraWinToolbars, UltraGrid, UltraTabbedMdi): fields and grids exposed, menus and toolbar buttons rarely raise Invoke, tab documents inside the main window.",
+  "match": { "exe": [], "product": [], "toolkit": ["Infragistics"] },
+  "effectTriggers": ["add", "new", "exit"],
+  "ignoreWindows": ["tooltip*", "*DropDown*"],
+  "sessionWindows": ["Splash*", "*Login*", "*Register*"],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 16,
+  "dumpRowCap": 3500,
+  "gridRowCap": 5,
+  "maskTitles": true,
+  "note": "Each editor is wrapped (txtName > txtName_EmbeddableTextBox); the wrappers are collapsed to one field. Message boxes expose their body as a read-only Edit named lblBody and are recorded as dialog events, not screens."
+}

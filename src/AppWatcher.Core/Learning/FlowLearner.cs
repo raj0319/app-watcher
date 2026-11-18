@@ -17,11 +17,11 @@ public static class FlowLearner
     private const int MaxDurations = 2000;
 
     /// <summary>Whole-history convenience wrapper (used by tests and the XES writer).</summary>
-    public static (List<FlowStat> flows, List<NavEdge> nav, string? main, int sessions) Learn(List<UiEvent> events)
+    public static (List<FlowStat> flows, List<NavEdge> nav, string? main, int sessions) Learn(List<UiEvent> events, HashSet<string>? sessionWindows = null)
     {
         var state = new LearnState();
-        foreach (var s in Sessions(events)) { state.Sessions++; Accumulate(state, s); }
-        var (flows, nav, main) = Finalize(state);
+        foreach (var s in Sessions(events)) { state.Sessions++; Accumulate(state, s, sessionWindows); }
+        var (flows, nav, main) = Finalize(state, sessionWindows);
         return (flows, nav, main, state.Sessions);
     }
 
@@ -39,23 +39,26 @@ public static class FlowLearner
         return sessions;
     }
 
-    public static void Accumulate(LearnState state, List<UiEvent> session)
+    public static void Accumulate(LearnState state, List<UiEvent> session, HashSet<string>? sessionWindows = null)
     {
-        var visits = Visits(session);
-        if (visits.Count == 0) return;
-        foreach (var v in visits)
+        var all = Visits(session);
+        if (all.Count == 0) return;
+        foreach (var v in all)
         {
             if (!state.Windows.TryGetValue(v.Win, out var w)) state.Windows[v.Win] = w = new WindowAcc();
             w.Seconds += (v.End - v.Start).TotalSeconds;
             w.Visits++;
         }
-        for (var i = 1; i < visits.Count; i++)
+        for (var i = 1; i < all.Count; i++)
         {
-            var k = LearnState.Key(visits[i - 1].Win, visits[i].Win);
+            var k = LearnState.Key(all[i - 1].Win, all[i].Win);
             if (!state.Nav.TryGetValue(k, out var n)) state.Nav[k] = n = new NavAcc();
             n.Count++;
-            if (n.Durations.Count < MaxDurations) n.Durations.Add((visits[i - 1].End - visits[i - 1].Start).TotalMilliseconds);
+            if (n.Durations.Count < MaxDurations) n.Durations.Add((all[i - 1].End - all[i - 1].Start).TotalMilliseconds);
         }
+        // flows start at the first working screen: splash, login and station prompts are left out
+        var visits = sessionWindows is null ? all : all.Where(v => !sessionWindows.Contains(v.Win)).ToList();
+        if (visits.Count == 0) return;
         // flows are cut at the main window, which is only known at the end: store the raw visit runs by
         // the window that opened them, and let Finalize re-cut by the main window. To keep this additive, we
         // record every maximal run between visits of each candidate main window; the common case (one main
@@ -72,9 +75,10 @@ public static class FlowLearner
         }
     }
 
-    public static (List<FlowStat> flows, List<NavEdge> nav, string? main) Finalize(LearnState state)
+    public static (List<FlowStat> flows, List<NavEdge> nav, string? main) Finalize(LearnState state, HashSet<string>? sessionWindows = null)
     {
-        var main = state.Windows.OrderByDescending(w => w.Value.Seconds).ThenByDescending(w => w.Value.Visits).Select(w => w.Key).FirstOrDefault();
+        var main = state.Windows.Where(w => sessionWindows is null || !sessionWindows.Contains(w.Key))
+            .OrderByDescending(w => w.Value.Seconds).ThenByDescending(w => w.Value.Visits).Select(w => w.Key).FirstOrDefault();
         var flows = new List<FlowStat>();
         foreach (var (key, f) in state.Flows)
         {
@@ -89,7 +93,7 @@ public static class FlowLearner
                 s.BackFrom = b.Key; s.BackFromCount = b.Value;
             }
             foreach (var (win, ctr) in f.Controls)
-                s.StepControls[win] = ctr.OrderByDescending(c => c.Value).ThenBy(c => c.Key).Take(6).Select(c => (c.Key, c.Value)).ToList();
+                s.StepControls[win] = ctr.OrderByDescending(c => c.Value).ThenBy(c => c.Key).Take(8).Select(c => (c.Key, c.Value)).ToList();
             flows.Add(s);
         }
         var nav = state.Nav.Select(n =>
@@ -99,6 +103,15 @@ public static class FlowLearner
         }).OrderByDescending(n => n.Count).ThenBy(n => n.From).ThenBy(n => n.To).ToList();
         return (flows.OrderByDescending(f => f.Count).ThenBy(f => f.Key).ToList(), nav, main);
     }
+
+    /// <summary>"press Save", "type Customer", "pick Status": the step actions a flow is made of.</summary>
+    public static string Verb(UiEvent e) => e.Act switch
+    {
+        Acts.Invoke => (e.Ct == "MenuItem" ? "menu " : "press ") + e.FieldKey,
+        Acts.Value => "type " + e.FieldKey,
+        Acts.Select => (e.Ct == "TabItem" ? "tab " : "pick ") + e.FieldKey,
+        _ => e.FieldKey,
+    };
 
     internal static List<Visit> Visits(List<UiEvent> session)
     {
@@ -114,7 +127,7 @@ public static class FlowLearner
                 visits.Add(cur);
             }
             cur.End = e.T;
-            if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && !string.IsNullOrEmpty(e.Name)) cur.Controls.Add(e.Name);
+            if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0) cur.Controls.Add(Verb(e));
         }
         return visits;
     }

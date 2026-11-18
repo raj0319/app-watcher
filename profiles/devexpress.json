@@ -1,0 +1,16 @@
+{
+  "name": "devexpress",
+  "description": "DevExpress (XtraEditors, XtraGrid, Ribbon): fields exposed; ribbon and bar items report presses through MSAA more reliably.",
+  "match": { "exe": [], "product": [], "toolkit": ["DevExpress"] },
+  "effectTriggers": ["save and close", "save and new"],
+  "ignoreWindows": ["tooltip*", "*Popup*"],
+  "sessionWindows": [],
+  "dialogWindows": ["XtraMessageBox*"],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 16,
+  "dumpRowCap": 3500,
+  "gridRowCap": 5,
+  "note": "Grid cells are exposed as DataItem rows; only visible rows are read. Editors are wrapped once (_TextEdit); wrappers are collapsed."
+}

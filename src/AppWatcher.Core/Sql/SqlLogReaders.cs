@@ -22,7 +22,8 @@ public static class SqlLogReaders
             {
                 if (f.EndsWith(".xel", StringComparison.OrdinalIgnoreCase)) list.AddRange(ReadXel(f));
                 else if (f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)) list.AddRange(ReadCsv(f));
-                else list.AddRange(ReadOdbcTrace(f, processName));
+                else if (Path.GetFileName(f).Equals("SQL.LOG", StringComparison.OrdinalIgnoreCase) || LooksLikeOdbcTrace(f)) list.AddRange(ReadOdbcTrace(f, processName));
+                else list.AddRange(ReadTextLog(f));
             }
             catch (Exception ex) { Log.Warn($"SQL log {f} skipped: {ex.Message}"); }
         }
@@ -108,6 +109,58 @@ public static class SqlLogReaders
             inCall = false;
         }
         return list;
+    }
+
+    private static bool LooksLikeOdbcTrace(string file)
+    {
+        try
+        {
+            using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var r = new StreamReader(fs);
+            for (var i = 0; i < 40 && r.ReadLine() is { } line; i++)
+                if (line.Contains("ENTER SQL", StringComparison.OrdinalIgnoreCase) || line.Contains("EXIT  SQL", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>
+    /// Plain text logs of other engines, one statement per line: the MySQL general log
+    /// ("2026-01-01T10:00:00.000000Z  12 Query  INSERT ..."), PostgreSQL log_statement
+    /// ("2026-01-01 10:00:00.000 UTC [123] LOG:  statement: INSERT ..."), Oracle/UniVerse/other traces
+    /// where a line starts with a timestamp and contains INSERT, UPDATE or DELETE. Lines without a timestamp
+    /// get the previous line's time.
+    /// </summary>
+    public static List<SqlStatement> ReadTextLog(string file)
+    {
+        var list = new List<SqlStatement>();
+        var name = Path.GetFileName(file);
+        var n = 0; var last = File.GetLastWriteTime(file);
+        using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(fs);
+        while (reader.ReadLine() is { } line)
+        {
+            n++;
+            if (line.Length < 12) continue;
+            var m = System.Text.RegularExpressions.Regex.Match(line, @"^\s*(?<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?)");
+            if (m.Success && DateTime.TryParse(m.Groups["ts"].Value.Replace("T", " "), CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var t)) last = t;
+            var idx = IndexOfStatement(line);
+            if (idx < 0) continue;
+            var st = SqlStatementParser.Parse(line[idx..].Trim(), last, $"sql/{name}#L{n}");
+            if (st is not null && st.IsWrite) list.Add(st);
+        }
+        return list;
+    }
+
+    private static int IndexOfStatement(string line)
+    {
+        var best = -1;
+        foreach (var kw in new[] { "INSERT ", "UPDATE ", "DELETE ", "insert ", "update ", "delete " })
+        {
+            var i = line.IndexOf(kw, StringComparison.Ordinal);
+            if (i >= 0 && (best < 0 || i < best) && (i == 0 || !char.IsLetterOrDigit(line[i - 1]))) best = i;
+        }
+        return best;
     }
 
     private static IEnumerable<List<string>> ParseCsv(string text)

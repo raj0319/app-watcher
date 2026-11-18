@@ -2,10 +2,15 @@ using AppWatcher.Core.Models;
 
 namespace AppWatcher.Core.Learning;
 
-/// <summary>A message window right after a value change becomes a validation rule (field, value pattern, message).</summary>
+/// <summary>
+/// A message window right after a user action becomes a rule: after a typed value it is a validation rule
+/// (field, value pattern, message); after a button or menu it is a message of that action (confirmations,
+/// "record saved", "nothing selected").
+/// </summary>
 public static class ValidationRuleLearner
 {
     public static readonly TimeSpan Window = TimeSpan.FromSeconds(3);
+    public static readonly TimeSpan ActionWindow = TimeSpan.FromSeconds(6);
 
     public static List<ValidationRule> Learn(List<UiEvent> events)
     {
@@ -21,26 +26,31 @@ public static class ValidationRuleLearner
         {
             var d = sorted[i];
             if (d.Act != Acts.Dialog) continue;
-            UiEvent? cause = null;
-            for (var j = i - 1; j >= 0 && d.T - sorted[j].T <= Window; j--)
+            UiEvent? value = null; UiEvent? action = null;
+            for (var j = i - 1; j >= 0 && d.T - sorted[j].T <= ActionWindow; j--)
             {
-                if (sorted[j].Act == Acts.Value) { cause = sorted[j]; break; }
-                if (sorted[j].Act == Acts.Invoke && cause is null) cause = sorted[j];
+                var e = sorted[j];
+                if (e.Act is Acts.Dialog or Acts.Close) continue;
+                if (e.Act == Acts.Value && value is null && d.T - e.T <= Window) { value = e; break; }
+                if (e.Act is Acts.Invoke or Acts.Select && action is null && e.Ct != "TabItem") action = e;
+                if (e.Act == Acts.Focus && action is null && e.Ct is "Button" or "MenuItem" && d.T - e.T <= Window) action = e;
             }
+            var cause = value ?? action;
             if (cause is null) continue;
             var screen = Titles.Key(cause.Win);
-            var field = cause.Act == Acts.Invoke ? "on " + cause.FieldKey : cause.FieldKey;
-            var pattern = cause.Act == Acts.Invoke ? "(button)" : ValuePattern.Of(cause.Val);
+            var isValue = ReferenceEquals(cause, value);
+            var field = isValue ? cause.FieldKey : "on " + cause.FieldKey;
+            var pattern = isValue ? ValuePattern.Of(cause.Val) : cause.Ct == "MenuItem" ? "(menu)" : "(button)";
             var message = MessageKey(d);
             var key = LearnState.Key(screen, field, pattern, message);
             if (!state.Rules.TryGetValue(key, out var r))
-                state.Rules[key] = r = new ValidationRule { Screen = screen, Field = field, Pattern = pattern, Message = message };
+                state.Rules[key] = r = new ValidationRule { Screen = screen, Field = field, Pattern = pattern, Message = message, Kind = isValue ? "validation" : "message" };
             r.Evidence.Add(d.Source);
         }
     }
 
     public static List<ValidationRule> Finalize(LearnState state) =>
-        state.Rules.Values.OrderBy(r => r.Screen).ThenByDescending(r => r.Evidence.Seen).ThenBy(r => r.Field).ThenBy(r => r.Message).ToList();
+        state.Rules.Values.OrderBy(r => r.Screen).ThenBy(r => r.Kind).ThenByDescending(r => r.Evidence.Seen).ThenBy(r => r.Field).ThenBy(r => r.Message).ToList();
 
     public static string MessageKey(UiEvent dialog)
     {

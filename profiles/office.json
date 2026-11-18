@@ -1,0 +1,16 @@
+{
+  "name": "office",
+  "description": "Microsoft Access and other Office programs used as a business app: forms are exposed; the document itself only through the Document pattern.",
+  "match": { "exe": ["msaccess", "excel", "winword"], "product": ["Microsoft Access", "Microsoft Excel"], "toolkit": ["Access", "Office"] },
+  "effectTriggers": ["refresh", "requery"],
+  "ignoreWindows": ["tooltip*", "*Backstage*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 14,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "note": "For Access, add the .accdb/.mdb file as a data source; saves happen on record change, so the file watcher catches them."
+}

@@ -7,36 +7,49 @@ Keep replies short and in plain words; the user is usually not a developer.
 ## What is where
 
 ```
-src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, data readers, SQL log readers, learner (incremental), export (twin kit + XES), API clients
-src/AppWatcher/          the tray app: WinForms tray icon, settings window, UI Automation collector, ETW file-access trace
+src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, data readers (SQLite, Access, SQL Server, ODBC, export drop folder),
+                         SQL log readers, discovery (toolkit, backends, profiles), learner (incremental), export (twin kit + XES), merge, retention, API clients
+src/AppWatcher/          the tray app: WinForms tray icon, settings window, UI Automation collector (with MSAA, menu and press-inference fallbacks),
+                         window capture (one picture per screen), ETW file-access trace
+profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
 tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test)
-scripts/                 publish.ps1, install.ps1, uninstall.ps1, check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
+tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
+scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
 openclaw/                how to use the skills from OpenClaw
 prompts/analyst-prompt.md  the architect prompt shared by the analyze skill and the optional API/local analysis
 .claude/commands/analyze.md  thin wrapper that invokes skills/app-watcher-analyze
-docs/                    notes for people (data-folder.md: file formats)
+docs/                    notes for people (data-folder.md: file formats; demo-test.md: 30-minute test; improvements.md: what changed after the first real run and why)
 ```
 
 Build: `dotnet build` (needs the .NET 8 SDK). Tests: `dotnet test`. One-file exe: `scripts\publish.ps1`.
+Live test against real windows: `dotnet build tests\SampleApp` then `scripts\live-test.ps1` (starts the
+watcher in portable mode on the sample app, drives it by UI Automation patterns, learns, prints the result;
+kills only the two processes it started).
+
 The exe also has headless commands: `AppWatcher.exe --learn` (incremental), `--rebuild` (from day one),
-`--export`, `--payload`, `--status`, `--trace-files <pid> <seconds> <out.json>` (admin)
-(add `--portable` when the data lives in `AppWatcherData\` next to the exe).
+`--export`, `--payload`, `--status`, `--expect`, `--detect <exe>`, `--setup <exe> <password> [profile]`,
+`--merge <folder or zip>`, `--trace-files <pid> <seconds> <out.json>` (admin). Add `--portable` when the
+data lives in `AppWatcherData\` next to the exe. The exe is a windowed program, so from a shell use
+`scripts\appwatcher.cmd <command>` (start /wait) to get its output and exit code.
 
 ## The data folder you analyze
 
 On a client PC the watcher writes to `%ProgramData%\AppWatcher\data\<app-name>\`:
 
 ```
-events/<yyyy-MM-dd>.jsonl   one line per user action in the watched app (values typed; passwords masked)
-screens/<title>.md          the control tree of each window, once, in the App Twin Kit screen format
+events/<yyyy-MM-dd>.jsonl   one line per user action in the watched app (values typed; passwords masked; "how" says how a press was seen)
+screens/<title>.md          the control tree of each window or tab document, once, in the App Twin Kit screen format (kind: screen | tab | session | dialog)
+screens/shots/<title>.png   the one picture of that screen (the app's window only; off on the Privacy tab)
+screens/index.json          structure hash -> screen file, kind, every title seen for that screen
 effects/<timestamp>.json    what changed in the data right after a save-type action (rows added/removed/changed per table, files changed)
 snapshots/before.json       the latest read-only snapshot of the app's data (tables, rows)
+collector-status.json       what the collector managed: dumps ok/failed, presses by path, dialogs, tab screens
+expectations.md             what can be learned from this app, in plain words
 memory/                     the living architecture written by the learner:
   data-model.md  screens.md  rules.md  flows.md  architecture.md  health.md  changelog.md
   learn-state.json          the learner's accumulated counters and watermark (incremental learning)
   architecture-reviewed.md  written by the analyze skill or by the optional API/local analysis
-screens/index.json          structure hash -> screen file, with every title seen for that screen
 export/<date>/              bundles in the App Twin Kit format plus events.xes, zipped
 ```
 
@@ -71,19 +84,23 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   `probes/*.md`, `data-model.md`, `memory/*.md`. The screen table columns are
   `| Depth | Type | Name | AutomationId | Position |`, same as the kit's `scripts/ui_tree.py`.
   The diff text format is the one printed by the kit's `scripts/snapshot_diff.py diff`.
-- The collector never installs a keyboard hook, never takes screenshots, never records while another
-  program is in front, and never invokes a control of the watched app. Keep it that way.
+- The collector never installs a keyboard hook, never records while another program is in front, and never
+  invokes a control of the watched app. Keep it that way. Pictures: one per distinct screen, of the app's
+  window only (PrintWindow), never the desktop, never a login or excluded window; the setting is on the Privacy tab.
 - The app never shows a file dialog or a message box on its own: the tray menu, the password-protected
   settings window (whose program picker and data-source pickers the user opens on purpose with a
   Browse button) and short balloon notices are the only UI.
   Validation messages go to the settings window's status line. Export writes to a fixed path.
-- When testing the collector against any app: start your own instance, drive only that window by handle,
-  never press Save or close with unsaved text (no "save changes?" prompt on the user's desktop), and end
-  the test by killing the process you started.
+- When testing the collector against any app: start your own instance (tests/SampleApp is there for that),
+  drive only that window by handle, never press Save or close with unsaved text (no "save changes?" prompt
+  on the user's desktop), and end the test by killing the process you started. Driving a WinForms
+  TabControl: UIA property conditions evaluated on it can flip or hide tab items; walk the tree with a true
+  condition and filter yourself, or switch tabs through a menu.
 - Memory files must never contain raw typed values; use shapes (`Masking.Shape`) and patterns.
 - The learner is incremental: every per-session heuristic accumulates into `LearnState` (additive
   counters); snapshot-based findings are recomputed each learn. A learn run twice must give identical memory,
   and an incremental run must equal a full rebuild (tests cover both). Keep new heuristics additive.
 - Keep idle memory under 60 MB and CPU near zero when the watched app is not in front. No polling loops
   faster than a few seconds; everything is event driven.
-- Add a test in `tests/` for every new heuristic, with synthetic data.
+- Add a test in `tests/` for every new heuristic, with synthetic data; run `scripts\live-test.ps1` after
+  touching the collector.

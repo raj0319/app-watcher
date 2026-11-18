@@ -1,0 +1,15 @@
+{
+  "name": "component-suite",
+  "description": "Telerik, Syncfusion, ComponentOne, Janus on WinForms or WPF: fields exposed; presses may need the MSAA fallback.",
+  "match": { "exe": [], "product": [], "toolkit": ["Telerik", "Syncfusion", "ComponentOne", "Janus"] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*", "*Popup*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 16,
+  "dumpRowCap": 3500,
+  "gridRowCap": 5
+}

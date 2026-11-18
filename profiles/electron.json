@@ -1,0 +1,16 @@
+{
+  "name": "electron",
+  "description": "Electron / Chromium Embedded apps: the web page tree is exposed once accessibility is enabled (it is, as soon as something subscribes).",
+  "match": { "exe": [], "product": [], "toolkit": ["Electron", "CEF"] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*", "DevTools*"],
+  "sessionWindows": ["*Sign in*", "*Log in*"],
+  "dialogWindows": [],
+  "tabDocuments": false,
+  "msaaFallback": false,
+  "pressInference": true,
+  "dumpDepth": 24,
+  "dumpRowCap": 4000,
+  "gridRowCap": 5,
+  "note": "Deep DOM trees: depth and row cap are raised. Names come from labels and ARIA attributes; a page without them shows generic names."
+}

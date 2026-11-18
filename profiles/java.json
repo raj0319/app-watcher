@@ -1,0 +1,16 @@
+{
+  "name": "java",
+  "description": "Java Swing/AWT: nothing is exposed to UI Automation unless the Java Access Bridge is enabled (run 'jabswitch -enable' once, as the user).",
+  "match": { "exe": [], "product": [], "toolkit": ["Java"] },
+  "effectTriggers": [],
+  "ignoreWindows": [],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 14,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "note": "Without the Access Bridge only window titles, timing and data changes are recorded. With it, Swing exposes fields and buttons through MSAA."
+}

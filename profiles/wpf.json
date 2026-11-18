@@ -1,0 +1,16 @@
+{
+  "name": "wpf",
+  "description": "WPF, WinUI and Avalonia: good UI Automation support; virtualized lists show only visible rows.",
+  "match": { "exe": [], "product": [], "toolkit": ["WPF", "WinUI", "Avalonia"] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*", "*Popup*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": false,
+  "pressInference": true,
+  "dumpDepth": 18,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "note": "Deep trees: the dump depth is raised. Grids only expose the rows on screen."
+}

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Screens;
+using CollectorStatus = AppWatcher.Core.Models.CollectorStatus;
 using AppWatcher.Core.Snapshots;
 using AppWatcher.Core.Sql;
 
@@ -19,6 +20,15 @@ public sealed class LearnInput
     public bool HasDataSources { get; set; } = true;
     /// <summary>"Now" for deciding which sessions are closed; tests set it.</summary>
     public DateTime? Now { get; set; }
+    /// <summary>Backends found by discovery (config files, ODBC DSNs, TCP connections); no credentials.</summary>
+    public List<BackendInfo> Backends { get; set; } = new();
+    public string? Toolkit { get; set; }
+    public string? Profile { get; set; }
+    public CollectorStatus? Collector { get; set; }
+    /// <summary>Title patterns (wildcards) of session windows from the profile; splash/login are found by structure anyway.</summary>
+    public List<string> SessionWindowPatterns { get; set; } = new();
+    /// <summary>Folder sizes in bytes (events, screens, effects, snapshots), for the health page.</summary>
+    public Dictionary<string, long> DiskUse { get; set; } = new();
 }
 
 /// <summary>How sure we are, and where to look. Every line in memory/*.md carries one of these.</summary>
@@ -162,6 +172,8 @@ public sealed class ValidationRule
     public string Field { get; set; } = "";
     public string Pattern { get; set; } = "";
     public string Message { get; set; } = "";
+    /// <summary>validation (after a typed value) | message (after a button or menu) </summary>
+    public string Kind { get; set; } = "validation";
     public Evidence Evidence { get; set; } = new();
 }
 
@@ -199,11 +211,34 @@ public sealed class ScreenInfo
     public string Title { get; set; } = "";
     public string File { get; set; } = "";
     public int ControlCount { get; set; }
+    public int LogicalFieldCount { get; set; }
     public List<string> Fields { get; set; } = new();
     public List<string> Actions { get; set; } = new();
     /// <summary>field -> distinct values seen typed/selected (raw; mask before export; never written to memory).</summary>
     public Dictionary<string, List<string>> FieldValues { get; set; } = new();
     public int Visits { get; set; }
+    /// <summary>Open events (a window that only ever appears as a dialog has none).</summary>
+    public int Opens { get; set; }
+    /// <summary>Dialog events: this window appeared as a message box.</summary>
+    public int Dialogs { get; set; }
+    /// <summary>screen | dialog | session | tab (from the screen record, or inferred from the events).</summary>
+    public string Kind { get; set; } = ScreenKinds.Screen;
+    /// <summary>field -> how many times a value was typed or picked.</summary>
+    public Dictionary<string, int> FieldTyped { get; set; } = new();
+    /// <summary>field -> distinct value shapes (digits as #, letters as a/A); never the values.</summary>
+    public Dictionary<string, List<string>> FieldShapes { get; set; } = new();
+    /// <summary>field -> value pattern counts (digits, decimal, date, letters, mixed) for type inference.</summary>
+    public Dictionary<string, Dictionary<string, int>> FieldPatterns { get; set; } = new();
+    /// <summary>menu item name selected right before this window opened -> count.</summary>
+    public Dictionary<string, int> MenuPaths { get; set; } = new();
+    /// <summary>action name -> shortcut key, from the screen record.</summary>
+    public Dictionary<string, string> Shortcuts { get; set; } = new();
+    // computed at Finalize
+    [JsonIgnore] public string? ReachedFrom { get; set; }
+    [JsonIgnore] public int ReachedFromCount { get; set; }
+    [JsonIgnore] public string? MenuPath { get; set; }
+    [JsonIgnore] public Dictionary<string, string> FieldTypes { get; set; } = new();
+    [JsonIgnore] public List<string> NeverUsed { get; set; } = new();
 }
 
 public sealed class Module
@@ -234,6 +269,14 @@ public sealed class HealthMetrics
     public int FieldsMapped { get; set; }
     public int FieldsCandidate { get; set; }
     public double FieldsMappedPct { get; set; }
+    public int PressesSeen { get; set; }
+    public int PressesInferred { get; set; }
+    public int DialogsSeen { get; set; }
+    public int UsersSeen { get; set; }
+    public int MachinesSeen { get; set; }
+    public Dictionary<string, long> DiskUse { get; set; } = new();
+    /// <summary>Problems the collector reported (tree dumps failed, no presses, no data).</summary>
+    public List<string> CollectorProblems { get; set; } = new();
     public List<string> Advice { get; set; } = new();
 }
 
@@ -264,23 +307,66 @@ public sealed class LearnResult
     public List<SqlTableWrite> SqlWrites { get; set; } = new();
     public HealthMetrics Health { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
+    public List<BackendInfo> Backends { get; set; } = new();
+    public string? Toolkit { get; set; }
+    public string? Profile { get; set; }
+    public CollectorStatus? Collector { get; set; }
+    /// <summary>Message windows (title key -> times shown) that were dropped from the screen list.</summary>
+    public Dictionary<string, int> MessageWindows { get; set; } = new();
+    /// <summary>What the watcher expects to learn from this app, in plain words (also shown at setup).</summary>
+    public List<string> Expectations { get; set; } = new();
 }
 
 /// <summary>Window titles vary by document name and counters; keys collapse those so flows line up.</summary>
 public static class Titles
 {
+    /// <summary>When true (default), quoted parts of a title ("EVERFLOW SUPPLIES INC") become "…" so record names stay out of memory files.</summary>
+    public static bool MaskQuoted { get; set; } = true;
+
     public static string Key(string? title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
         var t = title.Replace("*", "").Replace("•", "").Trim();
         var sb = new System.Text.StringBuilder();
-        var inDigits = false;
+        var inDigits = false; var inQuote = false;
         foreach (var ch in t)
         {
+            if (MaskQuoted && ch == '"')
+            {
+                if (!inQuote) { sb.Append("\"…\""); inQuote = true; }
+                else inQuote = false;
+                inDigits = false;
+                continue;
+            }
+            if (inQuote) continue;
             if (char.IsDigit(ch)) { if (!inDigits) sb.Append('#'); inDigits = true; }
             else { sb.Append(ch); inDigits = false; }
         }
-        return sb.ToString();
+        var key = sb.ToString().Trim();
+        while (key.Contains("  ")) key = key.Replace("  ", " ");
+        return key;
+    }
+}
+
+/// <summary>One backend the app talks to, found by BackendDetector (never holds credentials).</summary>
+public sealed class BackendInfo
+{
+    /// <summary>sqlserver | sqlite | access | mysql | postgresql | oracle | pervasive | universe | odbc | rest | unknown</summary>
+    public string Kind { get; set; } = "unknown";
+    public string? Host { get; set; }
+    public int? Port { get; set; }
+    public string? Database { get; set; }
+    public string? Driver { get; set; }
+    /// <summary>Where it was found: a config file path, "odbc dsn", "tcp connection".</summary>
+    public string Where { get; set; } = "";
+    public bool Readable { get; set; }
+    public string Describe()
+    {
+        var parts = new List<string> { Kind };
+        if (Host is not null) parts.Add(Port is null ? Host : $"{Host}:{Port}");
+        if (Database is not null) parts.Add($"database {Database}");
+        if (Driver is not null) parts.Add($"driver {Driver}");
+        return string.Join(", ", parts) + $" (from {Where})";
     }
 }
 

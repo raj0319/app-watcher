@@ -11,7 +11,9 @@ public static class EventReader
         if (!Directory.Exists(eventsDir)) return list;
         foreach (var file in Directory.GetFiles(eventsDir, "*.jsonl").OrderBy(f => f))
         {
-            if (since is not null && DateTime.TryParse(Path.GetFileNameWithoutExtension(file), out var d) && d.Date < since.Value.Date) continue;
+            // file names are "yyyy-MM-dd.jsonl", or "yyyy-MM-dd.<machine>.jsonl" after a merge
+            var stem = Path.GetFileNameWithoutExtension(file);
+            if (since is not null && stem.Length >= 10 && DateTime.TryParse(stem[..10], out var d) && d.Date < since.Value.Date) continue;
             list.AddRange(ReadFile(file));
         }
         list.Sort((a, b) => a.T.CompareTo(b.T));

@@ -1,0 +1,18 @@
+{
+  "name": "ddi-inform",
+  "description": "DDI inForm ERP (Infragistics on WinForms, UniVerse backend on port 31438). Tabbed workspace in the main window: Customer Master, Product Master, A/P Invoice, Purchase Order, ... Written after the first real run (2026-11-18).",
+  "match": { "exe": ["inform", "ddi.inform", "informclient"], "product": ["inForm", "DDI inForm"], "toolkit": [] },
+  "effectTriggers": ["add", "exit", "add price matrix break", "release", "receive", "invoice"],
+  "ignoreWindows": ["tooltip*", "*DropDown*", "Advanced Demand Forecasting"],
+  "sessionWindows": ["Splash Screen", "Login*", "Enter Register #*", "*Register Number*"],
+  "dialogWindows": ["Close?", "A/P Invoice Entry", "Confirm*", "Warning*", "Error*"],
+  "excludeWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 16,
+  "dumpRowCap": 3500,
+  "gridRowCap": 5,
+  "maskTitles": true,
+  "note": "The data lives on a UniVerse server (ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names it). Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server."
+}

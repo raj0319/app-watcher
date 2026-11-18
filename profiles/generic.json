@@ -1,0 +1,17 @@
+{
+  "name": "generic",
+  "description": "Default profile for any Windows program: all fallbacks on, nothing ignored.",
+  "match": { "exe": [], "product": [], "toolkit": [] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*", "*progress*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 14,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "maskTitles": true,
+  "note": "No profile matched this program; the first hour of watching will say in health.md what could and could not be read."
+}

@@ -25,11 +25,16 @@ structure, never proved) and names its evidence file.
    `AppWatcher.exe --learn` (it lives in `%LOCALAPPDATA%\AppWatcher\` after install, or in `publish\`).
    If the exe is not found, say so once and continue with what is there.
 3. **Read, in this order:** `memory/architecture.md`, `memory/data-model.md`, `memory/screens.md`,
-   `memory/rules.md`, `memory/flows.md`, `memory/health.md`, `memory/changelog.md`.
+   `memory/rules.md`, `memory/flows.md`, `memory/health.md` (its "What the collector could not do" and
+   "What this app lets the watcher learn" sections say what is missing and why), `memory/changelog.md`,
+   and `expectations.md` in the data folder.
 4. **Check the weak lines.** For every finding tagged `inferred`, `candidate` or `seen 1×` that matters
    for the schema or the rules, open the evidence it points to (`effects/*.json`, `events/*.jsonl#L<n>`,
    `screens/*.md`, `snapshots/before.json`) and decide: confirmed, doubted or rejected. Big files: read
    only the lines you need; delegate to a helper if your tool supports it and keep only the conclusion.
+   `screens/shots/<screen>.png` is the one picture of each screen when the client kept pictures on: look at
+   it when a screen record's fields or purpose are unclear (a picture may show customer data; describe,
+   never copy it into the review).
 5. **Write `memory/architecture-reviewed.md`** with exactly these sections:
    1. What this application is (two or three plain sentences)
    2. Modules (screens and tables grouped by what they do for the user; one line on how they connect)

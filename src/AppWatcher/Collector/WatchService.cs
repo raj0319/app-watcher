@@ -26,28 +26,38 @@ internal sealed class WatchService : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly System.Windows.Forms.Timer _processTimer;
     private readonly System.Windows.Forms.Timer _idleTimer;
+    private readonly System.Windows.Forms.Timer _statusTimer;
+    private readonly CollectorStatus _status;
     private Process? _process;
     private DateTime _lastActivity = DateTime.Now;
     private long _eventsWritten;
     private int _effectsWritten;
+    private string _lastStatusJson = "";
 
     public WatchService(WatcherConfig config, SynchronizationContext ui)
     {
         _config = config;
         _paths = Paths.ForApp(config.App!.DisplayName);
         _paths.EnsureDirectories();
+        _status = CollectorStatus.Load(_paths.Root) ?? new CollectorStatus { Since = DateTime.Now };
+        if (_status.Since == default) _status.Since = DateTime.Now;
+        _status.Version = WatcherConfig.AppVersion; _status.Toolkit = config.Toolkit; _status.Profile = config.Profile;
+        _status.HasDataSources = config.DataSources.Any(d => d.Enabled);
         _events = new EventWriter(_paths.Events);
         _snapshots = new SnapshotService(_paths, config.Snapshot, config.DataSources);
-        _uia = new UiaCollector(_channel.Writer, ui);
-        _effects = new EffectCapture(_snapshots, config.Snapshot, config.EffectTriggers, _paths.Effects, _ => Interlocked.Increment(ref _effectsWritten),
+        _uia = new UiaCollector(_channel.Writer, ui, config.Collector, config.Privacy, _status);
+        _effects = new EffectCapture(_snapshots, config.Snapshot, config.EffectTriggers, _paths.Effects, _ => { Interlocked.Increment(ref _effectsWritten); _status.EffectsWritten++; },
             () => _uia.InFront ? _uia.CurrentTitle : "");
         _uia.InFrontChanged += inFront => { if (inFront) _effects.EnsureBeforeExists(); };
         _processTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         _processTimer.Tick += (_, _) => CheckProcess();
         _idleTimer = new System.Windows.Forms.Timer { Interval = Math.Max(5, config.Snapshot.IdleSecondsBeforeSnapshot) * 1000 };
         _idleTimer.Tick += (_, _) => OnIdleTick();
+        _statusTimer = new System.Windows.Forms.Timer { Interval = 120_000 };
+        _statusTimer.Tick += (_, _) => SaveStatus();
         Task.Factory.StartNew(Consume, TaskCreationOptions.LongRunning);
-        _events.Write(new UiEvent { Act = Acts.Start, Win = "", Name = "App Watcher started", Ct = "watcher" });
+        // who and where, as hashes: lets a merged memory count users and PCs without storing names
+        _events.Write(new UiEvent { Act = Acts.Start, Win = "", Name = "App Watcher started", Ct = "watcher", Val = $"user:{Merge.Tag(Environment.UserName)} machine:{Merge.Tag(Environment.MachineName)} version:{WatcherConfig.AppVersion}" });
     }
 
     public bool Paused { get; set; }
@@ -59,12 +69,27 @@ internal sealed class WatchService : IDisposable
     public bool HasDataSources => _snapshots.HasSources;
     public DateTime AttachedSince { get; private set; }
     public int? ProcessId => _process?.Id;
+    public CollectorStatus Status => _status;
 
     public void Start()
     {
         CheckProcess();
         _processTimer.Start();
         _idleTimer.Start();
+        _statusTimer.Start();
+    }
+
+    public void SaveStatus()
+    {
+        try
+        {
+            _status.Updated = DateTime.Now;
+            var json = System.Text.Json.JsonSerializer.Serialize(_status);
+            if (json == _lastStatusJson) return;
+            _lastStatusJson = json;
+            _status.Save(_paths.Root);
+        }
+        catch (Exception ex) { Log.Warn("status save failed: " + ex.Message); }
     }
 
     private void CheckProcess()
@@ -79,6 +104,7 @@ internal sealed class WatchService : IDisposable
                 _process.Dispose(); _process = null;
                 _uia.Detach();
                 FlushPending(all: true);
+                SaveStatus();
                 return;
             }
             var name = _config.App!.ProcessName;
@@ -132,14 +158,27 @@ internal sealed class WatchService : IDisposable
         // screens are dumped even when the window is not yet in front (it just opened)
         if (raw.Screen is not null)
         {
-            if (ScreenWriter.WriteOnce(_paths.Screens, raw.Screen)) Log.Info($"screen recorded: {raw.Screen.Title} ({raw.Screen.Controls.Count} controls)");
+            // one picture per distinct screen: taken before the record is written (the window may close soon), kept only
+            // when the record is new or replaced, never for windows with a password field, never when excluded
+            byte[]? png = null;
+            var wantShot = _config.Privacy.Screenshots && raw.Hwnd != IntPtr.Zero && !raw.Screen.Controls.Any(c => c.IsPassword) && raw.Screen.Kind != ScreenKinds.Session;
+            if (wantShot) { png = Native.WindowCapture.Capture(raw.Hwnd); if (png is not null) raw.Screen.Screenshot = "shots/" + raw.Screen.ShotFileName; }
+            if (ScreenWriter.WriteOnce(_paths.Screens, raw.Screen))
+            {
+                Log.Info($"screen recorded: {raw.Screen.Title} ({raw.Screen.Controls.Count} controls, {raw.Screen.Kind}, {raw.Screen.Source}{(png is null ? "" : ", picture")})");
+                if (png is not null)
+                {
+                    try { var dir = Path.Combine(_paths.Screens, "shots"); Directory.CreateDirectory(dir); File.WriteAllBytes(Path.Combine(dir, raw.Screen.ShotFileName), png); }
+                    catch (Exception ex) { Log.Warn("picture not saved: " + ex.Message); }
+                }
+            }
         }
         if (Paused) return;
         var inFront = _uia.InFront || raw.Act is Acts.Open or Acts.Close or Acts.Dialog or Acts.Foreground;
         if (!inFront) return; // another program is in front: record nothing
         _lastActivity = DateTime.Now;
 
-        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val };
+        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How };
         if (raw.Act == Acts.Value)
         {
             // one event per typed value: committed when focus moves on or after the quiet time
@@ -164,10 +203,11 @@ internal sealed class WatchService : IDisposable
 
     public void Dispose()
     {
-        _processTimer.Stop(); _idleTimer.Stop();
+        _processTimer.Stop(); _idleTimer.Stop(); _statusTimer.Stop();
         _cts.Cancel();
         FlushPending(all: true);
         try { _events.Write(new UiEvent { Act = Acts.Stop, Name = "App Watcher stopped", Ct = "watcher" }); } catch { }
+        SaveStatus();
         _uia.Dispose();
         _effects.Dispose();
         _events.Dispose();

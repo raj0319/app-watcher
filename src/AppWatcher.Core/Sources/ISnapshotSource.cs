@@ -39,6 +39,11 @@ public static class SourceFactory
             case "sqlserver":
                 var cs = Dpapi.Unprotect(c.ConnectionStringProtected);
                 return cs is null ? null : new SqlServerSource(cs, c.Label ?? "sqlserver");
+            case "odbc":
+                var ocs = Dpapi.Unprotect(c.ConnectionStringProtected);
+                // the optional table list travels in Path ("CUSTOMERS,ORDERS") so the config stays one record
+                return ocs is null ? null : new OdbcSource(ocs, c.Label ?? "odbc", c.Path?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            case "dropfolder": return c.Path is null ? null : new DropFolderSource(c.Path);
             case "folder": return c.Path is null ? null : new FolderSource(c.Path);
             case "file":
             default: return c.Path is null ? null : FileSource.ForPath(c.Path);

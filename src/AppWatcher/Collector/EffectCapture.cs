@@ -135,7 +135,7 @@ internal sealed class EffectCapture : IDisposable
             {
                 FileSystemWatcher w;
                 if (Directory.Exists(p)) w = new FileSystemWatcher(p) { IncludeSubdirectories = true };
-                else if (File.Exists(p)) w = new FileSystemWatcher(Path.GetDirectoryName(p)!, Path.GetFileName(p) + "*") { IncludeSubdirectories = false };
+                else if (Directory.Exists(Path.GetDirectoryName(p))) w = new FileSystemWatcher(Path.GetDirectoryName(p)!, Path.GetFileName(p) + "*") { IncludeSubdirectories = false }; // the file may not exist yet: the app creates it on its first save
                 else continue;
                 w.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName;
                 w.Changed += OnFileChanged; w.Created += OnFileChanged; w.Deleted += OnFileChanged; w.Renamed += OnFileChanged;

@@ -97,7 +97,7 @@ public class MoreLearnerTests
         Assert.Equal("Pick Item", order.BackFrom);
         Assert.Equal(3, order.BackFromCount);
         Assert.InRange(order.MedianMs, 50_000, 52_000); // durations 41 s, 51 s, 61 s
-        Assert.Contains(order.StepControls["New Order"], c => c.name == "Save" && c.count == 3);
+        Assert.Contains(order.StepControls["New Order"], c => c.name == "press Save" && c.count == 3);
         Assert.Single(flows, f => f.Key == "Reports");
         Assert.Contains(nav, e => e.From == "Main" && e.To == "New Order" && e.Count == 3);
     }

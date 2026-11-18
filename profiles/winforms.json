@@ -1,0 +1,16 @@
+{
+  "name": "winforms",
+  "description": "Standard .NET WinForms: fields, buttons and presses are exposed well.",
+  "match": { "exe": [], "product": [], "toolkit": ["WinForms"] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 14,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "note": "Owner-drawn menus (ToolStrip with custom renderers) sometimes raise no Invoke; press inference covers them."
+}

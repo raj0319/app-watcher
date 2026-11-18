@@ -1,0 +1,16 @@
+{
+  "name": "custom-drawn",
+  "description": "Qt, GTK, wxWidgets, Flutter and other toolkits that draw their own controls: few or no controls visible to UI Automation.",
+  "match": { "exe": [], "product": [], "toolkit": ["Qt", "GTK", "wxWidgets", "Flutter"] },
+  "effectTriggers": [],
+  "ignoreWindows": [],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": false,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 12,
+  "dumpRowCap": 2000,
+  "gridRowCap": 5,
+  "note": "Window titles, timing, dialog text and data changes are recorded. Fields and buttons probably not; the data side (SQL capture, drop folder) is where the logic will come from."
+}

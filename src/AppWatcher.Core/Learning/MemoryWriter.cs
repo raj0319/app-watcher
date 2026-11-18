@@ -1,4 +1,5 @@
 using System.Text;
+using AppWatcher.Core.Screens;
 
 namespace AppWatcher.Core.Learning;
 
@@ -50,7 +51,7 @@ public static class MemoryWriter
 
     private static (List<string> added, List<string> removed) LineDiff(string[] old, string[] cur)
     {
-        var skip = (string l) => l.StartsWith("Last learn:") || l.StartsWith("Generated") || l.Length == 0;
+        var skip = (string l) => l.StartsWith("Last learn:") || l.StartsWith("Generated") || l.StartsWith("| Disk use") || l.StartsWith("| Collector status") || l.Length == 0;
         var o = old.Where(l => !skip(l)).ToList();
         var c = cur.Where(l => !skip(l)).ToList();
         var oldSet = new HashSet<string>(o);
@@ -77,6 +78,14 @@ public static class MemoryWriter
         {
             sb.AppendLine("## Sources");
             foreach (var s in r.Sources) sb.AppendLine($"- `{s}`");
+            sb.AppendLine();
+        }
+        if (r.Backends.Count > 0)
+        {
+            sb.AppendLine("## Backends found by discovery");
+            sb.AppendLine();
+            sb.AppendLine("Where the app's data lives according to its config files, ODBC data sources and open connections (no credentials recorded).");
+            foreach (var b in r.Backends) sb.AppendLine($"- {b.Describe()} — {(b.Readable ? "readable by App Watcher" : "not readable from this PC yet")}; inferred");
             sb.AppendLine();
         }
         sb.AppendLine("## Tables");
@@ -124,12 +133,20 @@ public static class MemoryWriter
     {
         var sb = new StringBuilder(Header(r, "Screens (learned)", "Each window of the app, its fields, which columns they fill and which tables the screen writes."));
         if (r.MainWindow is not null) sb.AppendLine($"Main window: **{r.MainWindow}** (the window users spend the most time in).");
+        var sessions = r.Screens.Where(s => s.Kind == ScreenKinds.Session).Select(s => s.Title).ToList();
+        if (sessions.Count > 0) sb.AppendLine($"Session windows (flows start after them): {string.Join(", ", sessions)}.");
+        if (r.MessageWindows.Count > 0) sb.AppendLine($"Message windows (not screens; their text is in rules.md): {string.Join(", ", r.MessageWindows.OrderByDescending(m => m.Value).Select(m => $"{m.Key} ({m.Value}×)"))}.");
         sb.AppendLine();
         foreach (var s in r.Screens)
         {
             var key = s.Title;
             sb.AppendLine($"## {s.Title}");
-            sb.AppendLine($"Controls: {s.ControlCount}. Visits: {s.Visits}. Record: {s.File}");
+            var kind = s.Kind == ScreenKinds.Screen ? "" : $" Kind: {s.Kind}.";
+            var fields = s.LogicalFieldCount > 0 ? $" Fields: {s.LogicalFieldCount}." : "";
+            sb.AppendLine($"Controls: {s.ControlCount}.{fields} Visits: {s.Visits}.{kind} Record: {s.File}");
+            var reached = s.ReachedFrom is null ? "unknown" : $"{s.ReachedFrom}{(s.ReachedFromCount > 0 ? $" (seen {s.ReachedFromCount}×)" : " (from the screen record)")}";
+            var menu = s.MenuPath is null ? "not seen" : $"{s.MenuPath} (seen {s.MenuPaths.GetValueOrDefault(s.MenuPath)}×)";
+            sb.AppendLine($"Reached from: {reached}. Menu item before it opened: {menu}.");
             sb.AppendLine();
             var writes = r.ScreenWrites.Where(w => w.Screen == key).ToList();
             if (writes.Count > 0)
@@ -144,17 +161,24 @@ public static class MemoryWriter
                 sb.AppendLine();
             }
             var maps = r.FieldMappings.Where(m => m.Screen == key).ToList();
-            sb.AppendLine("| Field | Column | Confidence | Evidence |");
-            sb.AppendLine("|---|---|---|---|");
-            var fields = s.Fields.Concat(maps.Select(m => m.Field)).Distinct().ToList();
-            if (fields.Count == 0) sb.AppendLine("| (no input fields seen) | | | |");
-            foreach (var f in fields)
+            sb.AppendLine("| Field | Typed | Type (from values) | Shapes seen | Column | Confidence | Evidence |");
+            sb.AppendLine("|---|---|---|---|---|---|---|");
+            var all = s.Fields.Concat(maps.Select(m => m.Field)).Distinct().ToList();
+            if (all.Count == 0) sb.AppendLine("| (no input fields seen) | | | | | | |");
+            foreach (var f in all)
             {
+                var typed = s.FieldTyped.GetValueOrDefault(f);
+                var type = s.FieldTypes.TryGetValue(f, out var ty) ? ty : "";
+                var shapes = s.FieldShapes.TryGetValue(f, out var sh) ? string.Join(", ", sh.Take(4).Select(x => $"`{x}`")) : "";
                 var fm = maps.Where(m => m.Field == f).ToList();
-                if (fm.Count == 0) { sb.AppendLine($"| {f} | (not mapped yet) | inferred | {s.File} |"); continue; }
-                foreach (var m in fm.Take(3)) sb.AppendLine($"| {f} | `{m.Table}`.{m.Column} | {m.Label} | {m.Pointer} |");
+                if (fm.Count == 0) { sb.AppendLine($"| {Cell(f)} | {typed} | {type} | {shapes} | (not mapped yet) | {(typed > 0 ? $"seen {typed}×" : "inferred")} | {s.File} |"); continue; }
+                foreach (var m in fm.Take(3)) sb.AppendLine($"| {Cell(f)} | {typed} | {type} | {shapes} | `{m.Table}`.{m.Column} | {m.Label} | {m.Pointer} |");
             }
-            if (s.Actions.Count > 0) sb.AppendLine().AppendLine($"Actions: {string.Join(", ", s.Actions.Take(20))}");
+            if (s.NeverUsed.Count > 0 && s.NeverUsed.Count < s.Fields.Count) sb.AppendLine().AppendLine($"Never typed into ({s.NeverUsed.Count}): {string.Join(", ", s.NeverUsed.Take(25).Select(Cell))}{(s.NeverUsed.Count > 25 ? ", ..." : "")}");
+            if (s.Actions.Count > 0)
+            {
+                sb.AppendLine().AppendLine($"Actions: {string.Join(", ", s.Actions.Take(25).Select(a => s.Shortcuts.TryGetValue(a, out var k) ? $"{Cell(a)} [{k}]" : Cell(a)))}");
+            }
             sb.AppendLine();
         }
         return sb.ToString();
@@ -162,15 +186,27 @@ public static class MemoryWriter
 
     public static string Rules(LearnResult r)
     {
-        var sb = new StringBuilder(Header(r, "Rules (learned)", "Validation messages, calculated columns and numbering sequences."));
+        var sb = new StringBuilder(Header(r, "Rules (learned)", "Validation messages, messages after actions, calculated columns and numbering sequences."));
         sb.AppendLine("## Validation rules");
         sb.AppendLine();
-        if (r.Rules.Count == 0) sb.AppendLine("_No message window has followed a value change yet._");
+        var validations = r.Rules.Where(v => v.Kind == "validation").ToList();
+        if (validations.Count == 0) sb.AppendLine("_No message window has followed a value change yet._");
         else
         {
             sb.AppendLine("| Screen | Field | Value pattern | Message | Confidence | Evidence |");
             sb.AppendLine("|---|---|---|---|---|---|");
-            foreach (var v in r.Rules) sb.AppendLine($"| {v.Screen} | {v.Field} | {v.Pattern} | {Cell(v.Message)} | {v.Evidence.Confidence} | {v.Evidence.Pointer} |");
+            foreach (var v in validations) sb.AppendLine($"| {v.Screen} | {v.Field} | {v.Pattern} | {Cell(v.Message)} | {v.Evidence.Confidence} | {v.Evidence.Pointer} |");
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Messages after an action");
+        sb.AppendLine();
+        var messages = r.Rules.Where(v => v.Kind == "message").ToList();
+        if (messages.Count == 0) sb.AppendLine("_No message window has followed a button or menu press yet._");
+        else
+        {
+            sb.AppendLine("| Screen | Action | Message | Confidence | Evidence |");
+            sb.AppendLine("|---|---|---|---|---|");
+            foreach (var v in messages) sb.AppendLine($"| {v.Screen} | {v.Field} {v.Pattern} | {Cell(v.Message)} | {v.Evidence.Confidence} | {v.Evidence.Pointer} |");
         }
         sb.AppendLine();
         sb.AppendLine("## Calculated columns");
@@ -229,8 +265,14 @@ public static class MemoryWriter
             foreach (var f in r.Flows)
             {
                 sb.AppendLine($"### Flow: {f.Key} — seen {f.Count}×; evidence: {f.Evidence.Pointer}");
-                foreach (var (win, controls) in f.StepControls)
-                    sb.AppendLine($"- {win}: {string.Join(", ", controls.Select(c => $"{c.name} ({c.count})"))}");
+                sb.AppendLine("Steps (screen: the actions seen there, with counts):");
+                foreach (var win in f.CommonPath.Distinct())
+                {
+                    var controls = f.StepControls.TryGetValue(win, out var c) && c.Count > 0 ? string.Join(", ", c.Select(x => $"{x.name} ({x.count})")) : "(no action recorded on this screen)";
+                    sb.AppendLine($"- {win}: {controls}");
+                }
+                foreach (var (win, controls) in f.StepControls.Where(kv => !f.CommonPath.Contains(kv.Key)))
+                    sb.AppendLine($"- {win} (on other paths): {string.Join(", ", controls.Select(c => $"{c.name} ({c.count})"))}");
                 sb.AppendLine();
             }
         }
@@ -255,6 +297,15 @@ public static class MemoryWriter
     public static string Architecture(LearnResult r)
     {
         var sb = new StringBuilder(Header(r, "Architecture (learned)", "Modules grouped by shared tables, and an honest account of what was seen versus guessed."));
+        if (r.Toolkit is not null || r.Backends.Count > 0 || r.Profile is not null)
+        {
+            sb.AppendLine("## Technology seen from the outside");
+            sb.AppendLine();
+            if (r.Toolkit is not null) sb.AppendLine($"- UI toolkit: {r.Toolkit} (from the program file's imports; inferred)");
+            foreach (var b in r.Backends) sb.AppendLine($"- Backend: {b.Describe()}; inferred");
+            if (r.Profile is not null) sb.AppendLine($"- Collector profile: {r.Profile}");
+            sb.AppendLine();
+        }
         sb.AppendLine("## Modules");
         sb.AppendLine();
         foreach (var m in r.Modules)
@@ -276,10 +327,12 @@ public static class MemoryWriter
         sb.AppendLine($"| Field → column mappings | {r.FieldMappings.Count(m => m.IsSeen)} | {r.FieldMappings.Count(m => !m.IsSeen)} candidates |");
         sb.AppendLine($"| Relations | {seen(r.Relations.Select(x => x.Evidence))} | {inf(r.Relations.Select(x => x.Evidence))} |");
         sb.AppendLine($"| Calculated columns | {seen(r.Formulas.Select(x => x.Evidence))} | {inf(r.Formulas.Select(x => x.Evidence))} |");
-        sb.AppendLine($"| Validation rules | {r.Rules.Count} | 0 |");
+        sb.AppendLine($"| Validation rules | {r.Rules.Count(x => x.Kind == "validation")} | 0 |");
+        sb.AppendLine($"| Messages after actions | {r.Rules.Count(x => x.Kind == "message")} | 0 |");
         sb.AppendLine($"| Status flows | {seen(r.StatusFlows.Select(x => x.Evidence))} | {inf(r.StatusFlows.Select(x => x.Evidence))} |");
         sb.AppendLine($"| Sequences | {seen(r.Sequences.Select(x => x.Evidence))} | {inf(r.Sequences.Select(x => x.Evidence))} |");
         sb.AppendLine($"| Column types | 0 | {r.Tables.Sum(t => t.Columns.Count)} (from values) |");
+        sb.AppendLine($"| Field types | 0 | {r.Screens.Sum(s => s.FieldTypes.Count)} (from typed values) |");
         sb.AppendLine();
         sb.AppendLine("Seen means the watcher recorded the cause and the effect together at least once (field mappings: at least 3 distinct values, or a captured SQL statement). Inferred means the structure suggests it but no user action proved it. Treat inferred and candidate lines as questions for the architect.");
         sb.AppendLine();
@@ -305,12 +358,31 @@ public static class MemoryWriter
         sb.AppendLine("|---|---|");
         sb.AppendLine($"| Days with activity | {h.Days} |");
         sb.AppendLine($"| Events per day | {h.EventsPerDay:0} |");
+        sb.AppendLine($"| Button and menu presses seen | {h.PressesSeen} (+ {h.PressesInferred} inferred from focus and a window change) |");
         sb.AppendLine($"| Save-type presses seen | {h.TriggerInvokes} |");
+        sb.AppendLine($"| Message windows seen | {h.DialogsSeen} |");
         sb.AppendLine($"| Data checks (effects) | {h.EffectsTotal}, {h.EffectsWithDiff} with a change |");
         sb.AppendLine($"| Saves with a data diff | {h.SavesWithDiffPct:0}% |");
         sb.AppendLine($"| Fields typed into | {h.FieldsSeen} |");
         sb.AppendLine($"| Fields mapped to a column | {h.FieldsMapped} seen + {h.FieldsCandidate} candidates ({h.FieldsMappedPct:0}% seen) |");
+        sb.AppendLine($"| Users and PCs watched | {Math.Max(1, h.UsersSeen)} user{(h.UsersSeen == 1 ? "" : "s")} on {Math.Max(1, h.MachinesSeen)} PC{(h.MachinesSeen == 1 ? "" : "s")} (names hashed, never stored) |");
+        if (h.DiskUse.Count > 0) sb.AppendLine($"| Disk use | {string.Join(", ", h.DiskUse.Select(d => $"{d.Key} {Size(d.Value)}"))} |");
+        if (r.Collector is not null) sb.AppendLine($"| Collector status | updated {r.Collector.Updated:yyyy-MM-dd HH:mm}: {r.Collector.WindowsSeen} windows, {r.Collector.DumpsOk} trees read, {r.Collector.DumpsFailed + r.Collector.DumpsEmpty} failed or empty, {r.Collector.PressesTotal} presses (UIA {r.Collector.PressesUia}, MSAA {r.Collector.PressesMsaa}, menu {r.Collector.PressesMenu}, inferred {r.Collector.PressesInferred}), {r.Collector.TabScreens} tab screens, {r.Collector.Dialogs} dialogs |");
         sb.AppendLine();
+        if (r.Expectations.Count > 0)
+        {
+            sb.AppendLine("## What this app lets the watcher learn");
+            sb.AppendLine();
+            foreach (var e in r.Expectations) sb.AppendLine($"- {e}");
+            sb.AppendLine();
+        }
+        if (h.CollectorProblems.Count > 0)
+        {
+            sb.AppendLine("## What the collector could not do");
+            sb.AppendLine();
+            foreach (var p in h.CollectorProblems) sb.AppendLine($"- {p}");
+            sb.AppendLine();
+        }
         sb.AppendLine("## What would improve accuracy");
         sb.AppendLine();
         foreach (var a in h.Advice) sb.AppendLine($"- {a}");
@@ -318,6 +390,7 @@ public static class MemoryWriter
         return sb.ToString();
     }
 
+    private static string Size(long bytes) => bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024.0:0} KB" : bytes < 1024L * 1024 * 1024 ? $"{bytes / 1048576.0:0.#} MB" : $"{bytes / 1073741824.0:0.##} GB";
     private static string Cell(string s) => s.Replace("|", "/").Replace("\"", "'").Replace("\r", " ").Replace("\n", " ");
     private static string Id(string s) => new string(s.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
     private static string NodeId(string s, Dictionary<string, string> ids)

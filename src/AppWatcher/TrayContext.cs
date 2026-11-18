@@ -81,8 +81,16 @@ internal sealed class TrayContext : ApplicationContext
         if (_config.App is null) return;
         try
         {
+            Core.Learning.Titles.MaskQuoted = _config.Privacy.MaskTitles;
             _watch = new WatchService(_config, SynchronizationContext.Current!) { Paused = _config.Paused };
             _watch.Start();
+            try
+            {
+                var paths = Paths.ForApp(_config.App.DisplayName);
+                var input = new Core.Learning.LearnInput { AppName = _config.App.DisplayName, Backends = _config.Backends, Toolkit = _config.Toolkit, Profile = _config.Profile, HasDataSources = _config.DataSources.Any(d => d.Enabled) };
+                File.WriteAllText(Path.Combine(paths.Root, "expectations.md"), LearnRunner.ExpectationsText(Core.Learning.Learner.Expectations(input)));
+            }
+            catch (Exception ex) { Log.Warn("expectations not written: " + ex.Message); }
             _pause.Text = _config.Paused ? "Resume" : "Pause";
             _icon.Icon = IconFactory.Create(_config.Paused);
             _icon.Text = $"App Watcher: {_config.App.DisplayName}{(_config.Paused ? " (paused)" : "")}";
@@ -122,13 +130,17 @@ internal sealed class TrayContext : ApplicationContext
                 RunLearn(manual: false, rebuild: false);
             if (!_config.HealthCheckDone && _watch.AttachedSince != default && (now - _watch.AttachedSince).TotalMinutes >= 60)
             {
+                // first-hour report: a learn writes memory/health.md with the collector's own findings; the balloon is only the headline
                 _config.HealthCheckDone = true;
                 ConfigStore.Save(_config);
-                var problems = new List<string>();
+                _watch.SaveStatus();
+                var problems = _watch.Status.Problems();
                 if (_watch.MainWindowControls >= 0 && _watch.MainWindowControls < 10)
                     problems.Add($"the main window shows only {_watch.MainWindowControls} controls, so field names and buttons cannot be learned (the app may draw its own screens)");
-                if (!_watch.HasDataSources) problems.Add("no data source is set, so what the app saves cannot be learned (add one in Settings > Data)");
-                if (problems.Count > 0) Balloon("What App Watcher cannot learn from this app: " + string.Join("; ", problems) + ".", ToolTipIcon.Warning);
+                RunLearn(manual: false, rebuild: false);
+                Balloon(problems.Count > 0
+                    ? "First hour: " + string.Join("; ", problems.Take(3)) + $". Details: {Paths.ForApp(_config.App.DisplayName).Memory}\\health.md"
+                    : $"First hour: screens, presses and values are being recorded normally. Details: {Paths.ForApp(_config.App.DisplayName).Memory}\\health.md", problems.Count > 0 ? ToolTipIcon.Warning : ToolTipIcon.Info);
             }
         }
         catch (Exception ex) { Log.Error("minute tick failed", ex); }

@@ -66,6 +66,12 @@ public sealed class LearnState
     public Dictionary<string, Evidence> Relations { get; set; } = new();
     public Dictionary<string, ScreenInfo> Screens { get; set; } = new();
     public Dictionary<string, SqlTableWrite> SqlWrites { get; set; } = new();
+    public int PressesSeen { get; set; }
+    public int PressesInferred { get; set; }
+    public int DialogsSeen { get; set; }
+    /// <summary>Hashes of Windows user names and machine names seen in start events (never the names).</summary>
+    public HashSet<string> Users { get; set; } = new();
+    public HashSet<string> Machines { get; set; } = new();
 
     private static readonly JsonSerializerOptions Opts = new() { WriteIndented = false, IncludeFields = false };
 

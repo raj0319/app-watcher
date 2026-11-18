@@ -46,6 +46,9 @@ Get-Process -Name AppWatcher -ErrorAction SilentlyContinue | ForEach-Object {
 }
 Copy-Item $ExePath $dest -Force
 Write-Host "Installed to $dest"
+# command-line wrapper (start /wait) so scripts can call AppWatcher.exe --learn and get its output
+$cmd = Join-Path $PSScriptRoot "appwatcher.cmd"
+if (Test-Path $cmd) { Copy-Item $cmd (Join-Path $target "appwatcher.cmd") -Force }
 
 if ($ScheduledTask) {
     $action = New-ScheduledTaskAction -Execute $dest

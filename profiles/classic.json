@@ -1,0 +1,16 @@
+{
+  "name": "classic",
+  "description": "Delphi (VCL), VB6, PowerBuilder, MFC: standard controls through MSAA, custom grids as one control, names only.",
+  "match": { "exe": [], "product": [], "toolkit": ["Delphi", "VB6", "PowerBuilder", "MFC"] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "dumpDepth": 12,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "note": "No automation ids: labels come from the nearest Text control to the left or above each field."
+}
