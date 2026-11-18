@@ -39,7 +39,8 @@ note row with the row count and column names.
 
 `screens/shots/<screen>/` holds the pictures of that screen, page-wise: `01-first-seen.png`, then one per
 distinct state, `02-after-press-search.png`, `03-after-type-customer-code.png`, `04-dropdown-city.png`,
-`05-dialog-validation.png`, and an `index.md` listing each picture with the action that caused it, the time
+`05-dialog-validation.png`, and, when OCR is on, `<picture>.png.ocr.json` and `<picture>.png.txt` next to each picture (the text the
+built-in Windows OCR read, with each line's box), and an `index.md` listing each picture with the action that caused it, the time
 and the event. Only the app's own window is pictured, never the desktop. The same state (judged by a coarse
 hash of the picture, so a blinking caret does not count) is never stored twice; the picture before an action
 is the previous row. Caps: 25 per screen and 500 MB per app by default (Privacy tab: off / first / actions;

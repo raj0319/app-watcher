@@ -62,6 +62,19 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.5: OCR text layer and shortcut learning
+
+- **Windows OCR on the pictures** (#1): the built-in Windows OCR (Windows.Media.Ocr, no install, stays on
+  the PC) reads the text of each state picture and stores it next to the picture as `<pic>.png.ocr.json`
+  (lines with boxes) and `.txt`. For apps that draw their own screens (Qt, Java, Delphi) this gives the
+  labels and column headers the control tree could not. On by default, Privacy tab to switch off; the
+  export carries the OCR files, and the twin kit's `layout.py ocr-extra` uses them.
+- **Shortcut learning** (#4): the keyboard shortcut of every button and menu item (AcceleratorKey /
+  AccessKey) is in the screen record and now in a compact "Keyboard shortcuts:" line per screen in
+  memory, so the twin keeps the power users' keys.
+- Target framework moved to net8.0-windows10.0.19041.0 for the OCR API; still runs on Windows 10 1809+.
+- Verified by the unit tests and a single-file publish; the OCR path is exercised at runtime on a real app.
+
 ## Version 0.4: micro-level states (client request)
 
 - **One picture per state, not per screen**: after every press, tab switch, typed value, dialog and suggestion

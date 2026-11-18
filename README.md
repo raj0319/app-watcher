@@ -20,7 +20,7 @@ six living documents, rewritten every night:
 | `rules.md` | validation messages (which field, which kind of value, which message), messages after a button or menu, calculated columns with the formula that fits and its exceptions, numbering sequences |
 | `flows.md` | status flows (for example open → paid → shipped) with rare and not-allowed transitions, user flows with the presses and typed fields on each step, and a directly-follows navigation graph (Mermaid, renders on GitHub) |
 | `architecture.md` | the toolkit and backends seen from the outside, modules (screens grouped by the tables they share) and an honest "seen vs inferred" count |
-| `health.md` | events per day, presses seen, how many saves produced a data diff, how many fields are mapped, what the collector could not do, and what would improve accuracy |
+| `health.md` | events per day, presses seen, pictures and OCR pages, how many saves produced a data diff, how many fields are mapped, what the collector could not do, and what would improve accuracy |
 
 Every line carries a confidence: `seen 12×` means it was observed twelve times; `candidate` means fewer
 than three distinct observations; `inferred` means the structure suggests it but nobody proved it.
@@ -86,6 +86,9 @@ Only inside the chosen app, and only while it is the window in front:
 - the suggestion lists that open while typing (autocomplete, lookups): the field, the text typed so far,
   and the suggestions shown
 - what a grid shows right after a search, filter or open: its column names and first rows
+- the text on each picture, read by the built-in Windows OCR and stored next to the picture, so apps that
+  draw their own screens (Qt, Java, old Delphi) still give their labels and column headers (Privacy tab to switch off)
+- the keyboard shortcut of each button and menu item, so the twin keeps the power users' keys
 - which buttons and menu items were pressed, seen four ways so that apps whose controls stay silent are
   covered too (UI Automation, the older accessibility events, a menu closing after an item was chosen, or a
   button focus followed by a window change), which fields got focus, what was selected or ticked

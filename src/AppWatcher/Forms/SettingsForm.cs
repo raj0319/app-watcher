@@ -52,6 +52,7 @@ internal sealed class SettingsForm : Form
     // Privacy tab
     private readonly CheckBox _maskTitles = new() { Text = "Mask quoted parts of window titles and tab labels (\"ACME INC\" becomes \"…\") in memory and export files", AutoSize = true };
     private readonly ComboBox _shotMode = new() { Width = 420, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly CheckBox _readText = new() { Text = "Read the text on each picture with the built-in Windows OCR (helps apps that draw their own screens; stays on this PC)", AutoSize = true };
     private readonly TextBox _exclude = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 70, Width = 630 };
     private readonly TextBox _allow = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 70, Width = 630 };
     // AI tab
@@ -310,13 +311,14 @@ internal sealed class SettingsForm : Form
         _shotMode.Items.AddRange(new object[] { "off: no pictures", "first: one picture per screen, the first time it is seen", "actions: one per state (after each press, tab, typed value, dialog, suggestion list), no duplicates, capped" });
         _shotMode.Location = new Point(10, 60);
         _shotMode.SelectedIndex = Config.Privacy.EffectiveShotMode switch { "off" => 0, "first" => 1, _ => 2 };
-        var l1 = new Label { Text = "Windows never recorded at all (one title pattern per line, * is a wildcard; for example Payroll*, *HR*):", Left = 10, Top = 92, Width = 650 };
-        _exclude.Location = new Point(10, 114); _exclude.Text = string.Join("\r\n", Config.Privacy.ExcludeWindows);
-        var l2 = new Label { Text = "Only these windows are recorded (leave empty to record every window of the app):", Left = 10, Top = 194, Width = 650 };
-        _allow.Location = new Point(10, 216); _allow.Text = string.Join("\r\n", Config.Privacy.AllowlistWindows);
-        var preview = new Button { Text = "Show what we store (newest screen record and the last events)", Left = 10, Top = 298, Width = 400 };
+        _readText.Location = new Point(10, 86); _readText.Checked = Config.Privacy.ReadTextFromPictures;
+        var l1 = new Label { Text = "Windows never recorded at all (one title pattern per line, * is a wildcard; for example Payroll*, *HR*):", Left = 10, Top = 114, Width = 650 };
+        _exclude.Location = new Point(10, 136); _exclude.Text = string.Join("\r\n", Config.Privacy.ExcludeWindows);
+        var l2 = new Label { Text = "Only these windows are recorded (leave empty to record every window of the app):", Left = 10, Top = 216, Width = 650 };
+        _allow.Location = new Point(10, 238); _allow.Text = string.Join("\r\n", Config.Privacy.AllowlistWindows);
+        var preview = new Button { Text = "Show what we store (newest screen record and the last events)", Left = 10, Top = 320, Width = 400 };
         preview.Click += (_, _) => ShowStored();
-        var note = new Label { Left = 10, Top = 334, Width = 650, Height = 170, Text =
+        var note = new Label { Left = 10, Top = 352, Width = 650, Height = 150, Text =
             "What is stored: window titles (quoted parts masked when the box above is ticked), control names and ids, button presses, values typed into the app's own fields " +
             "(passwords and password-like fields as ***), suggestion lists that open while typing, what a grid shows after a search, read-only before/after copies of the app's data, " +
             "and pictures of the app's window in screens\\shots\\<screen>\\ (one per state, never the same state twice, capped per screen; a picture shows whatever data was on that window). " +
@@ -324,7 +326,7 @@ internal sealed class SettingsForm : Form
             "them with personal-looking values masked.\r\n\r\n" +
             "What is never stored: other programs, the clipboard, screenshots, keystrokes outside the app, anything while another program is in front, anything over the network.\r\n\r\n" +
             "Excluded windows: no event, no screen record and no value is written while such a window is in front. Allowlist: when set, everything outside the listed windows is treated as excluded." };
-        p.Controls.AddRange(new Control[] { _maskTitles, ls, _shotMode, l1, _exclude, l2, _allow, preview, note });
+        p.Controls.AddRange(new Control[] { _maskTitles, ls, _shotMode, _readText, l1, _exclude, l2, _allow, preview, note });
         return p;
     }
 
@@ -640,7 +642,7 @@ internal sealed class SettingsForm : Form
             _profile.ApplyTo(Config);
             _triggers.Text = string.Join(", ", Config.EffectTriggers);
             _msaa.Checked = Config.Collector.MsaaFallback; _infer.Checked = Config.Collector.PressInference; _tabs.Checked = Config.Collector.TabDocuments;
-            _maskTitles.Checked = Config.Privacy.MaskTitles; _shotMode.SelectedIndex = Config.Privacy.EffectiveShotMode switch { "off" => 0, "first" => 1, _ => 2 };
+            _maskTitles.Checked = Config.Privacy.MaskTitles; _shotMode.SelectedIndex = Config.Privacy.EffectiveShotMode switch { "off" => 0, "first" => 1, _ => 2 }; _readText.Checked = Config.Privacy.ReadTextFromPictures;
             _exclude.Text = string.Join("\r\n", Config.Privacy.ExcludeWindows);
         }
         // password
@@ -678,6 +680,7 @@ internal sealed class SettingsForm : Form
         Config.Privacy.MaskTitles = _maskTitles.Checked;
         Config.Privacy.ScreenshotMode = _shotMode.SelectedIndex switch { 0 => "off", 1 => "first", _ => "actions" };
         Config.Privacy.Screenshots = _shotMode.SelectedIndex != 0;
+        Config.Privacy.ReadTextFromPictures = _readText.Checked;
         Config.Privacy.ExcludeWindows = Lines(_exclude);
         Config.Privacy.AllowlistWindows = Lines(_allow);
         // ai

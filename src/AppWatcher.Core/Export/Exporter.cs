@@ -28,7 +28,7 @@ public static class Exporter
         // the one picture per screen, when screenshots are on
         var shots = Path.Combine(paths.Screens, "shots");
         if (Directory.Exists(shots))
-            foreach (var f in Directory.EnumerateFiles(shots, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.EndsWith("index.md", StringComparison.OrdinalIgnoreCase)))
+            foreach (var f in Directory.EnumerateFiles(shots, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.EndsWith("index.md", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".ocr.json", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)))
             {
                 var dest = Path.Combine(raw, "screens", "shots", Path.GetRelativePath(shots, f));
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);

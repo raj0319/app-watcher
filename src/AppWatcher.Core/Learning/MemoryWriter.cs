@@ -193,6 +193,8 @@ public static class MemoryWriter
             if (s.Actions.Count > 0)
             {
                 sb.AppendLine().AppendLine($"Actions: {string.Join(", ", s.Actions.Take(25).Select(a => s.Shortcuts.TryGetValue(a, out var k) ? $"{Cell(a)} [{k}]" : Cell(a)))}");
+                var keys = s.Shortcuts.Where(k => k.Value.Length > 0).OrderBy(k => k.Value).ToList();
+                if (keys.Count > 0) sb.AppendLine($"Keyboard shortcuts: {string.Join(", ", keys.Select(k => $"{k.Value} {Cell(k.Key)}"))}");
             }
             sb.AppendLine();
         }
@@ -382,7 +384,7 @@ public static class MemoryWriter
         sb.AppendLine($"| Fields mapped to a column | {h.FieldsMapped} seen + {h.FieldsCandidate} candidates ({h.FieldsMappedPct:0}% seen) |");
         sb.AppendLine($"| Users and PCs watched | {Math.Max(1, h.UsersSeen)} user{(h.UsersSeen == 1 ? "" : "s")} on {Math.Max(1, h.MachinesSeen)} PC{(h.MachinesSeen == 1 ? "" : "s")} (names hashed, never stored) |");
         if (h.DiskUse.Count > 0) sb.AppendLine($"| Disk use | {string.Join(", ", h.DiskUse.Select(d => $"{d.Key} {Size(d.Value)}"))} |");
-        if (r.Collector is not null) sb.AppendLine($"| Collector status | updated {r.Collector.Updated:yyyy-MM-dd HH:mm}: {r.Collector.WindowsSeen} windows, {r.Collector.DumpsOk} trees read, {r.Collector.DumpsFailed + r.Collector.DumpsEmpty} failed or empty, {r.Collector.PressesTotal} presses (UIA {r.Collector.PressesUia}, MSAA {r.Collector.PressesMsaa}, menu {r.Collector.PressesMenu}, inferred {r.Collector.PressesInferred}), {r.Collector.TabScreens} tab screens, {r.Collector.Dialogs} dialogs |");
+        if (r.Collector is not null) sb.AppendLine($"| Collector status | updated {r.Collector.Updated:yyyy-MM-dd HH:mm}: {r.Collector.WindowsSeen} windows, {r.Collector.DumpsOk} trees read, {r.Collector.DumpsFailed + r.Collector.DumpsEmpty} failed or empty, {r.Collector.PressesTotal} presses (UIA {r.Collector.PressesUia}, MSAA {r.Collector.PressesMsaa}, menu {r.Collector.PressesMenu}, inferred {r.Collector.PressesInferred}), {r.Collector.TabScreens} tab screens, {r.Collector.Dialogs} dialogs, {r.Collector.Pictures} pictures, {r.Collector.OcrPages} read by OCR |");
         sb.AppendLine();
         if (r.Expectations.Count > 0)
         {

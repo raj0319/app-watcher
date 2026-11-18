@@ -30,6 +30,7 @@ public sealed class CollectorStatus
     public int Results { get; set; }
     public int Pictures { get; set; }
     public int PicturesSkipped { get; set; }
+    public int OcrPages { get; set; }
     public int ExcludedEvents { get; set; }
     public bool HasDataSources { get; set; }
     public int EffectsWritten { get; set; }

@@ -262,12 +262,32 @@ internal sealed class WatchService : IDisposable
         catch (Exception ex) { Log.Warn("state capture failed: " + ex.Message); }
     }
 
+    private readonly object _ocrGate = new();
+
     private void StoreShot(string title, string label, byte[] png, string hash, DateTime t, string why)
     {
         var path = _shots.Add(title, label, png, hash, t, why, out var skipped);
         if (path is null) { _status.PicturesSkipped++; return; }
         _status.Pictures++;
         Log.Info($"picture: {path} ({why})");
+        if (_config.Privacy.ReadTextFromPictures && Native.Ocr.Available)
+        {
+            // read the text on the picture with the built-in Windows OCR, on a background thread, serialized (the engine is not re-entrant)
+            var full = Path.Combine(_paths.Screens, path.Replace('/', Path.DirectorySeparatorChar));
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    Native.Ocr.Result? r;
+                    lock (_ocrGate) r = Native.Ocr.Read(png);
+                    if (r is null || r.Lines.Count == 0) return;
+                    File.WriteAllText(full + ".ocr.json", System.Text.Json.JsonSerializer.Serialize(r, new System.Text.Json.JsonSerializerOptions { WriteIndented = false }));
+                    File.WriteAllText(full + ".txt", r.Text);
+                    _status.OcrPages++;
+                }
+                catch (Exception ex) { Log.Warn("OCR sidecar not written: " + ex.Message); }
+            });
+        }
     }
 
     private void Write(UiEvent e)

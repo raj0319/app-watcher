@@ -6,7 +6,7 @@ namespace AppWatcher.Core;
 
 public sealed class WatcherConfig
 {
-    public const string AppVersion = "0.4";
+    public const string AppVersion = "0.5";
 
     /// <summary>Words on a button or menu item that mean "this writes data", in the languages we meet most. Profiles add their own.</summary>
     public static readonly string[] DefaultTriggers =
@@ -136,6 +136,8 @@ public sealed class PrivacySettings
     public string ScreenshotMode { get; set; } = "actions";
     public int MaxShotsPerScreen { get; set; } = 25;
     public int MaxShotMegabytes { get; set; } = 500;
+    /// <summary>Read the text on each state picture with the built-in Windows OCR and store it next to the picture (for apps that draw their own screens). Local, no install.</summary>
+    public bool ReadTextFromPictures { get; set; } = true;
     [System.Text.Json.Serialization.JsonIgnore] public string EffectiveShotMode => !Screenshots ? "off" : ScreenshotMode is "off" or "first" or "actions" ? ScreenshotMode : "actions";
     /// <summary>Window title patterns (* wildcards) that are never recorded at all (payroll, HR).</summary>
     public List<string> ExcludeWindows { get; set; } = new();
