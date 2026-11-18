@@ -32,8 +32,10 @@ structure, never proved) and names its evidence file.
    for the schema or the rules, open the evidence it points to (`effects/*.json`, `events/*.jsonl#L<n>`,
    `screens/*.md`, `snapshots/before.json`) and decide: confirmed, doubted or rejected. Big files: read
    only the lines you need; delegate to a helper if your tool supports it and keep only the conclusion.
-   `screens/shots/<screen>.png` is the one picture of each screen when the client kept pictures on: look at
-   it when a screen record's fields or purpose are unclear (a picture may show customer data; describe,
+   `screens/shots/<screen>/` holds one picture per state of a screen (with an `index.md`, and `.ocr.json`/`.txt`
+   OCR text when on); `events/*.jsonl` also carries `dropdown` lines (suggestion lists) and `result` lines
+   (grid contents after a search), which are the best evidence for lookups and what a search returns. Open a
+   picture when a screen record's fields or purpose are unclear (a picture may show customer data; describe,
    never copy it into the review).
 5. **Write `memory/architecture-reviewed.md`** with exactly these sections:
    1. What this application is (two or three plain sentences)

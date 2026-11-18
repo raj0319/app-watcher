@@ -37,8 +37,9 @@ The setup window opens.
    the app normally for two minutes. It proposes the files the app really reads and writes.
    If the app uses SQL Server or has an ODBC data source on this PC, you can add a read-only connection
    here, or point **Add export drop folder** at a folder with CSV exports, or skip it for the demo.
-3. **Privacy** (tab 4): decide whether to keep one picture per screen (on by default; the app's window
-   only) and list any window that must never be recorded.
+3. **Privacy** (tab 4): choose how many pictures to keep (off / first time only / one per state, the
+   default), whether to read the text on them with the built-in OCR (on by default; helps apps that draw
+   their own screens), and list any window that must never be recorded. Pictures are the app's window only.
 4. **Settings password** (tab 6): choose one. You need it to open settings or quit.
 
 Press **Start watching**. An eye icon appears in the tray. Close nothing else.
@@ -48,7 +49,9 @@ Press **Start watching**. An eye icon appears in the tray. Close nothing else.
 Do the things a user does every day. Good demo coverage:
 
 - Open 5 to 10 different screens or pages, including menus and dialogs.
-- Search or filter on at least two screens with a few different values.
+- Use the tabs of a tabbed window; each tab is recorded as its own screen.
+- Search or filter on at least two screens with a few different values, and let any suggestion list
+  (autocomplete) appear while typing. The watcher records the suggestions and the grid the search returns.
 - Open some existing records and look at them.
 - If it is safe, create one test record (name it starting with `ZZTEST`), save it, then edit it
   and save again. Saves are where the watcher learns which table and columns a screen writes.
@@ -71,7 +74,7 @@ Zip the whole folder `C:\ProgramData\AppWatcher\data\<app-name>\`. If it is very
 `snapshots\` (it is only the latest copy of the data) and keep:
 
 - `events\` the actions, one file per day
-- `screens\` every screen's fields and buttons, and `screens\shots\` one picture per screen
+- `screens\` every screen's fields and buttons, and `screens\shots\<screen>\` one picture per state (with an OCR text layer when on)
 - `effects\` what changed in the data after each save
 - `collector-status.json` and `expectations.md` what the watcher could read and what it expected
 - `memory\` the learned data model, screens, rules, flows, architecture, health

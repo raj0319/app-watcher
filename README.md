@@ -248,7 +248,7 @@ Choose **Export for the twin kit** from the tray (or `appwatcher --export`). It 
 `data\<app-name>\export\<date>\` and a zip next to it:
 
 - `docs\raw\screens\*.md`: one per distinct screen, with the control tree, the learned menu path and predecessor;
-  `docs\raw\screens\shots\*.png`: the one picture per screen
+  `docs\raw\screens\shots\<screen>\`: the pictures of each screen, one per state, with an index and, when OCR is on, a `.txt`/`.ocr.json` text layer per picture
 - `docs\raw\tasks\*.md`: one per learned flow, with count, median duration and the actions on each step
 - `docs\raw\probes\*.md`: per screen, the fields, the distinct values seen (personal-looking values masked) and the rules learned
 - `docs\raw\data-model.md`: tables, columns, relations, backends, snapshot paths
@@ -313,7 +313,7 @@ Something like this can go on the notice board or in an e-mail:
 
 > We have installed a small program called App Watcher on this PC. It watches only **<app name>** while
 > you work in it, and writes down which screens, buttons and fields are used and what the program saves,
-> so that we can document and later rebuild it. It keeps one picture of each screen of that program. It
+> so that we can document and later rebuild it. It keeps pictures of each screen of that program. It
 > does not record other programs, e-mails, the web, the clipboard or the desktop, and it does not send
 > anything over the internet. Passwords are never recorded. You will see a small eye icon near the clock;
 > it never shows pop-ups and does not need anything from you. Questions: ask <contact>.
