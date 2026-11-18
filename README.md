@@ -27,6 +27,11 @@ Every line also names the evidence file to open. `changelog.md` lists what chang
 
 The memory files never contain values that users typed. They contain names, shapes and counts.
 
+## Try it first
+
+[docs/demo-test.md](docs/demo-test.md) is a 30-minute test on one PC: install, use the app, learn,
+export, send the folder for analysis, uninstall.
+
 ## Install (five minutes)
 
 You need a Windows 10 or 11 PC where the app to watch is used.
