@@ -9,28 +9,65 @@ public static class RelationFinder
 
     public static List<Relation> Learn(DataSnapshot? latest, List<EffectRecord> effects)
     {
-        var result = new Dictionary<(string, string, string, string), Relation>();
-        if (latest is null) return new();
+        var state = new LearnState();
+        var index = BuildKeyIndex(latest);
+        foreach (var fx in effects) AccumulateEffect(state, fx, index);
+        return Finalize(state, latest, index);
+    }
 
-        // key index: value -> set of (table, pk column)
-        var index = new Dictionary<string, HashSet<(string table, string col)>>(StringComparer.OrdinalIgnoreCase);
-        var tables = new Dictionary<string, TableSnapshot>();
+    /// <summary>value -> (qualified table, pk column) for every single-column primary key in the latest snapshot.</summary>
+    public static Dictionary<string, HashSet<(string table, string col)>> BuildKeyIndex(DataSnapshot? latest)
+    {
+        var index = new Dictionary<string, HashSet<(string, string)>>(StringComparer.OrdinalIgnoreCase);
+        if (latest is null) return index;
         var entries = 0;
         foreach (var (db, ts) in latest.Databases)
             foreach (var (name, t) in ts)
             {
-                var q = Qualified(db, name);
-                tables[q] = t;
                 if (t.Skipped || t.PrimaryKey.Count != 1) continue;
+                var q = Qualified(db, name);
                 var pk = t.PrimaryKey[0];
                 foreach (var row in t.Rows.Values)
                 {
                     if (!row.TryGetValue(pk, out var v) || string.IsNullOrEmpty(v) || v.Length > 64) continue;
                     if (!index.TryGetValue(v, out var set)) index[v] = set = new();
                     set.Add((q, pk));
-                    if (++entries > 500_000) break;
+                    if (++entries > 500_000) return index;
                 }
             }
+        return index;
+    }
+
+    /// <summary>Seen writes: added rows whose values are keys elsewhere (only for name-matching pairs, to avoid noise).</summary>
+    public static void AccumulateEffect(LearnState state, EffectRecord fx, Dictionary<string, HashSet<(string table, string col)>> index)
+    {
+        foreach (var td in fx.Diff.Tables)
+        {
+            var q = td.QualifiedName;
+            foreach (var row in td.Added.Values)
+                foreach (var (col, v) in row)
+                {
+                    if (string.IsNullOrEmpty(v) || !index.TryGetValue(v, out var targets)) continue;
+                    foreach (var tgt in targets)
+                    {
+                        if (tgt.table == q || !NameMatches(col, tgt.table)) continue;
+                        var key = LearnState.Key(q, col, tgt.table, tgt.col);
+                        if (!state.Relations.TryGetValue(key, out var ev)) state.Relations[key] = ev = new Evidence();
+                        ev.Add(fx.Source);
+                    }
+                }
+        }
+    }
+
+    public static List<Relation> Finalize(LearnState state, DataSnapshot? latest, Dictionary<string, HashSet<(string table, string col)>>? index = null)
+    {
+        var result = new Dictionary<(string, string, string, string), Relation>();
+        if (latest is null && state.Relations.Count == 0) return new();
+        index ??= BuildKeyIndex(latest);
+        var tables = new Dictionary<string, TableSnapshot>();
+        if (latest is not null)
+            foreach (var (db, ts) in latest.Databases)
+                foreach (var (name, t) in ts) tables[Qualified(db, name)] = t;
 
         // 1. snapshot-wide match ratio per column
         foreach (var (q, t) in tables)
@@ -71,31 +108,16 @@ public static class RelationFinder
             }
         }
 
-        // 2. seen writes: added rows whose values are keys elsewhere
-        foreach (var fx in effects)
-            foreach (var td in fx.Diff.Tables)
-            {
-                var q = td.QualifiedName;
-                foreach (var row in td.Added.Values)
-                    foreach (var (col, v) in row)
-                    {
-                        if (string.IsNullOrEmpty(v) || !index.TryGetValue(v, out var targets)) continue;
-                        foreach (var tgt in targets)
-                        {
-                            if (tgt.table == q) continue;
-                            var key = (q, col, tgt.table, tgt.col);
-                            if (!result.TryGetValue(key, out var r))
-                            {
-                                // only count writes for pairs that also pass the snapshot test or a name hint
-                                if (!NameMatches(col, tgt.table)) continue;
-                                r = Get(result, q, col, tgt.table, tgt.col);
-                                r.NameHint = true;
-                            }
-                            r.Evidence.Inferred = false;
-                            r.Evidence.Add(fx.Source);
-                        }
-                    }
-            }
+        // 2. seen writes from the state
+        foreach (var (key, ev) in state.Relations)
+        {
+            var p = key.Split('\u0001');
+            var r = Get(result, p[0], p[1], p[2], p[3]);
+            r.NameHint = true;
+            r.Evidence.Inferred = false;
+            r.Evidence.Seen += ev.Seen;
+            foreach (var f in ev.Files) if (r.Evidence.Files.Count < 3 && !r.Evidence.Files.Contains(f)) r.Evidence.Files.Add(f);
+        }
 
         // 3. naming only, when nothing else was found for the column
         foreach (var (q, t) in tables)
@@ -115,7 +137,7 @@ public static class RelationFinder
             }
         }
 
-        return result.Values.OrderBy(r => r.FromTable).ThenBy(r => r.FromColumn).ToList();
+        return result.Values.OrderBy(r => r.FromTable).ThenBy(r => r.FromColumn).ThenBy(r => r.ToTable).ToList();
     }
 
     private static Relation Get(Dictionary<(string, string, string, string), Relation> d, string ft, string fc, string tt, string tc)

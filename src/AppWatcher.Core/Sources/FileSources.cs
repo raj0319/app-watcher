@@ -24,7 +24,13 @@ public sealed class FileSource : ISnapshotSource
         try { var fi = new FileInfo(Path); return fi.Exists ? fi.LastWriteTime > t : null; } catch { return null; }
     }
 
-    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables)
+    public ChangeSignal Probe(string? token)
+    {
+        var now = SourceFactory.FileToken(Path) ?? "missing";
+        return new ChangeSignal(token is null ? null : token != now, null, now);
+    }
+
+    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables, ISet<string>? onlyTables = null)
     {
         if (!File.Exists(Path)) { into.Warnings.Add($"not found: {Path}"); return; }
         var e = Entry(Path, settings);
@@ -79,7 +85,27 @@ public sealed class FolderSource : ISnapshotSource
         catch { return null; }
     }
 
-    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables)
+    /// <summary>Token = newest mtime and total size over the folder (bounded walk).</summary>
+    public ChangeSignal Probe(string? token)
+    {
+        try
+        {
+            if (!Directory.Exists(Path)) return new ChangeSignal(null, null, "missing");
+            long newest = 0, size = 0; var n = 0;
+            foreach (var f in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+            {
+                if (++n > MaxFiles) return new ChangeSignal(null, null, null);
+                var fi = new FileInfo(f);
+                newest = Math.Max(newest, fi.LastWriteTimeUtc.Ticks);
+                size += fi.Length;
+            }
+            var now = $"{newest}:{size}:{n}";
+            return new ChangeSignal(token is null ? null : token != now, null, now);
+        }
+        catch { return new ChangeSignal(null, null, null); }
+    }
+
+    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables, ISet<string>? onlyTables = null)
     {
         if (!Directory.Exists(Path)) { into.Warnings.Add($"not found: {Path}"); return; }
         var n = 0;
@@ -94,7 +120,7 @@ public sealed class FolderSource : ISnapshotSource
                 || f.EndsWith("-journal", StringComparison.OrdinalIgnoreCase)) continue;
             try
             {
-                if (SqliteSource.IsSqlite(f)) new SqliteSource(f).Snapshot(into, settings, hotTables);
+                if (SqliteSource.IsSqlite(f)) { using var s = new SqliteSource(f); s.Snapshot(into, settings, hotTables, onlyTables); }
                 else
                 {
                     var e = FileSource.Entry(f, settings);

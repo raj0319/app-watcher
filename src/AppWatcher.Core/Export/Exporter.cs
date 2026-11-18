@@ -37,6 +37,14 @@ public static class Exporter
             var p = Path.Combine(paths.Memory, extra);
             if (File.Exists(p)) File.Copy(p, Path.Combine(raw, "memory", extra), true);
         }
+        // process-mining event log for PM4Py, ProM, Disco
+        try
+        {
+            var events = Core.Events.EventReader.ReadAll(paths.Events);
+            var effects = Core.Snapshots.EffectRecord.ReadAll(paths.Effects);
+            XesWriter.Write(Path.Combine(root, "events.xes"), events, effects, appName);
+        }
+        catch (Exception ex) { Log.Warn("XES export failed: " + ex.Message); }
         File.WriteAllText(Path.Combine(root, "README.md"), ExportReadme(appName, stamp));
 
         var zip = Path.Combine(paths.Export, $"{Paths.SafeName(appName)}-{stamp}.zip");
@@ -136,5 +144,8 @@ How to use it:
 
 Any AI can also read `docs/raw/memory/*.md` directly: they are plain text with a confidence tag on every line.
 Nothing in here contains raw values typed by users except the masked examples in `probes/`.
+
+`events.xes` is a process-mining event log (IEEE XES): one trace per user session, one event per window
+visit or save. Open it in PM4Py, ProM or Disco, or run `python scripts/pm4py_example.py <this folder>/events.xes`.
 ";
 }

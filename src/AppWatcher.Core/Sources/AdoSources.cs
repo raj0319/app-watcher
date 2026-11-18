@@ -10,7 +10,7 @@ namespace AppWatcher.Core.Sources;
 internal static class AdoDumper
 {
     public static void Dump(DbConnection con, string sourceId, DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables,
-        bool onlyHot, IEnumerable<(string schema, string name)> tables, Func<string, string, List<string>> primaryKey, Func<string, string, string> quote)
+        bool onlyHot, IEnumerable<(string schema, string name)> tables, Func<string, string, List<string>> primaryKey, Func<string, string, string> quote, ISet<string>? onlyTables)
     {
         var dict = new Dictionary<string, TableSnapshot>();
         into.Databases[sourceId] = dict;
@@ -19,6 +19,7 @@ internal static class AdoDumper
             var display = string.IsNullOrEmpty(schema) || schema == "dbo" ? name : $"{schema}.{name}";
             var ts = new TableSnapshot();
             dict[display] = ts;
+            if (onlyTables is not null && !onlyTables.Contains(display)) { ts.Skipped = true; ts.Note = "unchanged"; continue; }
             if (onlyHot && !hotTables!.Contains(display)) { ts.Skipped = true; ts.Note = "database over size cap; table not hot"; continue; }
             try
             {
@@ -75,7 +76,13 @@ public sealed class AccessSource : ISnapshotSource
         try { var fi = new FileInfo(Path); return fi.Exists ? fi.LastWriteTime > t : null; } catch { return null; }
     }
 
-    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables)
+    public ChangeSignal Probe(string? token)
+    {
+        var now = (SourceFactory.FileToken(Path) ?? "missing") + "|" + (SourceFactory.FileToken(System.IO.Path.ChangeExtension(Path, ".laccdb")) ?? "");
+        return new ChangeSignal(token is null ? null : token != now, null, now);
+    }
+
+    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables, ISet<string>? onlyTables = null)
     {
         if (!File.Exists(Path)) { into.Warnings.Add($"not found: {Path}"); return; }
         if (!ProviderAvailable()) { into.Warnings.Add("Access driver (Microsoft.ACE.OLEDB) is not installed; file hashed only"); into.Files[Path] = FileSource.Entry(Path, settings)!; return; }
@@ -94,7 +101,7 @@ public sealed class AccessSource : ISnapshotSource
             var pkSchema = con.GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, null);
             List<string> Pk(string s, string n) => pkSchema is null ? new() : pkSchema.Rows.Cast<DataRow>()
                 .Where(r => r["TABLE_NAME"]?.ToString() == n).OrderBy(r => r["ORDINAL"]).Select(r => r["COLUMN_NAME"]!.ToString()!).ToList();
-            AdoDumper.Dump(con, Id, into, settings, hotTables, onlyHot, tables, Pk, (s, n) => $"[{n}]");
+            AdoDumper.Dump(con, Id, into, settings, hotTables, onlyHot, tables, Pk, (s, n) => $"[{n}]", onlyTables);
         }
         catch (Exception ex)
         {
@@ -126,7 +133,58 @@ public sealed class SqlServerSource : ISnapshotSource
 
     public bool? ChangedSince(DateTime t) => null;
 
-    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables)
+    /// <summary>
+    /// With Change Tracking on (scripts/sql/change-tracking-enable.sql) the server tells us which tracked tables changed since the
+    /// last version; untracked tables are always re-read. Without it the answer is "unknown" and everything is read.
+    /// </summary>
+    public ChangeSignal Probe(string? token)
+    {
+        try
+        {
+            using var con = new SqlConnection(_cs);
+            con.Open();
+            long? version;
+            using (var cmd = con.CreateCommand())
+            {
+                cmd.CommandText = "SELECT CHANGE_TRACKING_CURRENT_VERSION()";
+                var v = cmd.ExecuteScalar();
+                version = v is null or DBNull ? null : Convert.ToInt64(v);
+            }
+            if (version is null) return new ChangeSignal(null, null, null);
+            if (token is null || !long.TryParse(token, out var last)) return new ChangeSignal(null, null, version.ToString());
+            if (last == version) return new ChangeSignal(false, new HashSet<string>(), version.ToString());
+
+            var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var tracked = new List<(string schema, string name)>();
+            using (var cmd = con.CreateCommand())
+            {
+                cmd.CommandText = "SELECT s.name, t.name FROM sys.change_tracking_tables c JOIN sys.tables t ON t.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = t.schema_id";
+                using var r = cmd.ExecuteReader();
+                while (r.Read()) tracked.Add((r.GetString(0), r.GetString(1)));
+            }
+            foreach (var (schema, name) in tracked)
+            {
+                using var cmd = con.CreateCommand();
+                cmd.CommandText = $"SELECT TOP 1 1 FROM CHANGETABLE(CHANGES [{schema}].[{name}], @v) AS ct";
+                cmd.Parameters.AddWithValue("@v", last);
+                if (cmd.ExecuteScalar() is not null) changed.Add(schema == "dbo" ? name : $"{schema}.{name}");
+            }
+            using (var cmd = con.CreateCommand())
+            {
+                cmd.CommandText = "SELECT s.name, t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_ms_shipped = 0 AND NOT EXISTS (SELECT 1 FROM sys.change_tracking_tables c WHERE c.object_id = t.object_id)";
+                using var r = cmd.ExecuteReader();
+                while (r.Read()) changed.Add(r.GetString(0) == "dbo" ? r.GetString(1) : $"{r.GetString(0)}.{r.GetString(1)}");
+            }
+            return new ChangeSignal(true, changed, version.ToString());
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"change tracking probe failed ({Label}): {ex.Message}");
+            return new ChangeSignal(null, null, null);
+        }
+    }
+
+    public void Snapshot(DataSnapshot into, SnapshotSettings settings, ISet<string>? hotTables, ISet<string>? onlyTables = null)
     {
         try
         {
@@ -158,7 +216,7 @@ public sealed class SqlServerSource : ISnapshotSource
                 while (r.Read()) pk.Add(r.GetString(0));
                 return pk;
             }
-            AdoDumper.Dump(con, Id, into, settings, hotTables, onlyHot, tables, Pk, (s, n) => $"[{s}].[{n}]");
+            AdoDumper.Dump(con, Id, into, settings, hotTables, onlyHot, tables, Pk, (s, n) => $"[{s}].[{n}]", onlyTables);
         }
         catch (Exception ex)
         {

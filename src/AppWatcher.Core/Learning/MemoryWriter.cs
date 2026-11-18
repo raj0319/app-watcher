@@ -5,7 +5,7 @@ namespace AppWatcher.Core.Learning;
 /// <summary>Writes memory/*.md from a LearnResult and keeps changelog.md. Memory files never contain raw data values.</summary>
 public static class MemoryWriter
 {
-    public static readonly string[] Files = { "data-model.md", "screens.md", "rules.md", "flows.md", "architecture.md" };
+    public static readonly string[] Files = { "data-model.md", "screens.md", "rules.md", "flows.md", "architecture.md", "health.md" };
 
     public static Dictionary<string, string> Render(LearnResult r) => new()
     {
@@ -14,6 +14,7 @@ public static class MemoryWriter
         ["rules.md"] = Rules(r),
         ["flows.md"] = Flows(r),
         ["architecture.md"] = Architecture(r),
+        ["health.md"] = Health(r),
     };
 
     public static List<string> Write(string memoryDir, LearnResult r)
@@ -63,8 +64,8 @@ public static class MemoryWriter
         sb.AppendLine($"# {title}");
         sb.AppendLine();
         sb.AppendLine($"App: **{r.AppName}**. {what}");
-        sb.AppendLine($"Last learn: {r.LearnedAt:yyyy-MM-dd HH:mm}. Evidence: {r.EventCount} events in {r.SessionCount} sessions, {r.EffectCount} effects, {r.Tables.Count} tables.");
-        sb.AppendLine("Every line ends with a confidence (seen N× = observed that many times; inferred = guessed from structure) and the evidence file to open.");
+        sb.AppendLine($"Last learn: {r.LearnedAt:yyyy-MM-dd HH:mm}{(r.Incremental ? " (incremental)" : "")}. Evidence: {r.EventCount} events in {r.SessionCount} sessions, {r.EffectCount} effects, {r.Tables.Count} tables.");
+        sb.AppendLine("Every line ends with a confidence (seen N× = observed that many times; candidate = fewer than 3 distinct observations; inferred = guessed from structure) and the evidence file to open.");
         sb.AppendLine();
         return sb.ToString();
     }
@@ -91,11 +92,19 @@ public static class MemoryWriter
             sb.AppendLine("|---|---|---|---|---|---|---|");
             foreach (var c in t.Columns)
             {
-                var maps = r.FieldMappings.Where(m => m.Table == t.Qualified && m.Column == c.Name).OrderByDescending(m => m.Evidence.Seen).ToList();
-                var from = maps.Count == 0 ? "" : string.Join("; ", maps.Take(2).Select(m => $"{m.Screen} › {m.Field} (seen {m.Evidence.Seen}×)"));
-                var conf = maps.Count == 0 ? "type inferred from values" : $"seen {maps[0].Evidence.Seen}×; {maps[0].Evidence.Pointer}";
+                var maps = r.FieldMappings.Where(m => m.Table == t.Qualified && m.Column == c.Name).OrderByDescending(m => m.SqlSeen).ThenByDescending(m => m.ValueHashes.Count).ToList();
+                var from = maps.Count == 0 ? "" : string.Join("; ", maps.Take(2).Select(m => $"{m.Screen} › {m.Field} ({m.Status})"));
+                var conf = maps.Count == 0 ? "type inferred from values" : $"{maps[0].Label}; {maps[0].Pointer}";
                 sb.AppendLine($"| {c.Name}{(c.IsPk ? " (PK)" : "")} | {c.Type} | {(c.Nullable ? "yes" : "no")} | `{c.Shape}` | {c.Distinct} | {from} | {conf} |");
             }
+            sb.AppendLine();
+        }
+        if (r.SqlWrites.Count > 0)
+        {
+            sb.AppendLine("## Statements captured from SQL (exact)");
+            sb.AppendLine();
+            foreach (var w in r.SqlWrites)
+                sb.AppendLine($"- `{w.Table}` {w.Kind} ({string.Join(", ", w.Columns.OrderBy(x => x).Take(20))}) — seen {w.Evidence.Seen}×; evidence: {w.Evidence.Pointer}");
             sb.AppendLine();
         }
         sb.AppendLine("## Relations (foreign key candidates)");
@@ -118,7 +127,7 @@ public static class MemoryWriter
         sb.AppendLine();
         foreach (var s in r.Screens)
         {
-            var key = Titles.Key(s.Title);
+            var key = s.Title;
             sb.AppendLine($"## {s.Title}");
             sb.AppendLine($"Controls: {s.ControlCount}. Visits: {s.Visits}. Record: {s.File}");
             sb.AppendLine();
@@ -127,7 +136,11 @@ public static class MemoryWriter
             {
                 sb.AppendLine("**Tables written:**");
                 foreach (var w in writes)
-                    sb.AppendLine($"- `{w.Table}` — {(w.Always ? "always" : "sometimes")} ({w.Count} of {w.ScreenEffects} saves); evidence: {w.Evidence.Pointer}");
+                {
+                    var sql = w.SqlCount > 0 ? $"; {w.SqlCount} SQL statements" : "";
+                    var diff = w.ScreenEffects > 0 ? $"{(w.Always ? "always" : "sometimes")} ({w.Count} of {w.ScreenEffects} saves{sql})" : $"from SQL statements ({w.SqlCount})";
+                    sb.AppendLine($"- `{w.Table}` — {diff}; evidence: {w.Evidence.Pointer}");
+                }
                 sb.AppendLine();
             }
             var maps = r.FieldMappings.Where(m => m.Screen == key).ToList();
@@ -137,9 +150,9 @@ public static class MemoryWriter
             if (fields.Count == 0) sb.AppendLine("| (no input fields seen) | | | |");
             foreach (var f in fields)
             {
-                var fm = maps.Where(m => m.Field == f).OrderByDescending(m => m.Evidence.Seen).ToList();
+                var fm = maps.Where(m => m.Field == f).ToList();
                 if (fm.Count == 0) { sb.AppendLine($"| {f} | (not mapped yet) | inferred | {s.File} |"); continue; }
-                foreach (var m in fm.Take(3)) sb.AppendLine($"| {f} | `{m.Table}`.{m.Column} | seen {m.Evidence.Seen}× | {m.Evidence.Pointer} |");
+                foreach (var m in fm.Take(3)) sb.AppendLine($"| {f} | `{m.Table}`.{m.Column} | {m.Label} | {m.Pointer} |");
             }
             if (s.Actions.Count > 0) sb.AppendLine().AppendLine($"Actions: {string.Join(", ", s.Actions.Take(20))}");
             sb.AppendLine();
@@ -162,12 +175,13 @@ public static class MemoryWriter
         sb.AppendLine();
         sb.AppendLine("## Calculated columns");
         sb.AppendLine();
-        if (r.Formulas.Count == 0) sb.AppendLine("_No formula fits yet._");
+        if (r.Formulas.Count == 0) sb.AppendLine("_No formula explains at least 95% of the rows of any column yet._");
         foreach (var f in r.Formulas)
         {
-            var untyped = f.UntypedChanges > 0 ? $"changed without being typed {f.UntypedChanges}×; " : "";
             var alt = f.Alternatives.Count == 0 ? "" : $" (also fits: {string.Join("; ", f.Alternatives)})";
-            sb.AppendLine($"- `{f.Table}`.{f.Column}: **{f.Expression}** explains {f.Explained} of {f.Tested} rows{(f.Rounded2 ? ", rounded to 2 places" : "")}{alt} — {untyped}{f.Evidence}");
+            var exc = f.Residual == 0 ? "" : $"; has exceptions: {f.Residual} row{(f.Residual == 1 ? "" : "s")} (keys {string.Join(", ", f.ResidualKeys)})";
+            var untyped = f.UntypedChanges > 0 ? $"changed without being typed {f.UntypedChanges}×; " : "";
+            sb.AppendLine($"- `{f.Table}`.{f.Column}: **{f.Expression}** [{f.Method}] explains {f.Explained} of {f.Tested} rows{(f.Rounded2 ? ", rounded to 2 places" : "")}{alt}{exc} — {untyped}{f.Evidence}");
         }
         sb.AppendLine();
         sb.AppendLine("## Numbering sequences");
@@ -189,17 +203,17 @@ public static class MemoryWriter
         {
             sb.AppendLine($"### `{f.Table}`.{f.Column} — {f.Evidence}");
             sb.AppendLine($"States in order: {string.Join(" → ", f.States)}");
-            if (f.Distribution.Count > 0) sb.AppendLine($"Rows per state now: {string.Join(", ", f.Distribution.OrderByDescending(d => d.Value).Select(d => $"{d.Key}={d.Value}"))}");
-            if (f.Initial.Count > 0) sb.AppendLine($"New rows start as: {string.Join(", ", f.Initial.OrderByDescending(d => d.Value).Select(d => $"{d.Key} ({d.Value}×)"))}");
+            if (f.Distribution.Count > 0) sb.AppendLine($"Rows per state now: {string.Join(", ", f.Distribution.OrderByDescending(d => d.Value).ThenBy(d => d.Key).Select(d => $"{d.Key}={d.Value}"))}");
+            if (f.Initial.Count > 0) sb.AppendLine($"New rows start as: {string.Join(", ", f.Initial.OrderByDescending(d => d.Value).ThenBy(d => d.Key).Select(d => $"{d.Key} ({d.Value}×)"))}");
             sb.AppendLine();
             sb.AppendLine("```mermaid");
             sb.AppendLine("stateDiagram-v2");
-            foreach (var i in f.Initial.Keys) sb.AppendLine($"    [*] --> {Id(i)}");
-            foreach (var t in f.Transitions) sb.AppendLine($"    {Id(t.From)} --> {Id(t.To)} : {t.Evidence.Seen}x");
+            foreach (var i in f.Initial.Keys.OrderBy(x => x)) sb.AppendLine($"    [*] --> {Id(i)}");
+            foreach (var t in f.Transitions) sb.AppendLine($"    {Id(t.From)} --> {Id(t.To)} : {t.Evidence.Seen}x{(t.Rare ? " (rare)" : "")}");
             sb.AppendLine("```");
             sb.AppendLine();
-            foreach (var t in f.Transitions) sb.AppendLine($"- {t.From} → {t.To}: seen {t.Evidence.Seen}×; evidence: {t.Evidence.Pointer}");
-            if (f.NeverSeen.Count > 0) sb.AppendLine($"- never seen: {string.Join(", ", f.NeverSeen.Select(n => $"{n.from}→{n.to}"))}");
+            foreach (var t in f.Transitions) sb.AppendLine($"- {t.From} → {t.To}: seen {t.Evidence.Seen}×{(t.Rare ? " (rare)" : "")}; evidence: {t.Evidence.Pointer}");
+            if (f.NeverSeen.Count > 0) sb.AppendLine($"- not allowed (inferred, never seen): {string.Join(", ", f.NeverSeen.Select(n => $"{n.from}→{n.to}"))}");
             sb.AppendLine();
         }
         sb.AppendLine("## User flows (window sequences)");
@@ -220,16 +234,18 @@ public static class MemoryWriter
                 sb.AppendLine();
             }
         }
-        sb.AppendLine("## Navigation graph");
+        sb.AppendLine("## Navigation graph (directly-follows)");
         sb.AppendLine();
         if (r.Navigation.Count == 0) sb.AppendLine("_Nothing yet._");
         else
         {
+            sb.AppendLine("Edges: how often users went from one window to the next, and the median time spent on the first window before moving on.");
+            sb.AppendLine();
             sb.AppendLine("```mermaid");
             sb.AppendLine("flowchart LR");
             var ids = new Dictionary<string, string>();
-            foreach (var e in r.Navigation.Take(60))
-                sb.AppendLine($"    {NodeId(e.From, ids)}[\"{Cell(e.From)}\"] -->|{e.Count}| {NodeId(e.To, ids)}[\"{Cell(e.To)}\"]");
+            foreach (var e in r.Navigation.Take(80))
+                sb.AppendLine($"    {NodeId(e.From, ids)}[\"{Cell(e.From)}\"] -->|\"{e.Count}× · {Duration(e.MedianMs)}\"| {NodeId(e.To, ids)}[\"{Cell(e.To)}\"]");
             sb.AppendLine("```");
         }
         sb.AppendLine();
@@ -254,10 +270,10 @@ public static class MemoryWriter
         sb.AppendLine();
         int seen(IEnumerable<Evidence> e) => e.Count(x => !x.Inferred && x.Seen > 0);
         int inf(IEnumerable<Evidence> e) => e.Count(x => x.Inferred || x.Seen == 0);
-        sb.AppendLine("| Finding | Seen (observed) | Inferred (guessed) |");
+        sb.AppendLine("| Finding | Seen (observed) | Candidate / inferred |");
         sb.AppendLine("|---|---|---|");
         sb.AppendLine($"| Screen → table writes | {r.ScreenWrites.Count} | 0 |");
-        sb.AppendLine($"| Field → column mappings | {r.FieldMappings.Count} | 0 |");
+        sb.AppendLine($"| Field → column mappings | {r.FieldMappings.Count(m => m.IsSeen)} | {r.FieldMappings.Count(m => !m.IsSeen)} candidates |");
         sb.AppendLine($"| Relations | {seen(r.Relations.Select(x => x.Evidence))} | {inf(r.Relations.Select(x => x.Evidence))} |");
         sb.AppendLine($"| Calculated columns | {seen(r.Formulas.Select(x => x.Evidence))} | {inf(r.Formulas.Select(x => x.Evidence))} |");
         sb.AppendLine($"| Validation rules | {r.Rules.Count} | 0 |");
@@ -265,7 +281,7 @@ public static class MemoryWriter
         sb.AppendLine($"| Sequences | {seen(r.Sequences.Select(x => x.Evidence))} | {inf(r.Sequences.Select(x => x.Evidence))} |");
         sb.AppendLine($"| Column types | 0 | {r.Tables.Sum(t => t.Columns.Count)} (from values) |");
         sb.AppendLine();
-        sb.AppendLine("Seen means the watcher recorded the cause and the effect together at least once. Inferred means the structure suggests it but no user action proved it. Treat inferred lines as questions for the architect.");
+        sb.AppendLine("Seen means the watcher recorded the cause and the effect together at least once (field mappings: at least 3 distinct values, or a captured SQL statement). Inferred means the structure suggests it but no user action proved it. Treat inferred and candidate lines as questions for the architect.");
         sb.AppendLine();
         var unwritten = r.Tables.Where(t => t.WrittenEvidence.Seen == 0 && !t.Skipped).Select(t => t.Qualified).ToList();
         if (unwritten.Count > 0) sb.AppendLine($"Tables never seen written ({unwritten.Count}): {string.Join(", ", unwritten.Take(30))}.");
@@ -277,6 +293,27 @@ public static class MemoryWriter
             sb.AppendLine("## Warnings");
             foreach (var w in r.Warnings) sb.AppendLine($"- {w}");
         }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public static string Health(LearnResult r)
+    {
+        var h = r.Health;
+        var sb = new StringBuilder(Header(r, "Health (learned)", "How much evidence there is and what would make the memory more accurate."));
+        sb.AppendLine("| Measure | Value |");
+        sb.AppendLine("|---|---|");
+        sb.AppendLine($"| Days with activity | {h.Days} |");
+        sb.AppendLine($"| Events per day | {h.EventsPerDay:0} |");
+        sb.AppendLine($"| Save-type presses seen | {h.TriggerInvokes} |");
+        sb.AppendLine($"| Data checks (effects) | {h.EffectsTotal}, {h.EffectsWithDiff} with a change |");
+        sb.AppendLine($"| Saves with a data diff | {h.SavesWithDiffPct:0}% |");
+        sb.AppendLine($"| Fields typed into | {h.FieldsSeen} |");
+        sb.AppendLine($"| Fields mapped to a column | {h.FieldsMapped} seen + {h.FieldsCandidate} candidates ({h.FieldsMappedPct:0}% seen) |");
+        sb.AppendLine();
+        sb.AppendLine("## What would improve accuracy");
+        sb.AppendLine();
+        foreach (var a in h.Advice) sb.AppendLine($"- {a}");
         sb.AppendLine();
         return sb.ToString();
     }

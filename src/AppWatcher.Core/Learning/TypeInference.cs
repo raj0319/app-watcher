@@ -5,7 +5,7 @@ namespace AppWatcher.Core.Learning;
 
 public static class TypeInference
 {
-    public static List<TableInfo> Describe(DataSnapshot? latest, List<EffectRecord> effects)
+    public static List<TableInfo> Describe(DataSnapshot? latest, Dictionary<string, Evidence> tableWrites)
     {
         var tables = new List<TableInfo>();
         if (latest is not null)
@@ -17,21 +17,17 @@ public static class TypeInference
                     foreach (var c in t.Columns) ti.Columns.Add(Column(c, rows, t.PrimaryKey.Contains(c)));
                     tables.Add(ti);
                 }
-
-        // tables only ever seen in effects (e.g. snapshot missing)
-        foreach (var fx in effects)
-            foreach (var td in fx.Diff.Tables)
+        foreach (var (q, ev) in tableWrites)
+        {
+            var ti = tables.FirstOrDefault(x => x.Qualified == q);
+            if (ti is null)
             {
-                var ti = tables.FirstOrDefault(x => x.Db == td.Db && x.Table == td.Table);
-                if (ti is null)
-                {
-                    ti = new TableInfo { Db = td.Db, Table = td.Table, Note = "seen only in effects" };
-                    var rows = td.Added.Values.Concat(td.ChangedRows.Values).ToList();
-                    foreach (var c in rows.SelectMany(r => r.Keys).Distinct()) ti.Columns.Add(Column(c, rows, false));
-                    tables.Add(ti);
-                }
-                ti.WrittenEvidence.Add(fx.Source);
+                var idx = q.IndexOf(" / ", StringComparison.Ordinal);
+                ti = new TableInfo { Db = idx < 0 ? "" : q[..idx], Table = idx < 0 ? q : q[(idx + 3)..], Note = "seen only in effects" };
+                tables.Add(ti);
             }
+            ti.WrittenEvidence = new Evidence { Seen = ev.Seen, Files = ev.Files.ToList() };
+        }
         return tables.OrderBy(t => t.Qualified).ToList();
     }
 
@@ -53,7 +49,7 @@ public static class TypeInference
             if (v is "true" or "false" or "0" or "1") bools++;
             if (long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) { ints++; continue; }
             if (decimal.TryParse(v, NumberStyles.Number, CultureInfo.InvariantCulture, out _)) { decs++; continue; }
-            if (DateTime.TryParseExact(v, new[] { "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-ddTHH:mm:ss", "yyyy-MM-ddTHH:mm:ss.fff" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+            if (DateTime.TryParseExact(v, new[] { "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-ddTHH:mm:ss", "yyyy-MM-ddTHH:mm:ss.fff" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             {
                 if (v.Length <= 10) dates++; else datetimes++;
             }
@@ -72,7 +68,7 @@ public static class TypeInference
         {
             Name = name, Type = type, Nullable = nulls > 0, IsPk = isPk,
             Distinct = distinct.Count,
-            Shape = shapes.Count == 0 ? "" : shapes.OrderByDescending(s => s.Value).First().Key,
+            Shape = shapes.Count == 0 ? "" : shapes.OrderByDescending(s => s.Value).ThenBy(s => s.Key).First().Key,
         };
     }
 }

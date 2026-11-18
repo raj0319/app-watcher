@@ -9,8 +9,14 @@ public static class ValidationRuleLearner
 
     public static List<ValidationRule> Learn(List<UiEvent> events)
     {
-        var rules = new Dictionary<(string, string, string, string), ValidationRule>();
-        var sorted = events.OrderBy(e => e.T).ToList();
+        var state = new LearnState();
+        foreach (var s in FlowLearner.Sessions(events)) Accumulate(state, s);
+        return Finalize(state);
+    }
+
+    public static void Accumulate(LearnState state, List<UiEvent> session)
+    {
+        var sorted = session;
         for (var i = 0; i < sorted.Count; i++)
         {
             var d = sorted[i];
@@ -26,13 +32,15 @@ public static class ValidationRuleLearner
             var field = cause.Act == Acts.Invoke ? "on " + cause.FieldKey : cause.FieldKey;
             var pattern = cause.Act == Acts.Invoke ? "(button)" : ValuePattern.Of(cause.Val);
             var message = MessageKey(d);
-            var key = (screen, field, pattern, message);
-            if (!rules.TryGetValue(key, out var r))
-                rules[key] = r = new ValidationRule { Screen = screen, Field = field, Pattern = pattern, Message = message };
+            var key = LearnState.Key(screen, field, pattern, message);
+            if (!state.Rules.TryGetValue(key, out var r))
+                state.Rules[key] = r = new ValidationRule { Screen = screen, Field = field, Pattern = pattern, Message = message };
             r.Evidence.Add(d.Source);
         }
-        return rules.Values.OrderBy(r => r.Screen).ThenByDescending(r => r.Evidence.Seen).ToList();
     }
+
+    public static List<ValidationRule> Finalize(LearnState state) =>
+        state.Rules.Values.OrderBy(r => r.Screen).ThenByDescending(r => r.Evidence.Seen).ThenBy(r => r.Field).ThenBy(r => r.Message).ToList();
 
     public static string MessageKey(UiEvent dialog)
     {

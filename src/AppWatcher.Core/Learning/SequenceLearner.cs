@@ -11,45 +11,56 @@ public static partial class SequenceLearner
 
     public static List<Sequence> Learn(DataSnapshot? latest, List<EffectRecord> effects)
     {
-        var result = new Dictionary<(string, string), Sequence>();
+        var state = new LearnState();
+        foreach (var fx in effects.OrderBy(f => f.T)) AccumulateEffect(state, fx);
+        return Finalize(state, latest);
+    }
 
-        // evidence from effects: new rows continue the previous maximum by one
-        var lastMax = new Dictionary<(string, string), long>();
-        foreach (var fx in effects.OrderBy(f => f.T))
-            foreach (var td in fx.Diff.Tables)
+    /// <summary>New rows that continue the previous maximum by one are evidence. Effects must arrive in time order.</summary>
+    public static void AccumulateEffect(LearnState state, EffectRecord fx)
+    {
+        foreach (var td in fx.Diff.Tables)
+        {
+            if (td.Added.Count == 0) continue;
+            var cols = td.Added.Values.First().Keys;
+            foreach (var col in cols)
             {
-                if (td.Added.Count == 0) continue;
-                var cols = td.Added.Values.First().Keys;
-                foreach (var col in cols)
+                var nums = new List<long>();
+                string? prefix = null; var ok = true;
+                foreach (var row in td.Added.Values)
                 {
-                    var nums = new List<long>();
-                    string? prefix = null; var ok = true;
-                    foreach (var row in td.Added.Values)
-                    {
-                        if (!row.TryGetValue(col, out var v) || !TrySplit(v, out var p, out var n)) { ok = false; break; }
-                        if (prefix is null) prefix = p; else if (prefix != p) { ok = false; break; }
-                        nums.Add(n);
-                    }
-                    if (!ok || nums.Count == 0) continue;
-                    nums.Sort();
-                    var consecutive = nums.Count == 1 || nums.Zip(nums.Skip(1), (a, b) => b - a).All(d => d == 1);
-                    if (!consecutive) continue;
-                    var key = (td.QualifiedName, col);
-                    if (lastMax.TryGetValue(key, out var prev) && nums[0] == prev + 1)
-                    {
-                        if (!result.TryGetValue(key, out var s)) result[key] = s = new Sequence { Table = td.QualifiedName, Column = col, Prefix = prefix };
-                        s.Evidence.Add(fx.Source);
-                    }
-                    else if (nums.Count >= 2)
-                    {
-                        if (!result.TryGetValue(key, out var s)) result[key] = s = new Sequence { Table = td.QualifiedName, Column = col, Prefix = prefix };
-                        s.Evidence.Add(fx.Source);
-                    }
-                    lastMax[key] = Math.Max(nums[^1], lastMax.GetValueOrDefault(key));
+                    if (!row.TryGetValue(col, out var v) || !TrySplit(v, out var p, out var n)) { ok = false; break; }
+                    if (prefix is null) prefix = p; else if (prefix != p) { ok = false; break; }
+                    nums.Add(n);
                 }
+                if (!ok || nums.Count == 0) continue;
+                nums.Sort();
+                var consecutive = nums.Count == 1 || nums.Zip(nums.Skip(1), (a, b) => b - a).All(d => d == 1);
+                if (!consecutive) continue;
+                var key = LearnState.Key(td.QualifiedName, col);
+                state.Sequences.TryGetValue(key, out var acc);
+                var continues = acc is not null && acc.LastMax != long.MinValue && nums[0] == acc.LastMax + 1;
+                if (continues || nums.Count >= 2)
+                {
+                    if (acc is null) state.Sequences[key] = acc = new SeqAcc { Prefix = prefix };
+                    acc.Evidence.Add(fx.Source);
+                }
+                if (acc is null) state.Sequences[key] = acc = new SeqAcc { Prefix = prefix };
+                acc.LastMax = Math.Max(nums[^1], acc.LastMax);
             }
+        }
+    }
 
-        // density check on the latest snapshot
+    public static List<Sequence> Finalize(LearnState state, DataSnapshot? latest)
+    {
+        var result = new Dictionary<string, Sequence>();
+        foreach (var (key, acc) in state.Sequences)
+        {
+            if (acc.Evidence.Seen == 0) continue;
+            var parts = key.Split('\u0001');
+            result[key] = new Sequence { Table = parts[0], Column = parts[1], Prefix = acc.Prefix, Evidence = new Evidence { Seen = acc.Evidence.Seen, Files = acc.Evidence.Files.ToList() } };
+        }
+
         if (latest is not null)
             foreach (var (db, ts) in latest.Databases)
                 foreach (var (name, t) in ts)
@@ -59,24 +70,23 @@ public static partial class SequenceLearner
                     foreach (var col in t.Columns)
                     {
                         var nums = new HashSet<long>();
-                        string? prefix = null; var ok = true; var n = 0;
+                        string? prefix = null; var ok = true;
                         foreach (var row in t.Rows.Values)
                         {
                             if (!row.TryGetValue(col, out var v) || string.IsNullOrEmpty(v)) continue;
-                            n++;
                             if (!TrySplit(v, out var p, out var num)) { ok = false; break; }
                             if (prefix is null) prefix = p; else if (prefix != p) { ok = false; break; }
                             if (!nums.Add(num)) { ok = false; break; }
                         }
                         if (!ok || nums.Count < 5) continue;
                         var span = nums.Max() - nums.Min() + 1;
-                        var dense = (double)nums.Count / span >= 0.9;
-                        if (!dense) continue;
-                        if (!result.TryGetValue((q, col), out var s))
+                        if ((double)nums.Count / span < 0.9) continue;
+                        var key = LearnState.Key(q, col);
+                        if (!result.TryGetValue(key, out var s))
                         {
                             s = new Sequence { Table = q, Column = col, Prefix = prefix };
                             s.Evidence.Inferred = true;
-                            result[(q, col)] = s;
+                            result[key] = s;
                         }
                         s.Dense = true;
                         if (!s.Evidence.Files.Contains("snapshots/before.json")) s.Evidence.Files.Add("snapshots/before.json");
