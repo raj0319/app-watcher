@@ -175,6 +175,21 @@ public static class MemoryWriter
                 foreach (var m in fm.Take(3)) sb.AppendLine($"| {Cell(f)} | {typed} | {type} | {shapes} | `{m.Table}`.{m.Column} | {m.Label} | {m.Pointer} |");
             }
             if (s.NeverUsed.Count > 0 && s.NeverUsed.Count < s.Fields.Count) sb.AppendLine().AppendLine($"Never typed into ({s.NeverUsed.Count}): {string.Join(", ", s.NeverUsed.Take(25).Select(Cell))}{(s.NeverUsed.Count > 25 ? ", ..." : "")}");
+            if (s.FieldLookups.Count > 0)
+            {
+                sb.AppendLine().AppendLine("**Lookups (suggestion lists while typing):**");
+                foreach (var (f, n) in s.FieldLookups.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
+                    sb.AppendLine($"- {Cell(f)}: shows up to {s.LookupSizes.GetValueOrDefault(f)} suggestions{(s.LookupShapes.TryGetValue(f, out var sh) && sh.Count > 0 ? $", shaped like {string.Join(", ", sh.Take(3).Select(x => $"`{x}`"))}" : "")} — seen {n}×; evidence: events (dropdown)");
+            }
+            if (s.ActionResults.Count > 0)
+            {
+                sb.AppendLine().AppendLine("**What fills a grid (results after an action):**");
+                foreach (var (a, ri) in s.ActionResults.OrderByDescending(x => x.Value.Seen).ThenBy(x => x.Key))
+                {
+                    var rows = ri.MinRows == ri.MaxRows ? $"{ri.MaxRows} rows" : $"{ri.MinRows} to {ri.MaxRows} rows";
+                    sb.AppendLine($"- after {Cell(a)}: columns {string.Join(", ", ri.Columns.Take(15).Select(Cell))}; {rows}{(ri.EmptySeen > 0 ? $", empty {ri.EmptySeen}×" : "")} — seen {ri.Seen}×; evidence: events (result)");
+                }
+            }
             if (s.Actions.Count > 0)
             {
                 sb.AppendLine().AppendLine($"Actions: {string.Join(", ", s.Actions.Take(25).Select(a => s.Shortcuts.TryGetValue(a, out var k) ? $"{Cell(a)} [{k}]" : Cell(a)))}");

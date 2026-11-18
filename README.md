@@ -5,8 +5,8 @@ it, and slowly writes down how that app works: its screens, fields, tables, rule
 as a quiet architect taking notes behind the user.
 
 It does not watch other programs, it never shows a pop-up, and it never changes anything in the app it
-watches. It keeps one picture of each screen of that app (the app's window only, never the desktop), and
-that can be switched off.
+watches. It keeps pictures of the app's own window, one per state of each screen (never the desktop, never
+the same state twice), and that can be switched off.
 
 ## What you get
 
@@ -29,8 +29,9 @@ Every line also names the evidence file to open. `changelog.md` lists what chang
 The memory files never contain values that users typed. They contain names, shapes and counts. Window
 titles have their quoted parts masked ("Customer - 0002776 "Nate Test"" becomes "Customer - # "…"").
 
-Next to the memory: `screens\<title>.md` with the control tree of every screen and `screens\shots\<title>.png`,
-one picture per screen, so a person can compare the old app and the new one side by side.
+Next to the memory: `screens\<title>.md` with the control tree of every screen and `screens\shots\<screen>\`,
+one picture per state of that screen with an index saying which action led to it, so a person or an AI can
+compare the old app and the new one state by state.
 
 ## Try it first
 
@@ -79,8 +80,12 @@ Only inside the chosen app, and only while it is the window in front:
 - which window or tab document is open (its title) and the control tree of each distinct screen, once
   (the same screen under "Invoice 1023" and "Invoice 1024" is stored once, as "Invoice #"), with the
   labels a person would use (the text next to a field, or its cleaned internal name)
-- one picture of each distinct screen, the app's window only, taken the first time that screen is seen
-  (never for login or password windows, never for excluded windows; off on the Privacy tab)
+- pictures of the app's window, filed per screen: one for each distinct state (first seen, after each
+  press, tab switch, typed value, dialog, suggestion list), never the same state twice, capped per screen
+  (never for login or password windows, never for excluded windows; Privacy tab: off, first time only, or every state)
+- the suggestion lists that open while typing (autocomplete, lookups): the field, the text typed so far,
+  and the suggestions shown
+- what a grid shows right after a search, filter or open: its column names and first rows
 - which buttons and menu items were pressed, seen four ways so that apps whose controls stay silent are
   covered too (UI Automation, the older accessibility events, a menu closing after an item was chosen, or a
   button focus followed by a window change), which fields got focus, what was selected or ticked
@@ -137,7 +142,8 @@ no network, just rules:
   "field X fills column Y". After three distinct values it is "seen"; before that it is a "candidate".
   A captured SQL statement makes it "seen" at once and wins over value matching when they disagree.
 - **Fields**: per field, how often it was typed into, the shapes of the values (never the values), the
-  kind of value (date, money, integer, code, text), and which fields are never used.
+  kind of value (date, money, integer, code, text), which fields are never used, which fields show a
+  suggestion list while typing and how big it is, and what grid each action fills (columns, row counts).
 - **Relations**: a value written to one table that exists as a key in another is a link (foreign key candidate).
 - **Calculated fields**: tried in order until one explains 95% of the rows: a copy of another column, the
   sum of child rows, the product of two columns, a percentage of a column (rates seen in the data plus the

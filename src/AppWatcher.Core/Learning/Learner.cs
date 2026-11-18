@@ -227,6 +227,28 @@ public static class Learner
                 pats[pat] = pats.GetValueOrDefault(pat) + 1;
             }
             if (e.Act == Acts.Invoke && !string.IsNullOrEmpty(e.Name) && !si.Actions.Contains(e.Name)) si.Actions.Add(e.Name);
+            if (e.Act == Acts.Dropdown)
+            {
+                var f = e.FieldKey;
+                si.FieldLookups[f] = si.FieldLookups.GetValueOrDefault(f) + 1;
+                var n = e.Items?.Count ?? 0;
+                if (n > si.LookupSizes.GetValueOrDefault(f)) si.LookupSizes[f] = n;
+                if (!si.LookupShapes.TryGetValue(f, out var shapes)) si.LookupShapes[f] = shapes = new List<string>();
+                foreach (var item in (e.Items ?? new()).Take(5)) { var sh = Masking.Shape(item); if (shapes.Count < 6 && !shapes.Contains(sh)) shapes.Add(sh); }
+                if (!si.Fields.Contains(f)) si.Fields.Add(f);
+            }
+            if (e.Act == Acts.Result && !string.IsNullOrEmpty(e.Name))
+            {
+                var items = e.Items ?? new();
+                var columns = items.Count > 0 ? items[0].Split(" | ").Select(c => c.Trim()).Where(c => c.Length > 0).ToList() : new List<string>();
+                var rows = Math.Max(0, items.Count - 1);
+                var rkey = e.Name + (string.IsNullOrEmpty(e.Val) ? "" : " › " + e.Val);
+                if (!si.ActionResults.TryGetValue(rkey, out var ri)) si.ActionResults[rkey] = ri = new ResultInfo { Grid = e.Val ?? "" };
+                ri.Seen++;
+                if (columns.Count > ri.Columns.Count) ri.Columns = columns;
+                ri.MinRows = Math.Min(ri.MinRows, rows); ri.MaxRows = Math.Max(ri.MaxRows, rows);
+                if (rows == 0) ri.EmptySeen++;
+            }
         }
     }
 
@@ -270,6 +292,9 @@ public static class Learner
                 FieldTyped = new Dictionary<string, int>(si.FieldTyped), FieldShapes = si.FieldShapes.ToDictionary(k => k.Key, k => k.Value.ToList()),
                 FieldPatterns = si.FieldPatterns.ToDictionary(k => k.Key, k => new Dictionary<string, int>(k.Value)),
                 MenuPaths = new Dictionary<string, int>(si.MenuPaths),
+                FieldLookups = new Dictionary<string, int>(si.FieldLookups), LookupSizes = new Dictionary<string, int>(si.LookupSizes),
+                LookupShapes = si.LookupShapes.ToDictionary(k => k.Key, k => k.Value.ToList()),
+                ActionResults = si.ActionResults.ToDictionary(k => k.Key, k => new ResultInfo { Grid = k.Value.Grid, Columns = k.Value.Columns.ToList(), Seen = k.Value.Seen, MinRows = k.Value.MinRows, MaxRows = k.Value.MaxRows, EmptySeen = k.Value.EmptySeen }),
             };
         foreach (var rec in input.Screens)
         {

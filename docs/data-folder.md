@@ -16,11 +16,12 @@ another program is in front. After a merge from another PC the file is `<yyyy-MM
 | `ct` | control type from UI Automation (Button, Edit, ComboBox, MenuItem, Document, Window, ...) |
 | `name` | the control's label: its own Name, else the text left of or above it, else its cleaned AutomationId |
 | `aid` | the control's AutomationId, when the app sets one (raw) |
-| `act` | `focus`, `open`, `close`, `invoke` (button or menu pressed), `select`, `value` (a field changed), `foreground`, `dialog` (a message window appeared; `val` holds its text), `start`, `stop` |
+| `act` | `focus`, `open`, `close`, `invoke` (button or menu pressed), `select`, `value` (a field changed), `foreground`, `dialog` (a message window appeared; `val` holds its text), `dropdown` (a suggestion list opened while typing into `name`; `val` is the text typed so far, `items` the suggestions), `result` (what a grid showed right after the action in `name`; `val` is the grid, `items` the header line then the first rows, cells joined by " \| "), `start`, `stop` |
 | `how` | for `invoke`: how the press was seen: `uia` (Invoke event), `msaa` (older accessibility event or pressed state), `menu` (a menu closed after the item was highlighted), `inferred` (focus on a button followed within half a second by a window change), `toggle` (check box) |
 | `val` | the new value for `value` events (`***` for password-like fields, text cut at 500 characters), the message text for `dialog` events, `on`/`off` for toggles |
 | `dt` | milliseconds since the previous event |
 | `fx` | the effects file written for this event, when there is one |
+| `items` | for `dropdown` and `result` events: the suggestions, or the grid's header and first rows |
 
 The `start` event's `val` holds hashes of the Windows user and machine names (`user:… machine:… version:…`),
 never the names, so a merged memory can count users and PCs. Typing is coalesced: only the final value of
@@ -36,9 +37,13 @@ wrappers collapsed to one field), an Actions table with shortcuts, then the raw 
 `| Depth | Type | Name | AutomationId | Position |`. Grids keep their headers and first rows plus one
 note row with the row count and column names.
 
-`screens/shots/<title>.png` is the one picture of that screen (the app's window only, taken the first
-time the screen was seen, replaced with the record). Off on the Privacy tab if not wanted; never taken for
-login or password windows or for excluded windows. The record's `Screenshot:` line names it.
+`screens/shots/<screen>/` holds the pictures of that screen, page-wise: `01-first-seen.png`, then one per
+distinct state, `02-after-press-search.png`, `03-after-type-customer-code.png`, `04-dropdown-city.png`,
+`05-dialog-validation.png`, and an `index.md` listing each picture with the action that caused it, the time
+and the event. Only the app's own window is pictured, never the desktop. The same state (judged by a coarse
+hash of the picture, so a blinking caret does not count) is never stored twice; the picture before an action
+is the previous row. Caps: 25 per screen and 500 MB per app by default (Privacy tab: off / first / actions;
+never for login or password windows or for excluded windows). The screen record's `Screenshot:` line names the first one.
 
 `screens/index.json` maps the structure hash of each tree (types, names, automation ids; no values or
 positions) to its file, its kind and every title the screen was seen under, so "Invoice 1023" and

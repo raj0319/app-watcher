@@ -28,10 +28,12 @@ public static class Exporter
         // the one picture per screen, when screenshots are on
         var shots = Path.Combine(paths.Screens, "shots");
         if (Directory.Exists(shots))
-        {
-            Directory.CreateDirectory(Path.Combine(raw, "screens", "shots"));
-            foreach (var f in Directory.GetFiles(shots, "*.png")) File.Copy(f, Path.Combine(raw, "screens", "shots", Path.GetFileName(f)), true);
-        }
+            foreach (var f in Directory.EnumerateFiles(shots, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.EndsWith("index.md", StringComparison.OrdinalIgnoreCase)))
+            {
+                var dest = Path.Combine(raw, "screens", "shots", Path.GetRelativePath(shots, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(f, dest, true);
+            }
 
         // tasks: one per learned flow
         foreach (var flow in result.Flows)
@@ -134,6 +136,15 @@ public static class Exporter
             sb.AppendLine($"- Distinct values seen: {(vals.Count == 0 ? "(none typed)" : string.Join(", ", vals.Select(x => $"`{Masking.ForExport(x)}`")))}");
             var maps = r.FieldMappings.Where(m => m.Screen == key && m.Field == f).ToList();
             foreach (var m in maps) sb.AppendLine($"- Writes column `{m.Table}`.{m.Column} (seen {m.Evidence.Seen}×)");
+            if (s.FieldLookups.TryGetValue(f, out var lk))
+                sb.AppendLine($"- Suggestion list while typing: seen {lk}×, up to {s.LookupSizes.GetValueOrDefault(f)} items{(s.LookupShapes.TryGetValue(f, out var sh) && sh.Count > 0 ? $", shaped like {string.Join(", ", sh.Take(3).Select(x => $"`{x}`"))}" : "")} (the items are in events/*.jsonl, act = dropdown)");
+            sb.AppendLine();
+        }
+        if (s.ActionResults.Count > 0)
+        {
+            sb.AppendLine("## Results after actions");
+            foreach (var (a, ri) in s.ActionResults.OrderByDescending(x => x.Value.Seen))
+                sb.AppendLine($"- After {a}: grid columns {string.Join(", ", ri.Columns.Take(15))}; {(ri.MinRows == ri.MaxRows ? $"{ri.MaxRows} rows" : $"{ri.MinRows} to {ri.MaxRows} rows")} (seen {ri.Seen}×; first rows in events/*.jsonl, act = result)");
             sb.AppendLine();
         }
         sb.AppendLine("## Rules learned");

@@ -51,7 +51,7 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _tabs = new() { Text = "Record each selected tab document as a screen of its own (Window › Tab)", AutoSize = true };
     // Privacy tab
     private readonly CheckBox _maskTitles = new() { Text = "Mask quoted parts of window titles and tab labels (\"ACME INC\" becomes \"…\") in memory and export files", AutoSize = true };
-    private readonly CheckBox _shots = new() { Text = "Keep one picture of each screen (the app's window only, taken the first time that screen is seen; never the desktop, never login windows)", AutoSize = true };
+    private readonly ComboBox _shotMode = new() { Width = 420, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _exclude = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 70, Width = 630 };
     private readonly TextBox _allow = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 70, Width = 630 };
     // AI tab
@@ -306,21 +306,25 @@ internal sealed class SettingsForm : Form
     {
         var p = new TabPage("4. Privacy");
         _maskTitles.Location = new Point(10, 14); _maskTitles.Checked = Config.Privacy.MaskTitles;
-        _shots.Location = new Point(10, 38); _shots.Checked = Config.Privacy.Screenshots;
-        var l1 = new Label { Text = "Windows never recorded at all (one title pattern per line, * is a wildcard; for example Payroll*, *HR*):", Left = 10, Top = 70, Width = 650 };
-        _exclude.Location = new Point(10, 92); _exclude.Text = string.Join("\r\n", Config.Privacy.ExcludeWindows);
-        var l2 = new Label { Text = "Only these windows are recorded (leave empty to record every window of the app):", Left = 10, Top = 172, Width = 650 };
-        _allow.Location = new Point(10, 194); _allow.Text = string.Join("\r\n", Config.Privacy.AllowlistWindows);
-        var preview = new Button { Text = "Show what we store (newest screen record and the last events)", Left = 10, Top = 276, Width = 400 };
+        var ls = new Label { Text = "Pictures of the app's window (never the desktop, never login windows):", Left = 10, Top = 40, Width = 650 };
+        _shotMode.Items.AddRange(new object[] { "off: no pictures", "first: one picture per screen, the first time it is seen", "actions: one per state (after each press, tab, typed value, dialog, suggestion list), no duplicates, capped" });
+        _shotMode.Location = new Point(10, 60);
+        _shotMode.SelectedIndex = Config.Privacy.EffectiveShotMode switch { "off" => 0, "first" => 1, _ => 2 };
+        var l1 = new Label { Text = "Windows never recorded at all (one title pattern per line, * is a wildcard; for example Payroll*, *HR*):", Left = 10, Top = 92, Width = 650 };
+        _exclude.Location = new Point(10, 114); _exclude.Text = string.Join("\r\n", Config.Privacy.ExcludeWindows);
+        var l2 = new Label { Text = "Only these windows are recorded (leave empty to record every window of the app):", Left = 10, Top = 194, Width = 650 };
+        _allow.Location = new Point(10, 216); _allow.Text = string.Join("\r\n", Config.Privacy.AllowlistWindows);
+        var preview = new Button { Text = "Show what we store (newest screen record and the last events)", Left = 10, Top = 298, Width = 400 };
         preview.Click += (_, _) => ShowStored();
-        var note = new Label { Left = 10, Top = 312, Width = 650, Height = 190, Text =
+        var note = new Label { Left = 10, Top = 334, Width = 650, Height = 170, Text =
             "What is stored: window titles (quoted parts masked when the box above is ticked), control names and ids, button presses, values typed into the app's own fields " +
-            "(passwords and password-like fields as ***), read-only before/after copies of the app's data, and, when ticked, one picture per screen in screens\\shots " +
-            "(the same screen is never pictured twice; a picture shows whatever data was on that window). The memory files never contain typed values; the probes in an export show " +
+            "(passwords and password-like fields as ***), suggestion lists that open while typing, what a grid shows after a search, read-only before/after copies of the app's data, " +
+            "and pictures of the app's window in screens\\shots\\<screen>\\ (one per state, never the same state twice, capped per screen; a picture shows whatever data was on that window). " +
+            "The memory files never contain typed values; the probes in an export show " +
             "them with personal-looking values masked.\r\n\r\n" +
             "What is never stored: other programs, the clipboard, screenshots, keystrokes outside the app, anything while another program is in front, anything over the network.\r\n\r\n" +
             "Excluded windows: no event, no screen record and no value is written while such a window is in front. Allowlist: when set, everything outside the listed windows is treated as excluded." };
-        p.Controls.AddRange(new Control[] { _maskTitles, _shots, l1, _exclude, l2, _allow, preview, note });
+        p.Controls.AddRange(new Control[] { _maskTitles, ls, _shotMode, l1, _exclude, l2, _allow, preview, note });
         return p;
     }
 
@@ -636,7 +640,7 @@ internal sealed class SettingsForm : Form
             _profile.ApplyTo(Config);
             _triggers.Text = string.Join(", ", Config.EffectTriggers);
             _msaa.Checked = Config.Collector.MsaaFallback; _infer.Checked = Config.Collector.PressInference; _tabs.Checked = Config.Collector.TabDocuments;
-            _maskTitles.Checked = Config.Privacy.MaskTitles; _shots.Checked = Config.Privacy.Screenshots;
+            _maskTitles.Checked = Config.Privacy.MaskTitles; _shotMode.SelectedIndex = Config.Privacy.EffectiveShotMode switch { "off" => 0, "first" => 1, _ => 2 };
             _exclude.Text = string.Join("\r\n", Config.Privacy.ExcludeWindows);
         }
         // password
@@ -672,7 +676,8 @@ internal sealed class SettingsForm : Form
         Config.Collector.TabDocuments = _tabs.Checked;
         // privacy
         Config.Privacy.MaskTitles = _maskTitles.Checked;
-        Config.Privacy.Screenshots = _shots.Checked;
+        Config.Privacy.ScreenshotMode = _shotMode.SelectedIndex switch { 0 => "off", 1 => "first", _ => "actions" };
+        Config.Privacy.Screenshots = _shotMode.SelectedIndex != 0;
         Config.Privacy.ExcludeWindows = Lines(_exclude);
         Config.Privacy.AllowlistWindows = Lines(_allow);
         // ai

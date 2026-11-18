@@ -233,12 +233,31 @@ public sealed class ScreenInfo
     public Dictionary<string, int> MenuPaths { get; set; } = new();
     /// <summary>action name -> shortcut key, from the screen record.</summary>
     public Dictionary<string, string> Shortcuts { get; set; } = new();
+    /// <summary>field -> how often a suggestion list (autocomplete, lookup) appeared while typing into it.</summary>
+    public Dictionary<string, int> FieldLookups { get; set; } = new();
+    /// <summary>field -> largest number of suggestions seen.</summary>
+    public Dictionary<string, int> LookupSizes { get; set; } = new();
+    /// <summary>field -> shapes of suggestions seen (never the suggestions themselves).</summary>
+    public Dictionary<string, List<string>> LookupShapes { get; set; } = new();
+    /// <summary>action -> what grid it filled: columns and row counts.</summary>
+    public Dictionary<string, ResultInfo> ActionResults { get; set; } = new();
     // computed at Finalize
     [JsonIgnore] public string? ReachedFrom { get; set; }
     [JsonIgnore] public int ReachedFromCount { get; set; }
     [JsonIgnore] public string? MenuPath { get; set; }
     [JsonIgnore] public Dictionary<string, string> FieldTypes { get; set; } = new();
     [JsonIgnore] public List<string> NeverUsed { get; set; } = new();
+}
+
+/// <summary>A grid seen filled right after an action (search, filter, open).</summary>
+public sealed class ResultInfo
+{
+    public string Grid { get; set; } = "";
+    public List<string> Columns { get; set; } = new();
+    public int Seen { get; set; }
+    public int MinRows { get; set; } = int.MaxValue;
+    public int MaxRows { get; set; }
+    public int EmptySeen { get; set; }
 }
 
 public sealed class Module

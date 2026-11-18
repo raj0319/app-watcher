@@ -29,6 +29,8 @@ internal sealed class RawEvent
     /// <summary>Set for window-open events: the dumped control tree.</summary>
     public ScreenRecord? Screen;
     public bool IsDialog;
+    /// <summary>Dropdown suggestions or grid rows.</summary>
+    public List<string>? Items;
 }
 
 /// <summary>
@@ -68,6 +70,8 @@ internal sealed class UiaCollector : IDisposable
     private (string name, DateTime t) _lastMenuItem = ("", DateTime.MinValue);
     private DateTime _menuOpenedAt = DateTime.MinValue;
     private int _stateEventsThisSecond; private DateTime _stateSecond = DateTime.MinValue;
+    private (string name, string aid, string ct, DateTime t) _lastField = ("", "", "", DateTime.MinValue);
+    private readonly Dictionary<string, string> _lastTyped = new();
     private bool _firstWindow = true;
 
     public UiaCollector(ChannelWriter<RawEvent> output, SynchronizationContext uiContext, CollectorSettings settings, PrivacySettings privacy, CollectorStatus status)
@@ -84,6 +88,7 @@ internal sealed class UiaCollector : IDisposable
     /// <summary>True while a window of the watched process is the foreground window.</summary>
     public bool InFront => _inFront;
     public string CurrentTitle => ScreenTitle(_foreground, _currentTitle);
+    public IntPtr ForegroundHwnd => _foreground;
     public int MainWindowControlCount { get; private set; } = -1;
     public event Action<bool>? InFrontChanged;
 
@@ -408,6 +413,25 @@ internal sealed class UiaCollector : IDisposable
                     _knownWindows.Remove(hwnd);
                     return;
                 }
+                // a suggestion list (autocomplete, lookup) that opened while the user was typing: its items are the evidence
+                if (title.Length == 0 && _inFront)
+                {
+                    var items = rec.Controls.Where(c => c.Type is "ListItem" or "DataItem" or "TreeItem" && c.Name.Length > 0).Select(c => c.Name).ToList();
+                    (string name, string aid, string ct, DateTime t) field; string typed;
+                    lock (_gate) { field = _lastField; typed = _lastTyped.GetValueOrDefault(field.aid.Length > 0 ? field.aid : field.name, ""); }
+                    if (items.Count > 0 && field.name.Length + field.aid.Length > 0 && (DateTime.Now - field.t).TotalSeconds <= 8 && !rec.Controls.Any(c => c.Type is "MenuItem" or "Edit" or "Button"))
+                    {
+                        _status.Dropdowns++;
+                        var pwd = Masking.IsSensitiveName(field.name) || Masking.IsSensitiveName(field.aid);
+                        Emit(new RawEvent
+                        {
+                            Act = Acts.Dropdown, Ct = field.ct, Name = field.name, Aid = field.aid, Val = pwd ? Masking.Masked : typed, Hwnd = hwnd, WindowTitle = CurrentTitle,
+                            Items = items.Take(30).Select(i => pwd ? Masking.Masked : (i.Length > 120 ? i[..120] : i)).ToList(),
+                        });
+                        _knownWindows.Remove(hwnd);
+                        return;
+                    }
+                }
                 // untitled helper windows (parking windows, drop-downs, tooltips) are not screens either
                 if (title.Length == 0 && (rec.Controls.Count < 15 || !rec.Controls.Any(c => c.Type is "Edit" or "DataGrid" or "ComboBox" or "Button"))) { _knownWindows.Remove(hwnd); return; }
                 _status.WindowsSeen++;
@@ -471,6 +495,7 @@ internal sealed class UiaCollector : IDisposable
             if (r.Ct == "Window" || r.Ct == "Pane" && r.Name.Length == 0) return;
             if (r.Ct == "MenuItem") lock (_gate) _lastMenuItem = (r.Name, DateTime.Now);
             else if (r.Ct is "Button" or "SplitButton" or "Hyperlink" or "TabItem") lock (_gate) _lastActionable = (r.Name, r.Aid, r.Ct, CurrentTitle, DateTime.Now);
+            else if (r.Ct is "Edit" or "ComboBox" or "Spinner" or "Document") lock (_gate) _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now);
             Emit(r);
         }
         catch { }
@@ -541,6 +566,7 @@ internal sealed class UiaCollector : IDisposable
             var v = newValue as string ?? newValue?.ToString();
             r.Val = Masking.ForEvent(v, r.Name, r.Aid, r.IsPassword);
             _status.ValuesTyped++;
+            lock (_gate) { _lastTyped[r.Aid.Length > 0 ? r.Aid : r.Name] = r.Val ?? ""; if (_lastField.name.Length == 0 || _lastField.aid != r.Aid) _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now); }
             Emit(r);
         }
         catch { }
@@ -620,6 +646,54 @@ internal sealed class UiaCollector : IDisposable
     {
         r.WindowTitle ??= CurrentTitle;
         _out.TryWrite(r);
+    }
+
+    /// <summary>
+    /// The grids of a window as text: for each DataGrid/Table/List with rows, the header line and the first rows
+    /// (cells joined by " | "). One cached read; used right after an action to record what a search or filter returned.
+    /// </summary>
+    public List<(string grid, List<string> lines)> DumpGrids(IntPtr hwnd, int maxRows = 10, int maxGrids = 4)
+    {
+        var result = new List<(string, List<string>)>();
+        try
+        {
+            var rows = new List<ControlRow>();
+            using (Cache(true).Activate())
+            {
+                var cached = _automation.FromHandle(hwnd);
+                WalkCached(cached, 0, _settings.DumpDepth, rows, _settings.DumpRowCap, maxRows, onlyOnScreen: true);
+            }
+            for (var i = 0; i < rows.Count && result.Count < maxGrids; i++)
+            {
+                var g = rows[i];
+                if (g.Type is not ("DataGrid" or "Table" or "List")) continue;
+                var depth = g.Depth;
+                var headers = new List<string>(); var lines = new List<string>();
+                var j = i + 1;
+                for (; j < rows.Count && rows[j].Depth > depth; j++)
+                {
+                    var r = rows[j];
+                    if (r.Type is "HeaderItem" or "Header" && r.Name.Length > 0 && r.Depth <= depth + 2) { if (r.Type == "HeaderItem" || !rows.Skip(j + 1).TakeWhile(x => x.Depth > r.Depth).Any()) headers.Add(r.Name); continue; }
+                    if (r.Type is "DataItem" or "ListItem" or "TreeItem")
+                    {
+                        var cells = new List<string>();
+                        var k = j + 1;
+                        for (; k < rows.Count && rows[k].Depth > r.Depth; k++) if (rows[k].Type is not ("Note") && rows[k].Name.Length > 0 && rows[k].Depth == r.Depth + 1) cells.Add(rows[k].Name);
+                        lines.Add(cells.Count > 0 ? string.Join(" | ", cells) : r.Name);
+                        j = k - 1;
+                        if (lines.Count >= maxRows) break;
+                    }
+                }
+                if (lines.Count == 0) continue;
+                var name = g.Name.Length > 0 ? g.Name : Labels.Clean(g.AutomationId);
+                if (name.Length == 0) name = "grid";
+                var all = new List<string> { headers.Count > 0 ? string.Join(" | ", headers) : string.Join(" | ", Enumerable.Range(1, Math.Max(1, lines[0].Split(" | ").Length)).Select(n => "column " + n)) };
+                all.AddRange(lines.Select(l => l.Length > 400 ? l[..400] : l));
+                result.Add((name, all));
+            }
+        }
+        catch (Exception ex) { Log.Info("grid read skipped: " + ex.Message); }
+        return result;
     }
 
     // ---- control tree dump (read only) ----

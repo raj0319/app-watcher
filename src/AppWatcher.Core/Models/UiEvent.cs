@@ -11,7 +11,7 @@ public sealed class UiEvent
     [JsonPropertyName("ct")] public string Ct { get; set; } = "";
     [JsonPropertyName("name")] public string Name { get; set; } = "";
     [JsonPropertyName("aid")] public string Aid { get; set; } = "";
-    /// <summary>focus | open | close | invoke | select | value | foreground | dialog | start | stop</summary>
+    /// <summary>focus | open | close | invoke | select | value | foreground | dialog | dropdown | result | start | stop</summary>
     [JsonPropertyName("act")] public string Act { get; set; } = "";
     [JsonPropertyName("val")] public string? Val { get; set; }
     /// <summary>Milliseconds since the previous recorded event.</summary>
@@ -20,6 +20,10 @@ public sealed class UiEvent
     [JsonPropertyName("fx")] public string? Fx { get; set; }
     /// <summary>For invoke events: how the press was seen. uia | msaa | menu | inferred | toggle | select. Null for the classic UIA Invoke event.</summary>
     [JsonPropertyName("how")] public string? How { get; set; }
+    /// <summary>For dropdown events: the suggestions shown (masked like typed values). For result events: the grid's header then its first rows, cells joined by " | ".</summary>
+    [JsonPropertyName("items")] public List<string>? Items { get; set; }
+    /// <summary>Picture of the screen state right after this event, relative to the screens folder ("shots/&lt;screen&gt;/03-after-press-save.png").</summary>
+    [JsonPropertyName("shot")] public string? Shot { get; set; }
 
     /// <summary>"events/2026-01-01.jsonl#L12" - set by the reader, never serialized.</summary>
     [JsonIgnore] public string Source { get; set; } = "";
@@ -46,6 +50,10 @@ public static class Acts
     public const string Value = "value";
     public const string Foreground = "foreground";
     public const string Dialog = "dialog";
+    /// <summary>A suggestion list or lookup popup appeared while a field had focus: Name = field, Val = text typed so far, Items = suggestions.</summary>
+    public const string Dropdown = "dropdown";
+    /// <summary>A grid's content right after an action: Name = the action, Val = grid name, Items = header and first rows.</summary>
+    public const string Result = "result";
     public const string Start = "start";
     public const string Stop = "stop";
 }

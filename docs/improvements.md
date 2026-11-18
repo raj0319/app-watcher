@@ -62,6 +62,20 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.4: micro-level states (client request)
+
+- **One picture per state, not per screen**: after every press, tab switch, typed value, dialog and suggestion
+  list, the window is pictured once it settled (650 ms). Filed page-wise under `screens/shots/<screen>/` with an
+  `index.md` (picture, state, time, event). Duplicates are dropped by a coarse hash of the picture; caps of 25 per
+  screen and 500 MB per app. Privacy tab: off / first / actions.
+- **Suggestion lists** (autocomplete, lookups on key-up): the popup's items are recorded as a `dropdown` event
+  (field, text typed so far, suggestions) plus a picture of the popup; the memory says which fields have lookups
+  and how big they get; the probes export names them.
+- **Grid results**: after a press, tab, typed value, open or close, the grids on the screen are read once and
+  written as a `result` event (header line and first rows); the memory says what each action fills (columns,
+  row counts, empty results).
+- Tests: `StateCaptureTests` (5). Not run live: the sample app was not started again at the client's request.
+
 ## New in the same release
 
 - **One picture per screen** (client idea): the app's window only, taken the first time a screen structure is

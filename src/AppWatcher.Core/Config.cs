@@ -6,7 +6,7 @@ namespace AppWatcher.Core;
 
 public sealed class WatcherConfig
 {
-    public const string AppVersion = "0.3";
+    public const string AppVersion = "0.4";
 
     /// <summary>Words on a button or menu item that mean "this writes data", in the languages we meet most. Profiles add their own.</summary>
     public static readonly string[] DefaultTriggers =
@@ -130,8 +130,13 @@ public sealed class PrivacySettings
 {
     /// <summary>Replace quoted parts of window titles and tab labels ("ACME INC") with "…" in memory and export files.</summary>
     public bool MaskTitles { get; set; } = true;
-    /// <summary>One picture per distinct screen (the app's window only, taken the first time the screen is seen) under screens/shots/. Never the desktop.</summary>
+    /// <summary>Pictures of the app's window under screens/shots/. Kept for older configs; ScreenshotMode decides.</summary>
     public bool Screenshots { get; set; } = true;
+    /// <summary>off | first (one picture per screen, first time seen) | actions (one per distinct state: after each press, tab, typed value, dialog, dropdown; deduped and capped). Never the desktop.</summary>
+    public string ScreenshotMode { get; set; } = "actions";
+    public int MaxShotsPerScreen { get; set; } = 25;
+    public int MaxShotMegabytes { get; set; } = 500;
+    [System.Text.Json.Serialization.JsonIgnore] public string EffectiveShotMode => !Screenshots ? "off" : ScreenshotMode is "off" or "first" or "actions" ? ScreenshotMode : "actions";
     /// <summary>Window title patterns (* wildcards) that are never recorded at all (payroll, HR).</summary>
     public List<string> ExcludeWindows { get; set; } = new();
     /// <summary>When not empty, only windows whose title matches one of these patterns are recorded.</summary>

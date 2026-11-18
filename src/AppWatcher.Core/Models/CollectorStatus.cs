@@ -26,6 +26,10 @@ public sealed class CollectorStatus
     public int Toggles { get; set; }
     public int Dialogs { get; set; }
     public int ValuesTyped { get; set; }
+    public int Dropdowns { get; set; }
+    public int Results { get; set; }
+    public int Pictures { get; set; }
+    public int PicturesSkipped { get; set; }
     public int ExcludedEvents { get; set; }
     public bool HasDataSources { get; set; }
     public int EffectsWritten { get; set; }

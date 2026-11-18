@@ -33,6 +33,11 @@ internal sealed class WatchService : IDisposable
     private long _eventsWritten;
     private int _effectsWritten;
     private string _lastStatusJson = "";
+    private readonly ShotStore _shots;
+    private readonly string _shotMode;
+    private System.Threading.Timer? _stateTimer;
+    private (string label, string why, DateTime t) _pendingState;
+    private readonly HashSet<string> _noPictureScreens = new();
 
     public WatchService(WatcherConfig config, SynchronizationContext ui)
     {
@@ -44,6 +49,8 @@ internal sealed class WatchService : IDisposable
         _status.Version = WatcherConfig.AppVersion; _status.Toolkit = config.Toolkit; _status.Profile = config.Profile;
         _status.HasDataSources = config.DataSources.Any(d => d.Enabled);
         _events = new EventWriter(_paths.Events);
+        _shots = new ShotStore(_paths.Screens) { MaxPerScreen = Math.Max(1, config.Privacy.MaxShotsPerScreen), MaxTotalBytes = Math.Max(10, config.Privacy.MaxShotMegabytes) * 1024L * 1024 };
+        _shotMode = config.Privacy.EffectiveShotMode;
         _snapshots = new SnapshotService(_paths, config.Snapshot, config.DataSources);
         _uia = new UiaCollector(_channel.Writer, ui, config.Collector, config.Privacy, _status);
         _effects = new EffectCapture(_snapshots, config.Snapshot, config.EffectTriggers, _paths.Effects, _ => { Interlocked.Increment(ref _effectsWritten); _status.EffectsWritten++; },
@@ -160,18 +167,22 @@ internal sealed class WatchService : IDisposable
         {
             // one picture per distinct screen: taken before the record is written (the window may close soon), kept only
             // when the record is new or replaced, never for windows with a password field, never when excluded
-            byte[]? png = null;
-            var wantShot = _config.Privacy.Screenshots && raw.Hwnd != IntPtr.Zero && !raw.Screen.Controls.Any(c => c.IsPassword) && raw.Screen.Kind != ScreenKinds.Session;
-            if (wantShot) { png = Native.WindowCapture.Capture(raw.Hwnd); if (png is not null) raw.Screen.Screenshot = "shots/" + raw.Screen.ShotFileName; }
+            byte[]? png = null; var hash = "";
+            var noPicture = raw.Screen.Controls.Any(c => c.IsPassword) || raw.Screen.Kind == ScreenKinds.Session;
+            if (noPicture) lock (_noPictureScreens) _noPictureScreens.Add(Core.Learning.Titles.Key(raw.Screen.Title));
+            var wantShot = _shotMode != "off" && raw.Hwnd != IntPtr.Zero && !noPicture;
+            if (wantShot) { png = Native.WindowCapture.Capture(raw.Hwnd, out hash); if (png is not null) raw.Screen.Screenshot = ShotStore.FolderFor(raw.Screen.Title) + "/01-first-seen.png"; }
             if (ScreenWriter.WriteOnce(_paths.Screens, raw.Screen))
             {
                 Log.Info($"screen recorded: {raw.Screen.Title} ({raw.Screen.Controls.Count} controls, {raw.Screen.Kind}, {raw.Screen.Source}{(png is null ? "" : ", picture")})");
-                if (png is not null)
-                {
-                    try { var dir = Path.Combine(_paths.Screens, "shots"); Directory.CreateDirectory(dir); File.WriteAllBytes(Path.Combine(dir, raw.Screen.ShotFileName), png); }
-                    catch (Exception ex) { Log.Warn("picture not saved: " + ex.Message); }
-                }
+                if (png is not null) StoreShot(raw.Screen.Title, "first-seen", png, hash, raw.T, "screen record");
             }
+        }
+        if (raw.Act == Acts.Dropdown && _shotMode == "actions" && raw.Hwnd != IntPtr.Zero && !Paused && _uia.InFront)
+        {
+            // the suggestion list is its own little window and goes away fast: picture it now
+            var png = Native.WindowCapture.Capture(raw.Hwnd, out var hash);
+            if (png is not null) StoreShot(raw.WindowTitle ?? _uia.CurrentTitle, "dropdown-" + raw.Name, png, hash, raw.T, $"dropdown on {raw.Name}");
         }
         if (Paused) return;
         var inFront = _uia.InFront || raw.Act is Acts.Open or Acts.Close or Acts.Dialog or Acts.Foreground;
@@ -186,13 +197,77 @@ internal sealed class WatchService : IDisposable
             return;
         }
         FlushPending(all: true); // focus left the control (or anything else happened): commit pending values first
+        if (raw.Act == Acts.Dropdown) { ev.Items = raw.Items; _status.Dropdowns = Math.Max(_status.Dropdowns, 0); }
         Write(ev);
         if (raw.Act == Acts.Invoke) _effects.OnInvoke(ev);
+        // a new state of the screen may follow: picture it (and read what a grid shows) once the app has settled
+        switch (raw.Act)
+        {
+            case Acts.Invoke: ScheduleState((raw.Ct == "MenuItem" ? "after-menu-" : "after-press-") + ev.FieldKey, $"{ev.Act} {ev.FieldKey}", readGrids: true); break;
+            case Acts.Select when raw.Ct == "TabItem": ScheduleState("after-tab-" + ev.FieldKey, $"tab {ev.FieldKey}", readGrids: true); break;
+            case Acts.Select: ScheduleState("after-pick-" + ev.FieldKey, $"pick {ev.FieldKey}", readGrids: false); break;
+            case Acts.Dialog: ScheduleState("dialog-" + Core.Learning.Titles.Key(ev.Name), $"dialog {ev.Name}", readGrids: false); break;
+            case Acts.Close: ScheduleState("after-close-" + Core.Learning.Titles.Key(ev.Name), $"close {ev.Name}", readGrids: true); break;
+            case Acts.Open when raw.Screen is null: ScheduleState("after-open-" + Core.Learning.Titles.Key(ev.Name), $"open {ev.Name}", readGrids: true); break;
+        }
     }
 
     private void FlushPending(bool all)
     {
-        foreach (var e in _debounce.Flush(DateTime.Now, all)) Write(e);
+        foreach (var e in _debounce.Flush(DateTime.Now, all))
+        {
+            Write(e);
+            ScheduleState("after-type-" + e.FieldKey, $"type {e.FieldKey}", readGrids: true);
+        }
+    }
+
+    /// <summary>One picture (and grid read) per settled state: calls within the settle time collapse into the last one.</summary>
+    private void ScheduleState(string label, string why, bool readGrids)
+    {
+        if (_shotMode != "actions" && !readGrids) return;
+        lock (_noPictureScreens) _pendingState = (label, why + (readGrids ? "|grids" : ""), DateTime.Now);
+        _stateTimer ??= new System.Threading.Timer(_ => CaptureState(), null, Timeout.Infinite, Timeout.Infinite);
+        _stateTimer.Change(650, Timeout.Infinite);
+    }
+
+    private void CaptureState()
+    {
+        try
+        {
+            (string label, string why, DateTime t) p;
+            lock (_noPictureScreens) p = _pendingState;
+            if (Paused || !_uia.InFront || !_uia.IsAttached) return;
+            var hwnd = _uia.ForegroundHwnd;
+            var title = _uia.CurrentTitle;
+            if (hwnd == IntPtr.Zero || title.Length == 0) return;
+            var key = Core.Learning.Titles.Key(title);
+            bool noPicture; lock (_noPictureScreens) noPicture = _noPictureScreens.Contains(key);
+            var readGrids = p.why.EndsWith("|grids");
+            var why = readGrids ? p.why[..^6] : p.why;
+            if (_shotMode == "actions" && !noPicture)
+            {
+                var png = Native.WindowCapture.Capture(hwnd, out var hash);
+                if (png is not null) StoreShot(title, p.label, png, hash, p.t, why);
+            }
+            if (readGrids)
+            {
+                foreach (var (grid, lines) in _uia.DumpGrids(hwnd))
+                {
+                    var action = why.Contains(' ') ? why[(why.IndexOf(' ') + 1)..] : why;
+                    Write(new UiEvent { T = DateTime.Now, Win = title, Ct = "DataGrid", Name = action, Val = grid, Act = Acts.Result, Items = lines });
+                    _status.Results++;
+                }
+            }
+        }
+        catch (Exception ex) { Log.Warn("state capture failed: " + ex.Message); }
+    }
+
+    private void StoreShot(string title, string label, byte[] png, string hash, DateTime t, string why)
+    {
+        var path = _shots.Add(title, label, png, hash, t, why, out var skipped);
+        if (path is null) { _status.PicturesSkipped++; return; }
+        _status.Pictures++;
+        Log.Info($"picture: {path} ({why})");
     }
 
     private void Write(UiEvent e)
@@ -204,6 +279,7 @@ internal sealed class WatchService : IDisposable
     public void Dispose()
     {
         _processTimer.Stop(); _idleTimer.Stop(); _statusTimer.Stop();
+        _stateTimer?.Dispose();
         _cts.Cancel();
         FlushPending(all: true);
         try { _events.Write(new UiEvent { Act = Acts.Stop, Name = "App Watcher stopped", Ct = "watcher" }); } catch { }
