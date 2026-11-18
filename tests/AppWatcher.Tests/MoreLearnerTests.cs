@@ -116,20 +116,20 @@ public class MoreLearnerTests
 
         var result = Learner.Learn(input);
         var files = MemoryWriter.Render(result);
-        Assert.Equal(5, files.Count);
+        Assert.Equal(6, files.Count);
         foreach (var (name, text) in files)
         {
             Assert.DoesNotContain("Secret Person", text);
             Assert.True(text.Contains("seen ") || text.Contains("inferred"), name + " has no confidence tag");
         }
-        Assert.Contains("New Customer › Name (seen 1×)", files["data-model.md"]);
+        Assert.Contains("New Customer › Name (candidate)", files["data-model.md"]); // one observation is a candidate, not seen
         Assert.Contains("effects/fx.json", files["screens.md"]);
 
         var dir = Path.Combine(Path.GetTempPath(), "appwatcher-mem-" + Guid.NewGuid().ToString("N"));
         try
         {
             var changes = MemoryWriter.Write(dir, result);
-            Assert.Equal(5, changes.Count);
+            Assert.Equal(6, changes.Count);
             Assert.True(File.Exists(Path.Combine(dir, "changelog.md")));
             var again = MemoryWriter.Write(dir, result);
             Assert.Empty(again);

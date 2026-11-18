@@ -58,9 +58,12 @@ public class FormulaFitterTests
         Assert.Contains("tax = total × 0.2", taxForms);
         Assert.Equal(12, tax.Explained);
 
+        // percentage comes before the linear fit in the stage order, so total = subtotal × 1.25 wins over subtotal + tax
         var total = Assert.Single(formulas, f => f.Table == "shop.db / orders" && f.Column == "total");
-        Assert.Equal("total = subtotal + tax", total.Expression);
-        Assert.Contains("total = subtotal × (1 + 0.25)", total.Alternatives);
+        Assert.Equal("percentage", total.Method);
+        Assert.Contains("subtotal", total.Expression);
+        Assert.Equal(12, total.Explained);
+        Assert.Equal(0, total.Residual);
 
         var subtotal = Assert.Single(formulas, f => f.Table == "shop.db / orders" && f.Column == "subtotal");
         Assert.Equal("subtotal = sum of shop.db / order_lines.line_total where order_id = id", subtotal.Expression);

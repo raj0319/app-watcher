@@ -50,13 +50,31 @@ it is replaced after every effect capture and refreshed at idle moments when a s
 `hot-tables.json` remembers which tables changed in the last diffs, so very large databases are only
 partly read.
 
+`screens/index.json` maps the structure hash of each tree (types, names, automation ids; no values or
+positions) to its file and lists every title the screen was seen under, so "Invoice 1023" and
+"Invoice 1024" are one screen, "Invoice #".
+
 ## memory/
 
-Written by the learner (tray: Learn now; nightly; or `AppWatcher.exe --learn`). Five documents plus
+Written by the learner (tray: Learn now; nightly; or `AppWatcher.exe --learn`). Six documents
+(`data-model.md`, `screens.md`, `rules.md`, `flows.md`, `architecture.md`, `health.md`) plus
 `changelog.md`, every line with a confidence tag and an evidence pointer. `architecture-reviewed.md`
-is added by `/analyze` in Claude Code or by the optional API analysis. No raw values typed by users
+is added by the analyze skill or by the optional API/local analysis. No raw values typed by users
 appear in this folder.
+
+`learn-state.json` holds the learner's accumulated counters and the watermark (time of the last closed
+session processed). Learning is incremental: only sessions newer than the watermark are processed and
+merged. Delete the file, or use "Rebuild memory", to recompute from day one; the result is the same.
+
+## SQL statement logs (optional)
+
+Not inside the data folder: the client chooses where they live (Settings, tab 2). Three forms are read:
+Extended Events `.xel` files written by `scripts/sql/xevents-session.sql`, a CSV with a timestamp and a
+statement column, or the Windows ODBC trace `SQL.LOG` (only the watched program's lines are used).
+Statements are parsed into table, columns and values and become exact screen-to-table and
+field-to-column evidence (`sql/<file>#<n>` pointers in the memory files).
 
 ## export/<date>/
 
-Bundles in the App Twin Kit `docs/raw` layout, plus a zip. See the README for how to hand them over.
+Bundles in the App Twin Kit `docs/raw` layout, plus `events.xes` (process-mining event log) and a zip.
+See the README for how to hand them over.
