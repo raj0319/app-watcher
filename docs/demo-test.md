@@ -28,7 +28,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -ExePath .\AppWatcher.exe
 
 The setup window opens.
 
-1. **App to watch**: pick the app from the list of running programs.
+1. **App to watch**: pick the app from the list of running programs, or press **Browse...** and
+   choose its .exe from any drive.
 2. **Where its data lives**: tick the files or folders it found. If the list is empty or you are
    not sure, press **Detect by watching file access**, allow the administrator prompt once, then use
    the app normally for two minutes. It proposes the files the app really reads and writes.

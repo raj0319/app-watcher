@@ -47,7 +47,9 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
    This copies the program to your user folder, makes it start at login, and starts it now.
    Add `-ScheduledTask` if your IT prefers a scheduled task over the Run key.
 3. The setup window opens:
-   - **1. App to watch**: pick the program from the list of running programs, or type the path of its .exe.
+   - **1. App to watch**: pick the program from the list of running programs, or press **Browse...**
+     and choose any .exe on any drive (it does not need to be running yet; watching starts the moment
+     it runs). Any Windows program can be watched.
    - **2. Where its data lives**: App Watcher scans the usual places (install folder, ProgramData,
      AppData, Documents) for database and data files. Tick the ones that belong to the app, add a file,
      a folder, or a read-only SQL Server connection. The button **Detect by watching file access** asks

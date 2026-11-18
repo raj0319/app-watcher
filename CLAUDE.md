@@ -73,8 +73,9 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   The diff text format is the one printed by the kit's `scripts/snapshot_diff.py diff`.
 - The collector never installs a keyboard hook, never takes screenshots, never records while another
   program is in front, and never invokes a control of the watched app. Keep it that way.
-- The app never shows a file dialog or a message box: the tray menu, the password-protected settings
-  window (whose data-source pickers the user opens on purpose) and short balloon notices are the only UI.
+- The app never shows a file dialog or a message box on its own: the tray menu, the password-protected
+  settings window (whose program picker and data-source pickers the user opens on purpose with a
+  Browse button) and short balloon notices are the only UI.
   Validation messages go to the settings window's status line. Export writes to a fixed path.
 - When testing the collector against any app: start your own instance, drive only that window by handle,
   never press Save or close with unsaved text (no "save changes?" prompt on the user's desktop), and end

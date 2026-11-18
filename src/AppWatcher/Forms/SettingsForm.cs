@@ -93,13 +93,32 @@ internal sealed class SettingsForm : Form
         };
         var refresh = new Button { Text = "Refresh list", Left = 10, Top = 282, Width = 100 };
         refresh.Click += (_, _) => RefreshProcesses();
-        var l1 = new Label { Text = "Program file (or type/paste the full path of the .exe):", Left = 10, Top = 318, Width = 330 };
-        _exePath.SetBounds(10, 340, 630, 23);
+        var l1 = new Label { Text = "Program file: pick from the list above, browse to any .exe on any drive, or type its full path:", Left = 10, Top = 318, Width = 630 };
+        _exePath.SetBounds(10, 340, 530, 23);
         _exePath.TextChanged += (_, _) => { if (_processes.SelectedItems.Count == 0 && _exePath.Text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) _displayName.Text = Path.GetFileNameWithoutExtension(_exePath.Text); };
+        var browse = new Button { Text = "Browse...", Left = 548, Top = 339, Width = 92 };
+        browse.Click += (_, _) =>
+        {
+            // user-initiated picker: the one place a file dialog is allowed, so any program anywhere can be chosen
+            using var d = new OpenFileDialog
+            {
+                Title = "Choose the program App Watcher should learn from",
+                Filter = "Programs|*.exe|All files|*.*",
+                CheckFileExists = true,
+                InitialDirectory = _exePath.Text.Length > 0 && Directory.Exists(Path.GetDirectoryName(_exePath.Text) ?? "") ? Path.GetDirectoryName(_exePath.Text) : "",
+            };
+            if (d.ShowDialog(this) != DialogResult.OK) return;
+            _processes.SelectedItems.Clear();
+            _exePath.Text = d.FileName;
+            _displayName.Text = Path.GetFileNameWithoutExtension(d.FileName);
+            Status(Process.GetProcessesByName(_displayName.Text).Length > 0
+                ? $"{_displayName.Text} is running; it will be watched as soon as you press Start watching."
+                : $"{_displayName.Text} is not running right now; it will be watched from the moment it starts.");
+        };
         var l2 = new Label { Text = "Name for its data folder:", Left = 10, Top = 374, Width = 150 };
         _displayName.SetBounds(166, 371, 200, 23);
         var note = new Label { Text = "Changing the program later starts a new data folder; the old one is kept.", Left = 10, Top = 404, Width = 620, ForeColor = SystemColors.GrayText };
-        p.Controls.AddRange(new Control[] { intro, _processes, refresh, l1, _exePath, l2, _displayName, note });
+        p.Controls.AddRange(new Control[] { intro, _processes, refresh, l1, _exePath, browse, l2, _displayName, note });
         if (Config.App is not null) { _exePath.Text = Config.App.ExePath ?? ""; _displayName.Text = Config.App.DisplayName; }
         return p;
     }
