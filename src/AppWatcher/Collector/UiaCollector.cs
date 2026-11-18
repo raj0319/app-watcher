@@ -179,7 +179,7 @@ internal sealed class UiaCollector : IDisposable
 
                 // dump the control tree once per window title (after a short delay so the window is populated)
                 Thread.Sleep(initial ? 50 : 400);
-                var rec = DumpTree(el, title.Length > 0 ? title : Win32.WindowText(hwnd));
+                var rec = DumpTree(el, hwnd, title.Length > 0 ? title : Win32.WindowText(hwnd));
                 var dialogText = isDialog || (rec.Controls.Count <= 40 && rec.Controls.Any(c => c.Type == "Button") && rec.Controls.Any(c => c.Type == "Text"))
                     ? string.Join(" / ", rec.Controls.Where(c => c.Type == "Text" && c.Name.Length > 0).Select(c => c.Name).Take(8)) : null;
                 var dialogLike = isDialog || (dialogText is not null && rec.Controls.Count <= 25 && rec.Controls.Count(c => c.Type == "Button") <= 4 && rec.Controls.All(c => c.Type is not ("Edit" or "DataGrid" or "List" or "Tree" or "Document" or "Table")));
@@ -255,13 +255,23 @@ internal sealed class UiaCollector : IDisposable
         catch { }
     }
 
+    /// <summary>Reads the four properties of a control in one cached call (one cross-process round trip instead of four).</summary>
     private RawEvent Describe(AutomationElement el, string act)
     {
         var r = new RawEvent { Act = act };
-        try { r.Ct = el.Properties.ControlType.ValueOrDefault.ToString(); } catch { r.Ct = "Unknown"; }
-        try { r.Name = el.Properties.Name.ValueOrDefault ?? ""; } catch { }
-        try { r.Aid = el.Properties.AutomationId.ValueOrDefault ?? ""; } catch { }
-        try { r.IsPassword = el.Properties.IsPassword.ValueOrDefault; } catch { }
+        AutomationElement e = el;
+        try
+        {
+            var cr = new CacheRequest { TreeScope = TreeScope.Element, AutomationElementMode = AutomationElementMode.None };
+            var lib = _automation.PropertyLibrary;
+            cr.Add(lib.Element.Name); cr.Add(lib.Element.ControlType); cr.Add(lib.Element.AutomationId); cr.Add(lib.Element.IsPassword);
+            using (cr.Activate()) e = el.FindFirst(TreeScope.Element, _automation.ConditionFactory.ByControlType(ControlType.Unknown).Not()) ?? el;
+        }
+        catch { e = el; }
+        try { r.Ct = e.Properties.ControlType.ValueOrDefault.ToString(); } catch { r.Ct = "Unknown"; }
+        try { r.Name = e.Properties.Name.ValueOrDefault ?? ""; } catch { }
+        try { r.Aid = e.Properties.AutomationId.ValueOrDefault ?? ""; } catch { }
+        try { r.IsPassword = e.Properties.IsPassword.ValueOrDefault; } catch { }
         if (r.Name.Length > 200) r.Name = r.Name[..200];
         if (act == Acts.Select && r.Val is null) r.Val = Masking.ForEvent(r.Name, r.Name, r.Aid, r.IsPassword);
         return r;
@@ -275,12 +285,58 @@ internal sealed class UiaCollector : IDisposable
 
     // ---- control tree dump (read only) ----
 
-    private ScreenRecord DumpTree(AutomationElement root, string title)
+    /// <summary>
+    /// One cached request fetches the whole subtree with the five properties we need in a single cross-process
+    /// call; the walk then runs in-process on the cached children. Falls back to the live walker if caching fails.
+    /// </summary>
+    private ScreenRecord DumpTree(AutomationElement root, IntPtr hwnd, string title)
     {
         var rec = new ScreenRecord { Title = title, Captured = DateTime.Now };
+        try
+        {
+            var lib = _automation.PropertyLibrary;
+            var cr = new CacheRequest
+            {
+                TreeScope = TreeScope.Subtree,
+                AutomationElementMode = AutomationElementMode.None,
+                TreeFilter = new FlaUI.Core.Conditions.PropertyCondition(lib.Element.IsControlElement, true),
+            };
+            cr.Add(lib.Element.Name); cr.Add(lib.Element.ControlType); cr.Add(lib.Element.AutomationId); cr.Add(lib.Element.BoundingRectangle); cr.Add(lib.Element.IsPassword);
+            using (cr.Activate())
+            {
+                var cached = _automation.FromHandle(hwnd);
+                WalkCached(cached, 0, 12, rec.Controls, 1500);
+            }
+            if (rec.Controls.Count > 0) return rec;
+        }
+        catch (Exception ex) { Log.Warn("cached tree dump failed, using the live walker: " + ex.Message); }
+        rec.Controls.Clear();
         var walker = _automation.TreeWalkerFactory.GetControlViewWalker();
         Walk(walker, root, 0, 12, rec.Controls, 1500);
         return rec;
+    }
+
+    private static void WalkCached(AutomationElement el, int depth, int maxDepth, List<ControlRow> rows, int max)
+    {
+        if (depth > maxDepth || rows.Count >= max) return;
+        try
+        {
+            var rect = el.Properties.BoundingRectangle.ValueOrDefault;
+            var ct = el.Properties.ControlType.ValueOrDefault.ToString();
+            var name = (el.Properties.Name.ValueOrDefault ?? "").Replace("|", "/").Trim();
+            var aid = el.Properties.AutomationId.ValueOrDefault ?? "";
+            var pwd = false;
+            try { pwd = el.Properties.IsPassword.ValueOrDefault; } catch { }
+            rows.Add(new ControlRow { Depth = depth, Type = ct, Name = name.Length > 120 ? name[..120] : name, AutomationId = aid, Position = $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}", IsPassword = pwd });
+        }
+        catch { return; }
+        AutomationElement[] children;
+        try { children = el.CachedChildren; } catch { return; }
+        foreach (var c in children)
+        {
+            if (rows.Count >= max) break;
+            WalkCached(c, depth + 1, maxDepth, rows, max);
+        }
     }
 
     private static void Walk(ITreeWalker walker, AutomationElement el, int depth, int maxDepth, List<ControlRow> rows, int max)

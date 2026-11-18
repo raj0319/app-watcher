@@ -11,6 +11,7 @@ namespace AppWatcher.Collector;
 /// <summary>
 /// The always-on collector for one app: finds the process, attaches the UIA collector, writes events,
 /// dumps screens once, and runs effect capture. Records nothing while another program is in front.
+/// It only subscribes and reads: it never invokes a control of the watched app and never opens a window.
 /// </summary>
 internal sealed class WatchService : IDisposable
 {
@@ -21,6 +22,7 @@ internal sealed class WatchService : IDisposable
     private readonly EventWriter _events;
     private readonly SnapshotService _snapshots;
     private readonly EffectCapture _effects;
+    private readonly ValueDebouncer _debounce = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly System.Windows.Forms.Timer _processTimer;
     private readonly System.Windows.Forms.Timer _idleTimer;
@@ -28,7 +30,6 @@ internal sealed class WatchService : IDisposable
     private DateTime _lastActivity = DateTime.Now;
     private long _eventsWritten;
     private int _effectsWritten;
-    private readonly Dictionary<string, (string val, DateTime t, UiEvent ev)> _pendingValues = new();
 
     public WatchService(WatcherConfig config, SynchronizationContext ui)
     {
@@ -52,12 +53,12 @@ internal sealed class WatchService : IDisposable
     public bool Paused { get; set; }
     public bool IsAttached => _uia.IsAttached;
     public bool InFront => _uia.InFront;
-    public AppPaths Paths_ => _paths;
     public long EventsWritten => Interlocked.Read(ref _eventsWritten);
     public int EffectsWritten => _effectsWritten;
     public int MainWindowControls => _uia.MainWindowControlCount;
     public bool HasDataSources => _snapshots.HasSources;
     public DateTime AttachedSince { get; private set; }
+    public int? ProcessId => _process?.Id;
 
     public void Start()
     {
@@ -77,7 +78,7 @@ internal sealed class WatchService : IDisposable
                 Log.Info("watched process exited");
                 _process.Dispose(); _process = null;
                 _uia.Detach();
-                FlushPending();
+                FlushPending(all: true);
                 return;
             }
             var name = _config.App!.ProcessName;
@@ -117,10 +118,10 @@ internal sealed class WatchService : IDisposable
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-                timeout.CancelAfter(800);
+                timeout.CancelAfter(400);
                 raw = await reader.ReadAsync(timeout.Token);
             }
-            catch (OperationCanceledException) { FlushPending(maxAge: TimeSpan.FromMilliseconds(800)); continue; }
+            catch (OperationCanceledException) { FlushPending(all: false); continue; }
             try { Handle(raw); }
             catch (Exception ex) { Log.Error("event handling failed", ex); }
         }
@@ -138,33 +139,21 @@ internal sealed class WatchService : IDisposable
         if (!inFront) return; // another program is in front: record nothing
         _lastActivity = DateTime.Now;
 
-        var ev = new UiEvent
-        {
-            T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val,
-        };
+        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val };
         if (raw.Act == Acts.Value)
         {
-            // coalesce keystrokes: keep only the last value per control until the user moves on
-            var key = ev.Win + "\u0001" + ev.FieldKey + "\u0001" + ev.Ct;
-            lock (_pendingValues) _pendingValues[key] = (ev.Val ?? "", DateTime.Now, ev);
+            // one event per typed value: committed when focus moves on or after the quiet time
+            _debounce.Push(ev, DateTime.Now);
             return;
         }
-        FlushPending();
+        FlushPending(all: true); // focus left the control (or anything else happened): commit pending values first
         Write(ev);
         if (raw.Act == Acts.Invoke) _effects.OnInvoke(ev);
     }
 
-    private void FlushPending(TimeSpan? maxAge = null)
+    private void FlushPending(bool all)
     {
-        List<UiEvent> flush;
-        lock (_pendingValues)
-        {
-            var now = DateTime.Now;
-            var keys = _pendingValues.Where(p => maxAge is null || now - p.Value.t >= maxAge).Select(p => p.Key).ToList();
-            flush = keys.Select(k => _pendingValues[k].ev).OrderBy(e => e.T).ToList();
-            foreach (var k in keys) _pendingValues.Remove(k);
-        }
-        foreach (var e in flush) Write(e);
+        foreach (var e in _debounce.Flush(DateTime.Now, all)) Write(e);
     }
 
     private void Write(UiEvent e)
@@ -177,7 +166,7 @@ internal sealed class WatchService : IDisposable
     {
         _processTimer.Stop(); _idleTimer.Stop();
         _cts.Cancel();
-        FlushPending();
+        FlushPending(all: true);
         try { _events.Write(new UiEvent { Act = Acts.Stop, Name = "App Watcher stopped", Ct = "watcher" }); } catch { }
         _uia.Dispose();
         _effects.Dispose();

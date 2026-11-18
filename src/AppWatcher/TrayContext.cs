@@ -3,39 +3,47 @@ using AppWatcher.Collector;
 using AppWatcher.Core;
 using AppWatcher.Core.Analysis;
 using AppWatcher.Core.Export;
-using AppWatcher.Core.Learning;
 using AppWatcher.Forms;
 
 namespace AppWatcher;
 
-/// <summary>The tray icon and its menu. Owns the collector and the nightly scheduler.</summary>
+/// <summary>
+/// The tray icon and its menu. Owns the collector and the nightly scheduler.
+/// Window policy: the only windows App Watcher ever opens are this menu, the password-protected settings
+/// window, and short balloon notices. No file dialogs, no message boxes.
+/// </summary>
 internal sealed class TrayContext : ApplicationContext
 {
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _status = new("Starting...") { Enabled = false };
     private readonly ToolStripMenuItem _pause = new("Pause");
     private readonly ToolStripMenuItem _learn = new("Learn now");
-    private readonly ToolStripMenuItem _export = new("Export...");
+    private readonly ToolStripMenuItem _rebuild = new("Rebuild memory (full recompute)");
+    private readonly ToolStripMenuItem _export = new("Export for the twin kit");
+    private readonly ToolStripMenuItem _copyPath = new("Copy data folder path for AI");
+    private readonly ToolStripMenuItem _copyExport = new("Copy last export path") { Enabled = false };
     private readonly ToolStripMenuItem _settings = new("Settings...");
-    private readonly ToolStripMenuItem _open = new("Open data folder");
     private readonly ToolStripMenuItem _quit = new("Quit");
     private readonly System.Windows.Forms.Timer _minute = new() { Interval = 60_000 };
     private WatcherConfig _config;
     private WatchService? _watch;
     private int _busy;
+    private string? _lastExport;
 
     public TrayContext()
     {
         _config = ConfigStore.Load();
         var menu = new ContextMenuStrip();
-        menu.Items.AddRange(new ToolStripItem[] { _status, new ToolStripSeparator(), _pause, _learn, _export, new ToolStripSeparator(), _settings, _open, new ToolStripSeparator(), _quit });
+        menu.Items.AddRange(new ToolStripItem[] { _status, new ToolStripSeparator(), _pause, _learn, _rebuild, _export, new ToolStripSeparator(), _copyPath, _copyExport, _settings, new ToolStripSeparator(), _quit });
         _icon = new NotifyIcon { Icon = IconFactory.Create(false), Text = "App Watcher", Visible = true, ContextMenuStrip = menu };
-        _icon.DoubleClick += (_, _) => _icon.ShowBalloonTip(3000, "App Watcher", StatusText(), ToolTipIcon.Info);
+        _icon.DoubleClick += (_, _) => Balloon(StatusText(), ToolTipIcon.Info);
         _pause.Click += (_, _) => TogglePause();
-        _learn.Click += (_, _) => RunLearn(manual: true);
+        _learn.Click += (_, _) => RunLearn(manual: true, rebuild: false);
+        _rebuild.Click += (_, _) => RunLearn(manual: true, rebuild: true);
         _export.Click += (_, _) => RunExport();
+        _copyPath.Click += (_, _) => CopyToClipboard(DataFolder(), "Data folder path copied. Paste it into Claude Code, OpenCode or OpenClaw.");
+        _copyExport.Click += (_, _) => { if (_lastExport is not null) CopyToClipboard(_lastExport, "Export path copied."); };
         _settings.Click += (_, _) => OpenSettings();
-        _open.Click += (_, _) => { try { Process.Start(new ProcessStartInfo(DataFolder()) { UseShellExecute = true }); } catch { } };
         _quit.Click += (_, _) => Quit();
         menu.Opening += (_, _) => _status.Text = StatusText();
         _minute.Tick += (_, _) => MinuteTick();
@@ -53,6 +61,15 @@ internal sealed class TrayContext : ApplicationContext
         var once = new System.Windows.Forms.Timer { Interval = 15_000 };
         once.Tick += (_, _) => { once.Stop(); once.Dispose(); MemoryTrim.Trim(); };
         once.Start();
+    }
+
+    private void Balloon(string text, ToolTipIcon kind) => _icon.ShowBalloonTip(kind == ToolTipIcon.Warning ? 15000 : 6000, "App Watcher", text, kind);
+
+    /// <summary>Writes only our own path to the clipboard. App Watcher never reads the clipboard.</summary>
+    private void CopyToClipboard(string text, string notice)
+    {
+        try { Clipboard.SetText(text); Balloon(notice, ToolTipIcon.Info); }
+        catch (Exception ex) { Log.Warn("clipboard write failed: " + ex.Message); }
     }
 
     private string DataFolder() => _config.App is null ? Paths.Root : Paths.ForApp(_config.App.DisplayName).Root;
@@ -73,7 +90,7 @@ internal sealed class TrayContext : ApplicationContext
         catch (Exception ex)
         {
             Log.Error("could not start watching", ex);
-            _icon.ShowBalloonTip(5000, "App Watcher", "Could not start watching: " + ex.Message, ToolTipIcon.Error);
+            Balloon("Could not start watching: " + ex.Message, ToolTipIcon.Error);
         }
     }
 
@@ -81,7 +98,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (_watch is null || _config.App is null) return "Not watching anything";
         var state = _config.Paused ? "paused" : _watch.IsAttached ? (_watch.InFront ? "recording" : "app not in front, idle") : "waiting for the app to start";
-        return $"{_config.App.DisplayName}: {state}. {_watch.EventsWritten} events, {_watch.EffectsWritten} effects today.";
+        return $"{_config.App.DisplayName}: {state}. {_watch.EventsWritten} events, {_watch.EffectsWritten} effects since start.";
     }
 
     private void TogglePause()
@@ -99,13 +116,10 @@ internal sealed class TrayContext : ApplicationContext
         try
         {
             if (_config.App is null || _watch is null) return;
-            // keep the footprint small while the watched app is not in front
             if (!_watch.InFront) MemoryTrim.Trim();
-            // nightly learn
             var now = DateTime.Now;
             if (now.ToString("HH:mm") == _config.LearnAt && (_config.LastLearn is null || _config.LastLearn.Value.Date != now.Date))
-                RunLearn(manual: false);
-            // one-time health check after the first hour of watching
+                RunLearn(manual: false, rebuild: false);
             if (!_config.HealthCheckDone && _watch.AttachedSince != default && (now - _watch.AttachedSince).TotalMinutes >= 60)
             {
                 _config.HealthCheckDone = true;
@@ -114,16 +128,15 @@ internal sealed class TrayContext : ApplicationContext
                 if (_watch.MainWindowControls >= 0 && _watch.MainWindowControls < 10)
                     problems.Add($"the main window shows only {_watch.MainWindowControls} controls, so field names and buttons cannot be learned (the app may draw its own screens)");
                 if (!_watch.HasDataSources) problems.Add("no data source is set, so what the app saves cannot be learned (add one in Settings > Data)");
-                if (problems.Count > 0)
-                    _icon.ShowBalloonTip(15000, "App Watcher: what it cannot learn from this app", string.Join("; ", problems) + ".", ToolTipIcon.Warning);
+                if (problems.Count > 0) Balloon("What App Watcher cannot learn from this app: " + string.Join("; ", problems) + ".", ToolTipIcon.Warning);
             }
         }
         catch (Exception ex) { Log.Error("minute tick failed", ex); }
     }
 
-    private void RunLearn(bool manual)
+    private void RunLearn(bool manual, bool rebuild)
     {
-        if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { if (manual) _icon.ShowBalloonTip(3000, "App Watcher", "Busy, try again in a moment.", ToolTipIcon.Info); return; }
+        if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { if (manual) Balloon("Busy, try again in a moment.", ToolTipIcon.Info); return; }
         var app = _config.App.DisplayName;
         var paths = Paths.ForApp(app);
         Task.Run(async () =>
@@ -131,39 +144,40 @@ internal sealed class TrayContext : ApplicationContext
             try
             {
                 var sw = Stopwatch.StartNew();
-                var result = Learner.Learn(Learner.LoadInput(paths, app));
-                var changes = MemoryWriter.Write(paths.Memory, result);
-                _config.LastLearn = DateTime.Now;
-                ConfigStore.Save(_config);
-                Log.Info($"learn done in {sw.ElapsedMilliseconds} ms: {changes.Count} files changed");
-                var msg = $"Learned from {result.EventCount} events and {result.EffectCount} effects: {result.Tables.Count} tables, {result.FieldMappings.Count} field mappings, {result.Rules.Count} rules, {result.Flows.Count} flows.";
-                if (manual) _icon.ShowBalloonTip(6000, "App Watcher", msg, ToolTipIcon.Info);
-                if (_config.Api.Enabled)
-                {
-                    var key = Dpapi.Unprotect(_config.Api.ApiKeyProtected);
-                    if (!string.IsNullOrEmpty(key))
-                    {
-                        try
-                        {
-                            var status = await new ClaudeApiClient(_config.Api, key).AnalyzeAndSaveAsync(paths.Memory);
-                            _config.Api.LastRun = DateTime.Now; _config.Api.LastResult = status; ConfigStore.Save(_config);
-                            Log.Info("API analysis: " + status);
-                        }
-                        catch (Exception ex)
-                        {
-                            _config.Api.LastRun = DateTime.Now; _config.Api.LastResult = "failed: " + ex.Message; ConfigStore.Save(_config);
-                            Log.Error("API analysis failed", ex);
-                        }
-                    }
-                }
+                var result = LearnRunner.Run(_config, paths, app, rebuild, out var changes);
+                Log.Info($"{(rebuild ? "rebuild" : "learn")} done in {sw.ElapsedMilliseconds} ms: {changes.Count} files changed");
+                if (manual) Balloon($"Learned from {result.EventCount} events and {result.EffectCount} effects: {result.Tables.Count} tables, {result.FieldMappings.Count(m => m.IsSeen)} field mappings seen, {result.Rules.Count} rules, {result.Flows.Count} flows. Memory: {paths.Memory}", ToolTipIcon.Info);
+                await RunAnalysisProviders(paths);
             }
             catch (Exception ex)
             {
                 Log.Error("learn failed", ex);
-                if (manual) _icon.ShowBalloonTip(6000, "App Watcher", "Learn failed: " + ex.Message, ToolTipIcon.Error);
+                if (manual) Balloon("Learn failed: " + ex.Message, ToolTipIcon.Error);
             }
             finally { Interlocked.Exchange(ref _busy, 0); }
         });
+    }
+
+    /// <summary>Optional analyses, both off by default. Only memory/*.md leaves the folder.</summary>
+    private async Task RunAnalysisProviders(AppPaths paths)
+    {
+        if (_config.Api.Enabled)
+        {
+            var key = Dpapi.Unprotect(_config.Api.ApiKeyProtected);
+            if (!string.IsNullOrEmpty(key))
+            {
+                try { _config.Api.LastResult = await new ClaudeApiClient(_config.Api, key).AnalyzeAndSaveAsync(paths.Memory); }
+                catch (Exception ex) { _config.Api.LastResult = "failed: " + ex.Message; Log.Error("API analysis failed", ex); }
+                _config.Api.LastRun = DateTime.Now; ConfigStore.Save(_config);
+            }
+        }
+        if (_config.Local.Enabled)
+        {
+            var file = _config.Api.Enabled ? "architecture-reviewed-local.md" : "architecture-reviewed.md";
+            try { _config.Local.LastResult = await new LocalLlmClient(_config.Local).AnalyzeAndSaveAsync(paths.Memory, file); }
+            catch (Exception ex) { _config.Local.LastResult = "failed: " + ex.Message; Log.Error("local analysis failed", ex); }
+            _config.Local.LastRun = DateTime.Now; ConfigStore.Save(_config);
+        }
     }
 
     private void RunExport()
@@ -175,17 +189,17 @@ internal sealed class TrayContext : ApplicationContext
         {
             try
             {
-                var result = Learner.Learn(Learner.LoadInput(paths, app));
-                MemoryWriter.Write(paths.Memory, result);
+                var result = LearnRunner.Run(_config, paths, app, rebuild: false, out _);
                 var (folder, zip) = Exporter.Export(paths, app, result);
+                _lastExport = zip;
+                _copyExport.Enabled = true;
                 Log.Info("export written: " + zip);
-                _icon.ShowBalloonTip(8000, "App Watcher", $"Export ready: {Path.GetFileName(zip)}. Copy docs/raw into app-twin-kit and run /mode spec.", ToolTipIcon.Info);
-                try { Process.Start(new ProcessStartInfo(paths.Export) { UseShellExecute = true }); } catch { }
+                Balloon($"Export ready: {zip}. Use 'Copy last export path' in the menu. Copy docs/raw into app-twin-kit and run /mode spec.", ToolTipIcon.Info);
             }
             catch (Exception ex)
             {
                 Log.Error("export failed", ex);
-                _icon.ShowBalloonTip(6000, "App Watcher", "Export failed: " + ex.Message, ToolTipIcon.Error);
+                Balloon("Export failed: " + ex.Message, ToolTipIcon.Error);
             }
             finally { Interlocked.Exchange(ref _busy, 0); }
         });
@@ -193,13 +207,8 @@ internal sealed class TrayContext : ApplicationContext
 
     private bool AskPassword(string why)
     {
-        using var d = new PasswordDialog(why);
-        while (d.ShowDialog() == DialogResult.OK)
-        {
-            if (PasswordHasher.Verify(Dpapi.Unprotect(_config.PasswordProtected) ?? "", d.Password)) return true;
-            MessageBox.Show("Wrong password.", "App Watcher", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-        return false;
+        using var d = new PasswordDialog(why, pw => PasswordHasher.Verify(Dpapi.Unprotect(_config.PasswordProtected) ?? "", pw));
+        return d.ShowDialog() == DialogResult.OK;
     }
 
     private void OpenSettings()
@@ -240,7 +249,7 @@ internal static class MemoryTrim
         try
         {
             GC.Collect(2, GCCollectionMode.Optimized, blocking: false);
-            SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, new IntPtr(-1), new IntPtr(-1));
+            SetProcessWorkingSetSize(Process.GetCurrentProcess().Handle, new IntPtr(-1), new IntPtr(-1));
         }
         catch { }
     }
