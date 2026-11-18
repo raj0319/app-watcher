@@ -15,6 +15,8 @@ public sealed class WatcherConfig
     /// <summary>Local time "HH:mm" at which the nightly learn runs.</summary>
     public string LearnAt { get; set; } = "02:00";
     public ApiSettings Api { get; set; } = new();
+    public LocalAnalysisSettings Local { get; set; } = new();
+    public SqlCaptureSettings SqlCapture { get; set; } = new();
     public bool Paused { get; set; }
     public bool HealthCheckDone { get; set; }
     public DateTime? LastLearn { get; set; }
@@ -74,6 +76,27 @@ public sealed class ApiSettings
     public int MaxTokens { get; set; } = 8000;
     public DateTime? LastRun { get; set; }
     public string? LastResult { get; set; }
+}
+
+/// <summary>OpenAI-compatible endpoint on the client's own machine (Ollama by default). Off by default.</summary>
+public sealed class LocalAnalysisSettings
+{
+    public bool Enabled { get; set; }
+    public string Endpoint { get; set; } = "http://localhost:11434/v1";
+    public string Model { get; set; } = "llama3.1";
+    public string? ApiKeyProtected { get; set; }
+    public DateTime? LastRun { get; set; }
+    public string? LastResult { get; set; }
+}
+
+/// <summary>Opt-in SQL statement evidence: an Extended Events (.xel) folder, a CSV export, or the Windows ODBC trace.</summary>
+public sealed class SqlCaptureSettings
+{
+    public bool Enabled { get; set; }
+    /// <summary>Folder with .xel/.csv files from scripts/sql/xevents-session.sql, or the ODBC SQL.LOG file.</summary>
+    public string? LogPath { get; set; }
+    /// <summary>True when App Watcher itself switched Windows ODBC tracing on (so it can switch it off again).</summary>
+    public bool OdbcTracingOn { get; set; }
 }
 
 public static class ConfigStore
