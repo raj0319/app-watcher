@@ -1,0 +1,292 @@
+using System.Text;
+
+namespace AppWatcher.Core.Learning;
+
+/// <summary>Writes memory/*.md from a LearnResult and keeps changelog.md. Memory files never contain raw data values.</summary>
+public static class MemoryWriter
+{
+    public static readonly string[] Files = { "data-model.md", "screens.md", "rules.md", "flows.md", "architecture.md" };
+
+    public static Dictionary<string, string> Render(LearnResult r) => new()
+    {
+        ["data-model.md"] = DataModel(r),
+        ["screens.md"] = Screens(r),
+        ["rules.md"] = Rules(r),
+        ["flows.md"] = Flows(r),
+        ["architecture.md"] = Architecture(r),
+    };
+
+    public static List<string> Write(string memoryDir, LearnResult r)
+    {
+        Directory.CreateDirectory(memoryDir);
+        var rendered = Render(r);
+        var changes = new List<string>();
+        var log = new StringBuilder();
+        foreach (var (name, text) in rendered)
+        {
+            var path = Path.Combine(memoryDir, name);
+            var old = File.Exists(path) ? File.ReadAllLines(path) : Array.Empty<string>();
+            var (added, removed) = LineDiff(old, text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray());
+            if (old.Length > 0 && added.Count == 0 && removed.Count == 0) continue;
+            changes.Add($"{name}: +{added.Count} -{removed.Count}");
+            log.AppendLine($"### {name}: +{added.Count} lines, -{removed.Count} lines");
+            foreach (var l in added.Take(15)) log.AppendLine($"- added: {l.Trim()}");
+            foreach (var l in removed.Take(15)) log.AppendLine($"- removed: {l.Trim()}");
+            log.AppendLine();
+        }
+        foreach (var (name, text) in rendered) File.WriteAllText(Path.Combine(memoryDir, name), text);
+
+        var changelog = Path.Combine(memoryDir, "changelog.md");
+        var header = $"## {r.LearnedAt:yyyy-MM-dd HH:mm} learn: {r.EventCount} events, {r.EffectCount} effects, {r.Tables.Count} tables";
+        var entry = header + "\n\n" + (log.Length == 0 ? "No changes since the last learn.\n\n" : log.ToString());
+        var existing = File.Exists(changelog) ? File.ReadAllText(changelog) : "# Changelog\n\nWhat changed in the memory files at each learn. Newest first.\n\n";
+        var idx = existing.IndexOf("\n## ", StringComparison.Ordinal);
+        var head = idx < 0 ? existing.TrimEnd() + "\n\n" : existing[..(idx + 1)];
+        var tail = idx < 0 ? "" : existing[(idx + 1)..];
+        File.WriteAllText(changelog, head + entry + tail);
+        return changes;
+    }
+
+    private static (List<string> added, List<string> removed) LineDiff(string[] old, string[] cur)
+    {
+        var skip = (string l) => l.StartsWith("Last learn:") || l.StartsWith("Generated") || l.Length == 0;
+        var o = old.Where(l => !skip(l)).ToList();
+        var c = cur.Where(l => !skip(l)).ToList();
+        var oldSet = new HashSet<string>(o);
+        var curSet = new HashSet<string>(c);
+        return (c.Where(l => !oldSet.Contains(l)).Distinct().ToList(), o.Where(l => !curSet.Contains(l)).Distinct().ToList());
+    }
+
+    private static string Header(LearnResult r, string title, string what)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"# {title}");
+        sb.AppendLine();
+        sb.AppendLine($"App: **{r.AppName}**. {what}");
+        sb.AppendLine($"Last learn: {r.LearnedAt:yyyy-MM-dd HH:mm}. Evidence: {r.EventCount} events in {r.SessionCount} sessions, {r.EffectCount} effects, {r.Tables.Count} tables.");
+        sb.AppendLine("Every line ends with a confidence (seen N× = observed that many times; inferred = guessed from structure) and the evidence file to open.");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public static string DataModel(LearnResult r)
+    {
+        var sb = new StringBuilder(Header(r, "Data model (learned)", "Tables, columns, inferred types and relations of the watched app's data."));
+        if (r.Sources.Count > 0)
+        {
+            sb.AppendLine("## Sources");
+            foreach (var s in r.Sources) sb.AppendLine($"- `{s}`");
+            sb.AppendLine();
+        }
+        sb.AppendLine("## Tables");
+        sb.AppendLine();
+        if (r.Tables.Count == 0) sb.AppendLine("_No tables known yet._");
+        foreach (var t in r.Tables)
+        {
+            var written = t.WrittenEvidence.Seen > 0 ? $"written in {t.WrittenEvidence.Seen} effects; evidence: {t.WrittenEvidence.Pointer}" : "never seen written; evidence: snapshots/before.json";
+            sb.AppendLine($"### {t.Qualified}");
+            sb.AppendLine($"Rows: {t.RowCount}. Key: {(t.PrimaryKey.Count == 0 ? "(none)" : string.Join(", ", t.PrimaryKey))}. {written}{(t.Note is null ? "" : $". Note: {t.Note}")}");
+            sb.AppendLine();
+            sb.AppendLine("| Column | Type | Null? | Shape | Distinct | Filled from screen field | Confidence |");
+            sb.AppendLine("|---|---|---|---|---|---|---|");
+            foreach (var c in t.Columns)
+            {
+                var maps = r.FieldMappings.Where(m => m.Table == t.Qualified && m.Column == c.Name).OrderByDescending(m => m.Evidence.Seen).ToList();
+                var from = maps.Count == 0 ? "" : string.Join("; ", maps.Take(2).Select(m => $"{m.Screen} › {m.Field} (seen {m.Evidence.Seen}×)"));
+                var conf = maps.Count == 0 ? "type inferred from values" : $"seen {maps[0].Evidence.Seen}×; {maps[0].Evidence.Pointer}";
+                sb.AppendLine($"| {c.Name}{(c.IsPk ? " (PK)" : "")} | {c.Type} | {(c.Nullable ? "yes" : "no")} | `{c.Shape}` | {c.Distinct} | {from} | {conf} |");
+            }
+            sb.AppendLine();
+        }
+        sb.AppendLine("## Relations (foreign key candidates)");
+        sb.AppendLine();
+        if (r.Relations.Count == 0) sb.AppendLine("_None found yet._");
+        foreach (var rel in r.Relations)
+        {
+            var detail = rel.SnapshotRows > 0 ? $"{rel.SnapshotMatches} of {rel.SnapshotRows} rows match" : "";
+            if (rel.NameHint) detail += (detail.Length > 0 ? ", " : "") + "column name matches table";
+            sb.AppendLine($"- `{rel.FromTable}`.{rel.FromColumn} → `{rel.ToTable}`.{rel.ToColumn} ({detail}) — {rel.Evidence}");
+        }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public static string Screens(LearnResult r)
+    {
+        var sb = new StringBuilder(Header(r, "Screens (learned)", "Each window of the app, its fields, which columns they fill and which tables the screen writes."));
+        if (r.MainWindow is not null) sb.AppendLine($"Main window: **{r.MainWindow}** (the window users spend the most time in).");
+        sb.AppendLine();
+        foreach (var s in r.Screens)
+        {
+            var key = Titles.Key(s.Title);
+            sb.AppendLine($"## {s.Title}");
+            sb.AppendLine($"Controls: {s.ControlCount}. Visits: {s.Visits}. Record: {s.File}");
+            sb.AppendLine();
+            var writes = r.ScreenWrites.Where(w => w.Screen == key).ToList();
+            if (writes.Count > 0)
+            {
+                sb.AppendLine("**Tables written:**");
+                foreach (var w in writes)
+                    sb.AppendLine($"- `{w.Table}` — {(w.Always ? "always" : "sometimes")} ({w.Count} of {w.ScreenEffects} saves); evidence: {w.Evidence.Pointer}");
+                sb.AppendLine();
+            }
+            var maps = r.FieldMappings.Where(m => m.Screen == key).ToList();
+            sb.AppendLine("| Field | Column | Confidence | Evidence |");
+            sb.AppendLine("|---|---|---|---|");
+            var fields = s.Fields.Concat(maps.Select(m => m.Field)).Distinct().ToList();
+            if (fields.Count == 0) sb.AppendLine("| (no input fields seen) | | | |");
+            foreach (var f in fields)
+            {
+                var fm = maps.Where(m => m.Field == f).OrderByDescending(m => m.Evidence.Seen).ToList();
+                if (fm.Count == 0) { sb.AppendLine($"| {f} | (not mapped yet) | inferred | {s.File} |"); continue; }
+                foreach (var m in fm.Take(3)) sb.AppendLine($"| {f} | `{m.Table}`.{m.Column} | seen {m.Evidence.Seen}× | {m.Evidence.Pointer} |");
+            }
+            if (s.Actions.Count > 0) sb.AppendLine().AppendLine($"Actions: {string.Join(", ", s.Actions.Take(20))}");
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
+    public static string Rules(LearnResult r)
+    {
+        var sb = new StringBuilder(Header(r, "Rules (learned)", "Validation messages, calculated columns and numbering sequences."));
+        sb.AppendLine("## Validation rules");
+        sb.AppendLine();
+        if (r.Rules.Count == 0) sb.AppendLine("_No message window has followed a value change yet._");
+        else
+        {
+            sb.AppendLine("| Screen | Field | Value pattern | Message | Confidence | Evidence |");
+            sb.AppendLine("|---|---|---|---|---|---|");
+            foreach (var v in r.Rules) sb.AppendLine($"| {v.Screen} | {v.Field} | {v.Pattern} | {Cell(v.Message)} | {v.Evidence.Confidence} | {v.Evidence.Pointer} |");
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Calculated columns");
+        sb.AppendLine();
+        if (r.Formulas.Count == 0) sb.AppendLine("_No formula fits yet._");
+        foreach (var f in r.Formulas)
+        {
+            var untyped = f.UntypedChanges > 0 ? $"changed without being typed {f.UntypedChanges}×; " : "";
+            var alt = f.Alternatives.Count == 0 ? "" : $" (also fits: {string.Join("; ", f.Alternatives)})";
+            sb.AppendLine($"- `{f.Table}`.{f.Column}: **{f.Expression}** explains {f.Explained} of {f.Tested} rows{(f.Rounded2 ? ", rounded to 2 places" : "")}{alt} — {untyped}{f.Evidence}");
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Numbering sequences");
+        sb.AppendLine();
+        if (r.Sequences.Count == 0) sb.AppendLine("_No sequence found yet._");
+        foreach (var s in r.Sequences)
+            sb.AppendLine($"- `{s.Table}`.{s.Column}: increases by one per new row{(string.IsNullOrEmpty(s.Prefix) ? "" : $", prefix \"{s.Prefix}\"")}{(s.Dense ? ", existing values form a dense range" : "")} — {s.Evidence}");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public static string Flows(LearnResult r)
+    {
+        var sb = new StringBuilder(Header(r, "Flows (learned)", "Status flows of data columns and how users move between windows."));
+        sb.AppendLine("## Status flows");
+        sb.AppendLine();
+        if (r.StatusFlows.Count == 0) sb.AppendLine("_No column with a small set of values has been seen changing yet._");
+        foreach (var f in r.StatusFlows)
+        {
+            sb.AppendLine($"### `{f.Table}`.{f.Column} — {f.Evidence}");
+            sb.AppendLine($"States in order: {string.Join(" → ", f.States)}");
+            if (f.Distribution.Count > 0) sb.AppendLine($"Rows per state now: {string.Join(", ", f.Distribution.OrderByDescending(d => d.Value).Select(d => $"{d.Key}={d.Value}"))}");
+            if (f.Initial.Count > 0) sb.AppendLine($"New rows start as: {string.Join(", ", f.Initial.OrderByDescending(d => d.Value).Select(d => $"{d.Key} ({d.Value}×)"))}");
+            sb.AppendLine();
+            sb.AppendLine("```mermaid");
+            sb.AppendLine("stateDiagram-v2");
+            foreach (var i in f.Initial.Keys) sb.AppendLine($"    [*] --> {Id(i)}");
+            foreach (var t in f.Transitions) sb.AppendLine($"    {Id(t.From)} --> {Id(t.To)} : {t.Evidence.Seen}x");
+            sb.AppendLine("```");
+            sb.AppendLine();
+            foreach (var t in f.Transitions) sb.AppendLine($"- {t.From} → {t.To}: seen {t.Evidence.Seen}×; evidence: {t.Evidence.Pointer}");
+            if (f.NeverSeen.Count > 0) sb.AppendLine($"- never seen: {string.Join(", ", f.NeverSeen.Select(n => $"{n.from}→{n.to}"))}");
+            sb.AppendLine();
+        }
+        sb.AppendLine("## User flows (window sequences)");
+        sb.AppendLine();
+        if (r.Flows.Count == 0) sb.AppendLine("_No flow away from the main window yet._");
+        else
+        {
+            sb.AppendLine("| Flow (starts at) | Count | Median duration | Most common path | Users most often go back from |");
+            sb.AppendLine("|---|---|---|---|---|");
+            foreach (var f in r.Flows)
+                sb.AppendLine($"| {f.Key} | {f.Count} | {Duration(f.MedianMs)} | {string.Join(" → ", f.CommonPath)} ({f.CommonPathCount}×) | {(f.BackFrom is null ? "-" : $"{f.BackFrom} ({f.BackFromCount}×)")} |");
+            sb.AppendLine();
+            foreach (var f in r.Flows)
+            {
+                sb.AppendLine($"### Flow: {f.Key} — seen {f.Count}×; evidence: {f.Evidence.Pointer}");
+                foreach (var (win, controls) in f.StepControls)
+                    sb.AppendLine($"- {win}: {string.Join(", ", controls.Select(c => $"{c.name} ({c.count})"))}");
+                sb.AppendLine();
+            }
+        }
+        sb.AppendLine("## Navigation graph");
+        sb.AppendLine();
+        if (r.Navigation.Count == 0) sb.AppendLine("_Nothing yet._");
+        else
+        {
+            sb.AppendLine("```mermaid");
+            sb.AppendLine("flowchart LR");
+            var ids = new Dictionary<string, string>();
+            foreach (var e in r.Navigation.Take(60))
+                sb.AppendLine($"    {NodeId(e.From, ids)}[\"{Cell(e.From)}\"] -->|{e.Count}| {NodeId(e.To, ids)}[\"{Cell(e.To)}\"]");
+            sb.AppendLine("```");
+        }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    public static string Architecture(LearnResult r)
+    {
+        var sb = new StringBuilder(Header(r, "Architecture (learned)", "Modules grouped by shared tables, and an honest account of what was seen versus guessed."));
+        sb.AppendLine("## Modules");
+        sb.AppendLine();
+        foreach (var m in r.Modules)
+        {
+            sb.AppendLine($"### {m.Name}");
+            if (m.Screens.Count > 0) sb.AppendLine($"- Screens: {string.Join(", ", m.Screens)}");
+            if (m.Tables.Count > 0) sb.AppendLine($"- Tables: {string.Join(", ", m.Tables.Select(t => $"`{t}`"))}");
+            var rels = r.Relations.Where(x => m.Tables.Contains(x.FromTable) || m.Tables.Contains(x.ToTable)).Take(10).ToList();
+            foreach (var rel in rels) sb.AppendLine($"- Relation: `{rel.FromTable}`.{rel.FromColumn} → `{rel.ToTable}`.{rel.ToColumn} ({rel.Evidence.Confidence})");
+            sb.AppendLine();
+        }
+        sb.AppendLine("## What is seen vs inferred");
+        sb.AppendLine();
+        int seen(IEnumerable<Evidence> e) => e.Count(x => !x.Inferred && x.Seen > 0);
+        int inf(IEnumerable<Evidence> e) => e.Count(x => x.Inferred || x.Seen == 0);
+        sb.AppendLine("| Finding | Seen (observed) | Inferred (guessed) |");
+        sb.AppendLine("|---|---|---|");
+        sb.AppendLine($"| Screen → table writes | {r.ScreenWrites.Count} | 0 |");
+        sb.AppendLine($"| Field → column mappings | {r.FieldMappings.Count} | 0 |");
+        sb.AppendLine($"| Relations | {seen(r.Relations.Select(x => x.Evidence))} | {inf(r.Relations.Select(x => x.Evidence))} |");
+        sb.AppendLine($"| Calculated columns | {seen(r.Formulas.Select(x => x.Evidence))} | {inf(r.Formulas.Select(x => x.Evidence))} |");
+        sb.AppendLine($"| Validation rules | {r.Rules.Count} | 0 |");
+        sb.AppendLine($"| Status flows | {seen(r.StatusFlows.Select(x => x.Evidence))} | {inf(r.StatusFlows.Select(x => x.Evidence))} |");
+        sb.AppendLine($"| Sequences | {seen(r.Sequences.Select(x => x.Evidence))} | {inf(r.Sequences.Select(x => x.Evidence))} |");
+        sb.AppendLine($"| Column types | 0 | {r.Tables.Sum(t => t.Columns.Count)} (from values) |");
+        sb.AppendLine();
+        sb.AppendLine("Seen means the watcher recorded the cause and the effect together at least once. Inferred means the structure suggests it but no user action proved it. Treat inferred lines as questions for the architect.");
+        sb.AppendLine();
+        var unwritten = r.Tables.Where(t => t.WrittenEvidence.Seen == 0 && !t.Skipped).Select(t => t.Qualified).ToList();
+        if (unwritten.Count > 0) sb.AppendLine($"Tables never seen written ({unwritten.Count}): {string.Join(", ", unwritten.Take(30))}.");
+        var skipped = r.Tables.Where(t => t.Skipped).Select(t => $"{t.Qualified} ({t.Note})").ToList();
+        if (skipped.Count > 0) sb.AppendLine($"Tables skipped by size caps: {string.Join("; ", skipped)}.");
+        if (r.Warnings.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Warnings");
+            foreach (var w in r.Warnings) sb.AppendLine($"- {w}");
+        }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    private static string Cell(string s) => s.Replace("|", "/").Replace("\"", "'").Replace("\r", " ").Replace("\n", " ");
+    private static string Id(string s) => new string(s.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
+    private static string NodeId(string s, Dictionary<string, string> ids)
+    {
+        if (!ids.TryGetValue(s, out var id)) ids[s] = id = "n" + ids.Count;
+        return id;
+    }
+    public static string Duration(double ms) => ms < 1000 ? $"{ms:0} ms" : ms < 60_000 ? $"{ms / 1000:0.#} s" : $"{ms / 60_000:0.#} min";
+}
