@@ -140,6 +140,9 @@ public class InformV09Tests
         }
         Assert.Equal(50, selects);
         Assert.Equal(new[] { "Main", "Header" }, TabDocuments.InnerTabChanges(null, first)); // the first read of a document reports its open pages
+        // a WinForms tab control: the pages are siblings of the tab items, named like them; the page on screen says which is selected
+        var winforms = new List<ControlRow> { R(0, "Window", "Sales Order Entry", "1"), R(1, "Tab", "", "tabsDoc", "20,40 500x260"), R(2, "Pane", "Notes", "tabDocNotes", "24,66 492x230"), R(3, "Edit", "", "txtDocNotes", "36,80 460x180"), R(2, "TabItem", "Main", "tabDocMain", "22,42 80x22"), R(2, "TabItem", "Notes", "tabDocNotes", "102,42 80x22") };
+        Assert.Equal("Notes", TabDocuments.InnerTabSelections(winforms)["tabsDoc"]);
     }
 
     // ---------- 3. clicks without a hook ----------

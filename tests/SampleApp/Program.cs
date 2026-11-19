@@ -155,8 +155,11 @@ internal sealed class MainForm : Form
         var toolbar = new Panel { Dock = DockStyle.Top, Height = 30, Name = "pnlToolbar" };
         var refresh = new Button { Text = "Refresh", Name = "btnRefresh", Left = 4, Top = 2, Width = 80, Height = 26 };
         refresh.Click += (_, _) => { _refreshes++; Text = $"Sample ERP - refreshed {_refreshes}"; _statusText.Text = $"Refreshed {_refreshes}"; };
+        // the same workspace as View > Workspace, for a test that cannot read the menu's drop-down (WinForms hides it from a second UIA client now and then)
+        var workspace = new Button { Text = "Workspace", Name = "btnWorkspace", Left = 90, Top = 2, Width = 90, Height = 26 };
+        workspace.Click += (_, _) => new WorkspaceForm(this).Show(this);
         tips.SetToolTip(refresh, "Reload the lists from the database");
-        toolbar.Controls.Add(refresh);
+        toolbar.Controls.AddRange(new Control[] { refresh, workspace });
 
         _tabs.TabPages.Add(customers); _tabs.TabPages.Add(orders); _tabs.TabPages.Add(quote);
         _status.Items.Add(_statusText);

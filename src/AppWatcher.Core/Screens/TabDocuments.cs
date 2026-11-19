@@ -1,4 +1,4 @@
-namespace AppWatcher.Core.Screens;
+﻿namespace AppWatcher.Core.Screens;
 
 /// <summary>
 /// Tabbed workspaces (Infragistics UltraTabbedMdi, DevExpress document managers, WinForms TabControls): which tab
@@ -63,8 +63,15 @@ public static class TabDocuments
             var key = rows[i].AutomationId.Length > 0 ? rows[i].AutomationId : "tab@" + rows[i].Position;
             var depth = rows[i].Depth;
             string? selected = null;
+            var items = new List<string>(); var pages = new List<string>();
             for (var j = i + 1; j < rows.Count && rows[j].Depth > depth; j++)
-                if (rows[j].Type == "TabItem" && rows[j].Depth == depth + 1 && rows[j].Name.Trim().Length > 0 && rows[j].Value == "selected") { selected = rows[j].Name.Trim(); break; }
+            {
+                if (rows[j].Depth != depth + 1 || rows[j].Name.Trim().Length == 0) continue;
+                if (rows[j].Type == "TabItem") { items.Add(rows[j].Name.Trim()); if (rows[j].Value == "selected" && selected is null) selected = rows[j].Name.Trim(); }
+                // a WinForms TabControl keeps its pages as siblings of the tab items, named like them: the page on screen is the selected one
+                else if (rows[j].Type is "Pane" or "Custom" or "Group" && !Offscreen(rows[j])) pages.Add(rows[j].Name.Trim());
+            }
+            selected ??= items.FirstOrDefault(n => pages.Contains(n));
             if (selected is not null) result[key] = selected;
         }
         return result;

@@ -604,7 +604,9 @@ internal sealed class UiaCollector : IDisposable
                 }
                 UpdateMdiStatus();
                 if (active == current) return;
-                if (active is null) { if (current is not null) TabGone(top, current); return; }
+                // the document that was in front is gone (destroyed): its flow ends before the next document becomes the screen
+                if (current is not null && !children.Any(c => c.title.Trim() == current)) TabGone(top, current);
+                if (active is null) return;
                 AutomationElement? el = null;
                 try { el = _automation.FromHandle(activeChild); } catch { }
                 ApplyTab(top, active, el, viaEvent: false, documentHwnd: activeChild);
@@ -1200,7 +1202,15 @@ internal sealed class UiaCollector : IDisposable
             if (act == Acts.Invoke && r.Ct == "Window") return;
             if (act == Acts.Invoke) { r.How = PressHow.Uia; EmitPress(r); return; }
             if (act == Acts.Select && r.Ct == "MenuItem") { lock (_gate) _lastMenuItem = (r.Name, DateTime.Now); }
-            if (act == Acts.Select && r.Ct == "TabItem" && _settings.TabDocuments && r.Name.Length > 0) { TabSelected(el, hwnd, r.Name); return; }
+            if (act == Acts.Select && r.Ct == "TabItem" && _settings.TabDocuments && r.Name.Length > 0)
+            {
+                // a tab item inside a document (or in a window whose documents are MDI children) is an inner page, never a document:
+                // the re-read of the document reports the page that is selected now
+                bool inner; lock (_gate) inner = _mdiClients.ContainsKey(hwnd);
+                if (!inner) { try { inner = IsInsideDocument(el, _automation.FromHandle(hwnd)); } catch { } }
+                if (inner) { ScheduleReread("tab " + r.Name); return; }
+                TabSelected(el, hwnd, r.Name); return;
+            }
             Emit(r);
             if (act == Acts.Select) ScheduleReread("pick " + r.Name);
         }

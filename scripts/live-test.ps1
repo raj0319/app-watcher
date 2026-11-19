@@ -43,6 +43,7 @@ Add-Type -Namespace LiveTest -Name Mouse -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool GetCursorPos(out System.Drawing.Point p);
 [DllImport("user32.dll")] public static extern void mouse_event(uint f, int x, int y, uint d, System.UIntPtr e);
 [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
 [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out System.Drawing.Rectangle r);
 '@ -ReferencedAssemblies System.Drawing
 
@@ -101,6 +102,16 @@ function Find($parent, [string]$automationId) {
         }
         Start-Sleep -Milliseconds 300
     }
+    # the element for the main window can go stale (its title changed, or WinForms handed a second client an empty tree): look again from the process's main window handle
+    try {
+        $app.Refresh()
+        if ($app.MainWindowHandle -ne 0) {
+            $fresh = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+            foreach ($d in $fresh.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+                if ($d.Current.AutomationId -eq $automationId) { return $d }
+            }
+        }
+    } catch { }
     $ids = @(); foreach ($d in $parent.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { $ids += $d.Current.AutomationId }
     throw "control not found: $automationId in [$($parent.Current.Name)] (ids: $($ids -join ', '))"
 }
@@ -253,9 +264,9 @@ function RealHover($parent, [string]$automationId, [string]$what) {
     if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle) { $script:Inconclusive += $what; Write-Host "   (skipped the hover on $what - the sample app is not the window in front)"; return $false }
     # a tip only shows after the pointer arrives and rests: leave the control first (to the window's status bar), then come back
     MoveTo ([int]($w.Rect.X + $w.Rect.Width / 2)) ([int]($w.Rect.Bottom - 12))
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 1500   # long enough for the tip shown after the clicks to go and the tooltip to forget the control
     MoveTo ([int]($r.X + $r.Width / 2)) ([int]($r.Y + $r.Height / 2))
-    Start-Sleep -Milliseconds 1200   # a tip shows after the pointer rests
+    Start-Sleep -Milliseconds 1500   # a tip shows after the pointer rests
     return $true
 }
 
@@ -323,16 +334,20 @@ try { RealClick $main "btnRefresh" "Refresh" | Out-Null } catch { Write-Host "  
 Start-Sleep -Milliseconds 1500
 try { RealHover $main "btnRefresh" "Refresh tip" | Out-Null } catch { Write-Host "   step failed: RealHover Refresh -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 1000
+# a tip does not always show on the first visit after a click: a second leave-and-return, like a person would do
+try { RealHover $main "btnRefresh" "Refresh tip" | Out-Null } catch { Write-Host "   step failed: RealHover Refresh -> $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 1000
 try { Tab $main "Customer Master" } catch { Write-Host "   step failed: Tab $main 'Customer Master' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 1500
 # an MDI workspace (documents are child windows of the MDI client, like a tabbed-MDI ERP): the document in front is the screen,
 # a real click on its inner tab is a page selection, a real click on Exit closes it and the next document becomes the screen
 $ws = $null
-try { Menu $main "View" "Workspace" } catch { Write-Host "   step failed: Menu View Workspace -> $($_.Exception.Message)" }
+try { Menu $main "View" "Workspace" } catch { Write-Host "   (menu View > Workspace not readable; opening it through the toolbar button: $($_.Exception.Message))"; try { Act $main "btnWorkspace" } catch { Write-Host "   step failed: Act btnWorkspace -> $($_.Exception.Message)" } }
 Start-Sleep -Milliseconds 2500
 try { $ws = Top "Sample ERP - Workspace" 20 } catch { Write-Host "   (workspace window not found: $($_.Exception.Message))" }
 if ($null -ne $ws) {
-    try { [Microsoft.VisualBasic.Interaction]::AppActivate($app.Id) } catch { }
+    # the workspace is an owned window of the sample app: bring that window (ours, found by handle) in front, not the main one
+    try { [LiveTest.Mouse]::SetForegroundWindow([System.IntPtr]$ws.Current.NativeWindowHandle) | Out-Null } catch { }
     Start-Sleep -Milliseconds 800
     $soe = $null
     try { $soe = FindByName $ws "Sales Order Entry" "Window" } catch { Write-Host "   (document window not found: $($_.Exception.Message))" }
