@@ -53,7 +53,7 @@ public static partial class BackendDetector
     {
         var found = new List<BackendInfo>();
         var dirs = new List<string>();
-        if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath)) dirs.Add(Path.GetDirectoryName(exePath)!);
+        if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath) && !DataSourceScanner.IsSharedFolder(Path.GetDirectoryName(exePath)!)) dirs.Add(Path.GetDirectoryName(exePath)!);
         var names = new[] { processName, displayName ?? "" }.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.ToLowerInvariant()).Distinct().ToList();
         foreach (var sf in new[] { Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData })
         {

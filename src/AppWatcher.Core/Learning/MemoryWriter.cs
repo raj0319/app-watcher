@@ -371,6 +371,9 @@ public static class MemoryWriter
     {
         var h = r.Health;
         var sb = new StringBuilder(Header(r, "Health (learned)", "How much evidence there is and what would make the memory more accurate."));
+        sb.Append(Setup.PlainReport.Section(Setup.PlainReport.FromLearn(r)));
+        sb.AppendLine("## The numbers");
+        sb.AppendLine();
         sb.AppendLine("| Measure | Value |");
         sb.AppendLine("|---|---|");
         sb.AppendLine($"| Days with activity | {h.Days} |");

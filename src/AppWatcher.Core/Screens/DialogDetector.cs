@@ -1,37 +1,78 @@
 namespace AppWatcher.Core.Screens;
 
 /// <summary>
-/// Tells a message box from a screen. Windows message boxes have class #32770; toolkit message boxes
-/// (Infragistics, DevExpress) are ordinary windows with a few buttons named OK/Cancel/Yes/No and a body
-/// that is a Text control or a read-only Edit named like lblBody.
+/// Tells a message box from a screen by its STRUCTURE, never by its title alone. A window is a message box when
+/// its class is the Windows dialog class #32770 and it holds no grid, list, tree or field to type into, or when it
+/// has 25 controls or fewer, every button is one of OK, Cancel, Yes, No, Close, Retry, Abort, Ignore, it shows its
+/// message in a Text or a read-only Edit (Infragistics' lblBody), and it holds no grid, list, tree or editable field.
+/// The title bar (Minimize, Maximize, Close, system menu) is on every window and is not counted.
 /// </summary>
 public static class DialogDetector
 {
-    private static readonly HashSet<string> DialogButtons = new(StringComparer.OrdinalIgnoreCase)
-        { "ok", "cancel", "yes", "no", "close", "retry", "ignore", "abort", "continue", "help", "try again", "yes to all", "no to all", "details", "copy" };
+    public static readonly HashSet<string> DialogButtons = new(StringComparer.OrdinalIgnoreCase)
+        { "ok", "cancel", "yes", "no", "close", "retry", "abort", "ignore" };
 
-    private static readonly string[] BodyIds = { "body", "message", "msg", "text", "prompt", "content", "label", "static" };
+    /// <summary>AutomationId words that name a message body when the read-only state could not be read.</summary>
+    private static readonly string[] BodyIds = { "body", "message", "msg", "prompt", "content", "lbl", "static" };
+
+    /// <summary>Control types a message box never has.</summary>
+    private static readonly HashSet<string> NeverInDialog = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "DataGrid", "Table", "List", "Tree", "ComboBox", "CheckBox", "RadioButton", "Spinner", "Slider", "Calendar",
+        "Tab", "TabItem", "ToolBar", "MenuBar", "Menu", "MenuItem", "SplitButton", "DataItem", "ListItem", "TreeItem", "Header", "HeaderItem",
+    };
 
     public static string ButtonKey(string name) => name.Replace("&", "").Replace("_", "").Trim().TrimEnd('.').ToLowerInvariant();
+
+    /// <summary>The window's controls without the window row itself and without its title bar.</summary>
+    public static List<ControlRow> Content(IList<ControlRow> rows)
+    {
+        var list = new List<ControlRow>();
+        int? skipBelow = null;
+        foreach (var r in rows)
+        {
+            if (skipBelow is not null)
+            {
+                if (r.Depth > skipBelow) continue;
+                skipBelow = null;
+            }
+            if (r.Type == "TitleBar") { skipBelow = r.Depth; continue; }
+            if (r.Depth == 0) continue;
+            list.Add(r);
+        }
+        return list;
+    }
+
+    private static bool IsBodyEdit(ControlRow r) =>
+        r.Type is "Edit" or "Document" &&
+        (r.IsReadOnly == true || (r.IsReadOnly is null && BodyIds.Any(b => r.AutomationId.Contains(b, StringComparison.OrdinalIgnoreCase))));
+
+    private static bool IsEditable(ControlRow r) => r.Type is "Edit" or "Document" && !IsBodyEdit(r);
+
+    /// <summary>True when nothing in the structure rules out a message box: 25 controls or fewer, no grid, list, tree or editable field.</summary>
+    public static bool CouldBeDialog(IList<ControlRow> rows)
+    {
+        var c = Content(rows);
+        return c.Count <= 25 && !c.Any(r => NeverInDialog.Contains(r.Type) || IsEditable(r));
+    }
 
     /// <summary>Returns whether the window is a message box, and its body text when it is.</summary>
     public static (bool isDialog, string? body) Detect(string windowClass, IList<ControlRow> rows)
     {
-        var buttons = rows.Where(r => r.Type == "Button" && r.Name.Trim().Length > 0).ToList();
-        var dialogButtons = buttons.Where(b => DialogButtons.Contains(ButtonKey(b.Name))).ToList();
-        var texts = rows.Where(r => r.Depth > 0 && r.Type == "Text" && r.Name.Trim().Length > 0).ToList();
-        var bodyEdits = rows.Where(r => r.Type is "Edit" or "Document" && (BodyIds.Any(b => r.AutomationId.Contains(b, StringComparison.OrdinalIgnoreCase)) || r.Name.Trim().Length > 0)).ToList();
-        var bodyParts = texts.Select(t => t.Name.Trim()).Concat(bodyEdits.Select(e => e.Name.Trim())).Where(s => s.Length > 0 && !DialogButtons.Contains(ButtonKey(s))).Distinct().ToList();
+        var c = Content(rows);
+        var buttons = c.Where(r => r.Type == "Button" && r.Name.Trim().Length > 0).ToList();
+        var texts = c.Where(r => r.Type == "Text" && r.Name.Trim().Length > 0 && !DialogButtons.Contains(ButtonKey(r.Name))).ToList();
+        var bodyEdits = c.Where(IsBodyEdit).ToList();
+        var bodyParts = texts.Select(t => t.Name.Trim()).Concat(bodyEdits.Select(e => e.Name.Trim())).Where(s => s.Length > 0).Distinct().ToList();
         var body = bodyParts.Count == 0 ? null : string.Join(" / ", bodyParts.Take(8));
+        var hasForbidden = c.Any(r => NeverInDialog.Contains(r.Type) || IsEditable(r));
 
-        var classic = windowClass == "#32770" && rows.Count <= 60 && buttons.Count <= 6 && buttons.Count > 0;
-        if (classic) return (true, body);
+        // the Windows dialog class: a message box unless it is really a small form (grid, list, tree, a field to type into)
+        if (windowClass == "#32770" && c.Count <= 60 && buttons.Count is > 0 and <= 6 && !hasForbidden)
+            return (true, body);
 
-        if (rows.Count > 25 || dialogButtons.Count == 0 || buttons.Count > 4) return (false, null);
-        if (rows.Any(r => r.Type is "DataGrid" or "List" or "Tree" or "Table" or "ComboBox" or "CheckBox" or "RadioButton" or "Tab" or "TabItem" or "MenuBar" or "ToolBar")) return (false, null);
-        var edits = rows.Where(r => r.Type is "Edit" or "Document").ToList();
-        if (edits.Count > 1) return (false, null);
-        if (edits.Count == 1 && !bodyEdits.Contains(edits[0])) return (false, null); // an input field, not a body
+        if (c.Count > 25 || buttons.Count == 0 || hasForbidden) return (false, null);
+        if (!buttons.All(b => DialogButtons.Contains(ButtonKey(b.Name)))) return (false, null);
         if (texts.Count == 0 && bodyEdits.Count == 0) return (false, null);
         return (true, body);
     }

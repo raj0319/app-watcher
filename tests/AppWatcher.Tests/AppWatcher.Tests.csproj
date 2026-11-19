@@ -3,6 +3,8 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- the CLI test runs the real AppWatcher.exe; it is built first but not referenced as an assembly -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
@@ -11,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\AppWatcher.Core\AppWatcher.Core.csproj" />
+    <ProjectReference Include="..\..\src\AppWatcher\AppWatcher.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 </Project>

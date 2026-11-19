@@ -6,7 +6,7 @@ namespace AppWatcher.Core;
 
 public sealed class WatcherConfig
 {
-    public const string AppVersion = "0.5";
+    public const string AppVersion = "0.6";
 
     /// <summary>Words on a button or menu item that mean "this writes data", in the languages we meet most. Profiles add their own.</summary>
     public static readonly string[] DefaultTriggers =
@@ -38,8 +38,14 @@ public sealed class WatcherConfig
     /// <summary>Days of raw events kept after they were learned; 0 keeps everything.</summary>
     public int RetentionDays { get; set; } = 180;
     public bool Paused { get; set; }
+    /// <summary>When set, "Pause for an hour" ends at this time and watching resumes by itself.</summary>
+    public DateTime? PausedUntil { get; set; }
     public bool HealthCheckDone { get; set; }
     public DateTime? LastLearn { get; set; }
+    /// <summary>When the user pressed "Start watching" (wizard, --setup, or a new program in Settings). The first-hour report counts from here.</summary>
+    public DateTime? FirstStart { get; set; }
+    /// <summary>The two-minute file-access detection should run once, by itself, as soon as the program is running.</summary>
+    public bool AutoDetectPending { get; set; }
 
     public static JsonSerializerOptions JsonOptions { get; } = new()
     {

@@ -256,6 +256,7 @@ public static class Learner
     {
         var r = new LearnResult { AppName = input.AppName, EventCount = s.EventCount, EffectCount = s.EffectsTotal, SessionCount = s.Sessions, FirstEvent = s.FirstEvent, LastEvent = s.LastEvent };
         r.Backends = input.Backends; r.Toolkit = input.Toolkit; r.Profile = input.Profile; r.Collector = input.Collector;
+        r.HasDataSources = input.HasDataSources;
         if (input.Latest is not null) r.Sources = input.Latest.Databases.Keys.Concat(input.Latest.Files.Keys.Select(Path.GetDirectoryName).Where(d => d is not null).Select(d => d!).Distinct()).OrderBy(x => x).ToList();
 
         var (flows, nav, main) = FlowLearner.Finalize(s, sessionWindows);

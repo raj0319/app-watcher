@@ -62,12 +62,43 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.6: setup for an office user, not IT
+
+Principle: the program decides, the user only confirms. Every default is the "collect everything that is
+safe and local" choice.
+
+- **Three-step first run** (`Forms/SetupWizard.cs`, `Forms/ProgramPicker.cs`): 1. Which program should I watch?
+  (programs open now with icons and friendly names, "Find it on this PC...", a green box in plain words, a
+  Details link for the technical facts); 2. Anything to keep private? (three ticks, all on, and the windows
+  never to record); 3. a password twice and a big "Start watching". Data sources are not asked: everything
+  found is ticked. File-access detection runs by itself for two minutes after the first start when the
+  program is running; if Windows needs permission it asks once, and a No is skipped silently.
+- **Settings, Simple and Advanced**: Simple has the program with a Change button, the three privacy choices,
+  the learn time as a clock picker, and "What has been collected so far". Advanced has every other option with
+  a plain explanation, the recommended value, and "Reset this page to recommended".
+- **Tray menu in plain words**: Pause for an hour, Resume, Update what I learned, Make a report folder, Open
+  the folder with everything collected, Settings..., Quit. Each notice says what happened and what to do next.
+- **Maximal defaults** (`Core/Setup/SetupDefaults.cs`): tabs, MSAA and press inference on, pictures per state,
+  OCR on, titles masked, 180 days, learn at 02:00 and one hour after the first start, every scanned source
+  ticked except the ones that need a login. ODBC, SQL Server, SQL capture, ODBC tracing and AI stay off.
+  The scanner no longer walks system folders when the program lives in one (Notepad in System32).
+- **Dialogs by structure, never by title alone** (`DialogDetector`): a `dialogWindows` title only marks a
+  window as a dialog when its structure could be one (few controls, only OK/Cancel-type buttons, a message).
+  The DDI inForm profile no longer lists "Advanced Demand Forecasting" as ignored or "A/P Invoice Entry" as a dialog.
+- **Redirected command-line output**: `appwatcher --detect <exe> > out.txt` fills the file (the console is
+  attached only when the output is not already a file or a pipe).
+- **First-hour report in plain words** (`Core/Setup/PlainReport.cs`): one hour after the first start
+  `memory/health.md` is written even if no learn ran, and the same words appear in Settings and in one notice
+  ("First hour done: 12 screens and 140 actions recorded. ...").
+- `--setup <exe> <password> [profile]` uses the same defaults as the wizard.
+- Tests: `EasySetupTests` (defaults, dialog structure, the first-hour text, redirected output). 69 tests in all.
+
 ## Version 0.5: OCR text layer and shortcut learning
 
 - **Windows OCR on the pictures** (#1): the built-in Windows OCR (Windows.Media.Ocr, no install, stays on
   the PC) reads the text of each state picture and stores it next to the picture as `<pic>.png.ocr.json`
   (lines with boxes) and `.txt`. For apps that draw their own screens (Qt, Java, Delphi) this gives the
-  labels and column headers the control tree could not. On by default, Privacy tab to switch off; the
+  labels and column headers the control tree could not. On by default, Settings to switch off; the
   export carries the OCR files, and the twin kit's `layout.py ocr-extra` uses them.
 - **Shortcut learning** (#4): the keyboard shortcut of every button and menu item (AcceleratorKey /
   AccessKey) is in the screen record and now in a compact "Keyboard shortcuts:" line per screen in

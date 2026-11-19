@@ -26,23 +26,22 @@ Open PowerShell in that folder and run:
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -ExePath .\AppWatcher.exe
 ```
 
-The setup window opens.
+A small window opens and asks three questions, one per step. Everything else is already decided.
 
-1. **App to watch**: pick the app from the list of running programs, or press **Browse...** and
-   choose its .exe from any drive. Read the box at the bottom: it says which toolkit the program uses,
-   which profile was picked, where its data seems to live, and what App Watcher will and will not be
-   able to learn. If it says the data is on a server this PC cannot read, that is normal for the demo.
-2. **Where its data lives**: tick the files or folders it found. If the list is empty or you are
-   not sure, press **Detect by watching file access**, allow the administrator prompt once, then use
-   the app normally for two minutes. It proposes the files the app really reads and writes.
-   If the app uses SQL Server or has an ODBC data source on this PC, you can add a read-only connection
-   here, or point **Add export drop folder** at a folder with CSV exports, or skip it for the demo.
-3. **Privacy** (tab 4): choose how many pictures to keep (off / first time only / one per state, the
-   default), whether to read the text on them with the built-in OCR (on by default; helps apps that draw
-   their own screens), and list any window that must never be recorded. Pictures are the app's window only.
-4. **Settings password** (tab 6): choose one. You need it to open settings or quit.
+1. **Which program should I watch?** Pick the app from the list of programs open right now, or press
+   **Find it on this PC...** and choose its .exe. Read the green box: it says in plain words what I
+   recognised and what I will learn. If it says the data lives on a server I cannot read, that is normal
+   for the demo. **Details** shows the technical facts if you are curious. Press **Next**.
+2. **Anything to keep private?** Leave the three ticks on (hide names and numbers in window titles, keep
+   pictures of the program's screens, read the text on them). Type any window that must never be recorded,
+   for example Payroll, or leave it empty. Press **Next**.
+3. **Choose a password**, type it twice, and press **Start watching**. You need it to open Settings or quit.
 
-Press **Start watching**. An eye icon appears in the tray. Close nothing else.
+A notice near the clock says "I am watching <app>. Just use it as usual." Close nothing else.
+
+You do not pick data sources: every data file found on this PC is ticked by itself. For two minutes after
+the start I also note which files the app really reads and writes. If Windows asks for permission for that,
+say Yes for the fullest result, or No to skip it; I keep watching either way.
 
 ## 3. Use the app normally (20 minutes)
 
@@ -57,16 +56,18 @@ Do the things a user does every day. Good demo coverage:
   and save again. Saves are where the watcher learns which table and columns a screen writes.
 - Switch to another program for a minute and come back. The watcher pauses and resumes by itself.
 
-The watcher never presses anything and never shows a pop-up. If you see a prompt, it is from the app.
+The watcher never presses anything in the app and never opens a window of its own. If you see a prompt, it is from the app.
 
-## 4. Learn and export (1 minute)
+## 4. Learn and make the report (1 minute)
 
-Right-click the eye icon:
+After one hour a notice says what happened, for example "First hour done: 12 screens and 140 actions
+recorded." For a shorter demo, do not wait. Right-click the eye icon:
 
-1. **Learn now**. Wait for the short tray notice.
-2. **Export**. The notice shows the folder it wrote.
-3. **Copy data folder path for AI**. Paste it somewhere; it is
-   `C:\ProgramData\AppWatcher\data\<app-name>`.
+1. **Update what I learned**. Wait for the short notice; it says how many screens, rules and flows I know.
+2. **Make a report folder**. The folder opens by itself with the zip selected.
+3. **Open the folder with everything collected** opens `C:\ProgramData\AppWatcher\data\<app-name>`.
+
+**Settings...** (asks the password) shows the same plain summary under **What has been collected so far**.
 
 ## 5. What to send for analysis
 
@@ -104,13 +105,13 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1 -RemoveData
 
 ## If something looks wrong
 
-- No eye icon: run `AppWatcher.exe` by hand once and read the setup window.
+- No eye icon: run `AppWatcher.exe` by hand once; the three-step window opens if nothing is set up yet.
 - `events\` stays empty: the app was not the window in front, or it was picked by the wrong process.
-  Open Settings, check the app, and make sure you click inside the app's window.
+  Open Settings, check the program (press **Change...** if it is the wrong one), and click inside the app's window.
 - The first-hour notice names problems: open `memory\health.md`, section "What the collector could not
   do". "No window's control tree could be read" means the app does not expose its screens to Windows UI
   Automation; the watcher still records windows, timings, dialog text and data changes, but not fields.
   "No button or menu press was seen" means the app's controls stay silent; the fallbacks keep trying.
-- `effects\` stays empty: no data source was found or ticked. Use **Detect by watching file access**,
+- `effects\` stays empty: no data source was found or ticked. Open Settings, **Advanced**, page 2 and press **Find what it uses (admin, 2 min)**,
   or ask the app's vendor or DBA where the data lives. Without it, the watcher learns screens and
   flows but not tables.

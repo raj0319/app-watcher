@@ -1,77 +1,80 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using AppWatcher.Collector;
 using AppWatcher.Core;
 using AppWatcher.Core.Analysis;
 using AppWatcher.Core.Export;
+using AppWatcher.Core.Setup;
 using AppWatcher.Forms;
+using AppWatcher.Native;
 
 namespace AppWatcher;
 
 /// <summary>
-/// The tray icon and its menu. Owns the collector and the nightly scheduler.
-/// Window policy: the only windows App Watcher ever opens are this menu, the password-protected settings
-/// window, and short balloon notices. No file dialogs, no message boxes.
+/// The tray icon and its menu, in plain words. Owns the collector, the nightly learn, the first-hour report and the
+/// one automatic file-access detection after the first start.
+/// Window policy: the only windows App Watcher opens are the first-run wizard, this menu, the password-protected
+/// settings window, the folder the user asks to open, and short tray notices. No message boxes. Every notice says
+/// what happened and what to do next in one sentence.
 /// </summary>
 internal sealed class TrayContext : ApplicationContext
 {
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _status = new("Starting...") { Enabled = false };
-    private readonly ToolStripMenuItem _pause = new("Pause");
-    private readonly ToolStripMenuItem _learn = new("Learn now");
-    private readonly ToolStripMenuItem _rebuild = new("Rebuild memory (full recompute)");
-    private readonly ToolStripMenuItem _export = new("Export for the twin kit");
-    private readonly ToolStripMenuItem _copyPath = new("Copy data folder path for AI");
-    private readonly ToolStripMenuItem _copyExport = new("Copy last export path") { Enabled = false };
+    private readonly ToolStripMenuItem _pause = new("Pause for an hour");
+    private readonly ToolStripMenuItem _resume = new("Resume");
+    private readonly ToolStripMenuItem _learn = new("Update what I learned");
+    private readonly ToolStripMenuItem _export = new("Make a report folder");
+    private readonly ToolStripMenuItem _open = new("Open the folder with everything collected");
     private readonly ToolStripMenuItem _settings = new("Settings...");
     private readonly ToolStripMenuItem _quit = new("Quit");
     private readonly System.Windows.Forms.Timer _minute = new() { Interval = 60_000 };
+    private readonly System.Windows.Forms.Timer _soon = new() { Interval = 20_000 };
     private WatcherConfig _config;
     private WatchService? _watch;
     private int _busy;
-    private string? _lastExport;
+    private Process? _trace;
+    private string _traceFile = "";
 
     public TrayContext()
     {
         _config = ConfigStore.Load();
         var menu = new ContextMenuStrip();
-        menu.Items.AddRange(new ToolStripItem[] { _status, new ToolStripSeparator(), _pause, _learn, _rebuild, _export, new ToolStripSeparator(), _copyPath, _copyExport, _settings, new ToolStripSeparator(), _quit });
+        menu.Items.AddRange(new ToolStripItem[] { _status, new ToolStripSeparator(), _pause, _resume, _learn, _export, _open, new ToolStripSeparator(), _settings, new ToolStripSeparator(), _quit });
         _icon = new NotifyIcon { Icon = IconFactory.Create(false), Text = "App Watcher", Visible = true, ContextMenuStrip = menu };
-        _icon.DoubleClick += (_, _) => Balloon(StatusText(), ToolTipIcon.Info);
-        _pause.Click += (_, _) => TogglePause();
+        _icon.DoubleClick += (_, _) => Balloon(StatusText() + ". Right-click me for more.", ToolTipIcon.Info);
+        _pause.Click += (_, _) => PauseForAnHour();
+        _resume.Click += (_, _) => Resume("");
         _learn.Click += (_, _) => RunLearn(manual: true, rebuild: false);
-        _rebuild.Click += (_, _) => RunLearn(manual: true, rebuild: true);
         _export.Click += (_, _) => RunExport();
-        _copyPath.Click += (_, _) => CopyToClipboard(DataFolder(), "Data folder path copied. Paste it into Claude Code, OpenCode or OpenClaw.");
-        _copyExport.Click += (_, _) => { if (_lastExport is not null) CopyToClipboard(_lastExport, "Export path copied."); };
+        _open.Click += (_, _) => OpenFolder();
         _settings.Click += (_, _) => OpenSettings();
         _quit.Click += (_, _) => Quit();
         menu.Opening += (_, _) => _status.Text = StatusText();
         _minute.Tick += (_, _) => MinuteTick();
+        _soon.Tick += (_, _) => AutoDetectTick();
 
+        var justSetUp = false;
         if (_config.IsFirstRun)
         {
-            using var f = new SettingsForm(_config, firstRun: true);
-            if (f.ShowDialog() != DialogResult.OK) { ExitThread(); return; }
-            _config = f.Config;
+            using var w = new SetupWizard();
+            if (w.ShowDialog() != DialogResult.OK) { ExitThread(); return; }
+            _config = w.Config;
             ConfigStore.Save(_config);
+            justSetUp = true;
         }
         StartWatching();
         _minute.Start();
+        _soon.Start();
+        if (justSetUp) Balloon($"I am watching {Name}. Just use it as usual.", ToolTipIcon.Info);
         // startup leaves JIT and setup garbage behind; give it back once the first seconds are over
         var once = new System.Windows.Forms.Timer { Interval = 15_000 };
         once.Tick += (_, _) => { once.Stop(); once.Dispose(); MemoryTrim.Trim(); };
         once.Start();
     }
 
-    private void Balloon(string text, ToolTipIcon kind) => _icon.ShowBalloonTip(kind == ToolTipIcon.Warning ? 15000 : 6000, "App Watcher", text, kind);
-
-    /// <summary>Writes only our own path to the clipboard. App Watcher never reads the clipboard.</summary>
-    private void CopyToClipboard(string text, string notice)
-    {
-        try { Clipboard.SetText(text); Balloon(notice, ToolTipIcon.Info); }
-        catch (Exception ex) { Log.Warn("clipboard write failed: " + ex.Message); }
-    }
-
+    private string Name => _config.App?.DisplayName ?? "the program";
+    private void Balloon(string text, ToolTipIcon kind) => _icon.ShowBalloonTip(kind == ToolTipIcon.Warning ? 15000 : 7000, "App Watcher", text, kind);
     private string DataFolder() => _config.App is null ? Paths.Root : Paths.ForApp(_config.App.DisplayName).Root;
 
     private void StartWatching()
@@ -91,32 +94,59 @@ internal sealed class TrayContext : ApplicationContext
                 File.WriteAllText(Path.Combine(paths.Root, "expectations.md"), LearnRunner.ExpectationsText(Core.Learning.Learner.Expectations(input)));
             }
             catch (Exception ex) { Log.Warn("expectations not written: " + ex.Message); }
-            _pause.Text = _config.Paused ? "Resume" : "Pause";
-            _icon.Icon = IconFactory.Create(_config.Paused);
-            _icon.Text = $"App Watcher: {_config.App.DisplayName}{(_config.Paused ? " (paused)" : "")}";
+            ShowPauseState();
         }
         catch (Exception ex)
         {
             Log.Error("could not start watching", ex);
-            Balloon("Could not start watching: " + ex.Message, ToolTipIcon.Error);
+            Balloon($"I could not start watching {Name} ({ex.Message}). Open Settings and pick the program again.", ToolTipIcon.Error);
         }
+    }
+
+    private void ShowPauseState()
+    {
+        if (_watch is not null) _watch.Paused = _config.Paused;
+        _pause.Enabled = !_config.Paused;
+        _resume.Enabled = _config.Paused;
+        _icon.Icon = IconFactory.Create(_config.Paused);
+        _icon.Text = $"App Watcher: {Name}{(_config.Paused ? " (paused)" : "")}";
     }
 
     private string StatusText()
     {
-        if (_watch is null || _config.App is null) return "Not watching anything";
-        var state = _config.Paused ? "paused" : _watch.IsAttached ? (_watch.InFront ? "recording" : "app not in front, idle") : "waiting for the app to start";
-        return $"{_config.App.DisplayName}: {state}. {_watch.EventsWritten} events, {_watch.EffectsWritten} effects since start.";
+        if (_watch is null || _config.App is null) return "Not watching anything yet";
+        if (_config.Paused) return _config.PausedUntil is { } u ? $"Paused until {u:HH:mm}" : "Paused";
+        if (!_watch.IsAttached) return $"Waiting for {Name} to start";
+        return _watch.InFront ? $"Watching {Name}: {_watch.EventsWritten} actions since the start" : $"{Name} is open but not in front; waiting";
     }
 
-    private void TogglePause()
+    private void PauseForAnHour()
     {
-        _config.Paused = !_config.Paused;
+        _config.Paused = true;
+        _config.PausedUntil = DateTime.Now.AddHours(1);
         ConfigStore.Save(_config);
-        if (_watch is not null) _watch.Paused = _config.Paused;
-        _pause.Text = _config.Paused ? "Resume" : "Pause";
-        _icon.Icon = IconFactory.Create(_config.Paused);
-        _icon.Text = $"App Watcher: {_config.App?.DisplayName}{(_config.Paused ? " (paused)" : "")}";
+        ShowPauseState();
+        Balloon($"Paused for an hour. I will start watching {Name} again at {_config.PausedUntil:HH:mm}, or choose Resume.", ToolTipIcon.Info);
+    }
+
+    private void Resume(string why)
+    {
+        _config.Paused = false;
+        _config.PausedUntil = null;
+        ConfigStore.Save(_config);
+        ShowPauseState();
+        Balloon($"Watching {Name} again{why}. Just use it as usual.", ToolTipIcon.Info);
+    }
+
+    private void OpenFolder()
+    {
+        try
+        {
+            var folder = DataFolder();
+            Directory.CreateDirectory(folder);
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex) { Balloon($"I could not open the folder ({ex.Message}). It is under ProgramData\\AppWatcher\\data.", ToolTipIcon.Warning); }
     }
 
     private void MinuteTick()
@@ -126,29 +156,92 @@ internal sealed class TrayContext : ApplicationContext
             if (_config.App is null || _watch is null) return;
             if (!_watch.InFront) MemoryTrim.Trim();
             var now = DateTime.Now;
+            if (_config.Paused && _config.PausedUntil is { } until && now >= until) Resume(" (the hour is up)");
             if (now.ToString("HH:mm") == _config.LearnAt && (_config.LastLearn is null || _config.LastLearn.Value.Date != now.Date))
                 RunLearn(manual: false, rebuild: false);
-            if (!_config.HealthCheckDone && _watch.AttachedSince != default && (now - _watch.AttachedSince).TotalMinutes >= 60)
-            {
-                // first-hour report: a learn writes memory/health.md with the collector's own findings; the balloon is only the headline
-                _config.HealthCheckDone = true;
-                ConfigStore.Save(_config);
-                _watch.SaveStatus();
-                var problems = _watch.Status.Problems();
-                if (_watch.MainWindowControls >= 0 && _watch.MainWindowControls < 10)
-                    problems.Add($"the main window shows only {_watch.MainWindowControls} controls, so field names and buttons cannot be learned (the app may draw its own screens)");
-                RunLearn(manual: false, rebuild: false);
-                Balloon(problems.Count > 0
-                    ? "First hour: " + string.Join("; ", problems.Take(3)) + $". Details: {Paths.ForApp(_config.App.DisplayName).Memory}\\health.md"
-                    : $"First hour: screens, presses and values are being recorded normally. Details: {Paths.ForApp(_config.App.DisplayName).Memory}\\health.md", problems.Count > 0 ? ToolTipIcon.Warning : ToolTipIcon.Info);
-            }
+            var first = _config.FirstStart ?? (_watch.AttachedSince == default ? (DateTime?)null : _watch.AttachedSince);
+            if (!_config.HealthCheckDone && first is not null && (now - first.Value).TotalMinutes >= 60) FirstHour();
         }
         catch (Exception ex) { Log.Error("minute tick failed", ex); }
     }
 
+    /// <summary>One hour after the first start: health.md in plain words even if no learn ran, one notice, then a learn.</summary>
+    private void FirstHour()
+    {
+        _config.HealthCheckDone = true;
+        ConfigStore.Save(_config);
+        _watch?.SaveStatus();
+        var paths = Paths.ForApp(Name);
+        PlainReport.WriteFirstHourHealth(paths, _config, Name);
+        var facts = PlainReport.FromDisk(paths, _config, Name);
+        Balloon(PlainReport.TrayFirstHour(facts), PlainReport.Problems(facts).Count > 0 ? ToolTipIcon.Warning : ToolTipIcon.Info);
+        RunLearn(manual: false, rebuild: false);
+    }
+
+    // ---------- the one automatic file-access detection ----------
+
+    private void AutoDetectTick()
+    {
+        if (!_config.AutoDetectPending) { _soon.Stop(); return; }
+        if (_config.App is null || _watch?.ProcessId is not int pid || _config.Paused) return;
+        _config.AutoDetectPending = false;
+        ConfigStore.Save(_config);
+        _soon.Stop();
+        var kind = Elevation.Check();
+        if (kind == Elevation.Kind.NotAdmin) { Log.Info("automatic file-access detection skipped: this user is not an administrator"); return; }
+        if (kind == Elevation.Kind.CanElevate)
+            Balloon($"To find where {Name} keeps its data, Windows will ask you once for permission. Say No if you prefer; I keep watching either way.", ToolTipIcon.Info);
+        var delay = new System.Windows.Forms.Timer { Interval = kind == Elevation.Kind.CanElevate ? 6000 : 200 };
+        delay.Tick += (_, _) => { delay.Stop(); delay.Dispose(); StartTrace(pid, kind); };
+        delay.Start();
+    }
+
+    private void StartTrace(int pid, Elevation.Kind kind)
+    {
+        _traceFile = Path.Combine(Paths.Root, "file-trace.json");
+        try { File.Delete(_traceFile); } catch { }
+        var exe = Environment.ProcessPath ?? Application.ExecutablePath;
+        var args = $"--trace-files {pid} 120 \"{_traceFile}\"" + (Paths.RootOverride is not null ? " --portable" : "");
+        try
+        {
+            _trace = kind == Elevation.Kind.Elevated
+                ? Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true })
+                : Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden });
+        }
+        catch (Win32Exception) { Log.Info("automatic file-access detection: permission not given; skipped"); return; }
+        catch (Exception ex) { Log.Warn("automatic file-access detection could not start: " + ex.Message); return; }
+        if (_trace is null) return;
+        var poll = new System.Windows.Forms.Timer { Interval = 3000 };
+        poll.Tick += (_, _) =>
+        {
+            try { if (!_trace.HasExited) return; } catch { }
+            poll.Stop(); poll.Dispose();
+            ApplyTrace();
+        };
+        poll.Start();
+    }
+
+    private void ApplyTrace()
+    {
+        try
+        {
+            if (!File.Exists(_traceFile)) return;
+            var files = FileAccessTrace.Load(_traceFile);
+            try { File.Delete(_traceFile); } catch { }
+            var added = SetupDefaults.AddTracedSources(_config, files.Select(f => (f.Key, f.Value.Reads, f.Value.Writes)));
+            if (added == 0) { Log.Info("automatic file-access detection found no new data files"); return; }
+            ConfigStore.Save(_config);
+            StartWatching();
+            Balloon($"I found where {Name} keeps its data ({added} file{(added == 1 ? "" : "s")}). I will now also learn what it saves.", ToolTipIcon.Info);
+        }
+        catch (Exception ex) { Log.Warn("file-access detection result not applied: " + ex.Message); }
+    }
+
+    // ---------- learn and export ----------
+
     private void RunLearn(bool manual, bool rebuild)
     {
-        if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { if (manual) Balloon("Busy, try again in a moment.", ToolTipIcon.Info); return; }
+        if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { if (manual) Balloon("I am still busy with the last request. Try again in a minute.", ToolTipIcon.Info); return; }
         var app = _config.App.DisplayName;
         var paths = Paths.ForApp(app);
         Task.Run(async () =>
@@ -158,13 +251,14 @@ internal sealed class TrayContext : ApplicationContext
                 var sw = Stopwatch.StartNew();
                 var result = LearnRunner.Run(_config, paths, app, rebuild, out var changes);
                 Log.Info($"{(rebuild ? "rebuild" : "learn")} done in {sw.ElapsedMilliseconds} ms: {changes.Count} files changed");
-                if (manual) Balloon($"Learned from {result.EventCount} events and {result.EffectCount} effects: {result.Tables.Count} tables, {result.FieldMappings.Count(m => m.IsSeen)} field mappings seen, {result.Rules.Count} rules, {result.Flows.Count} flows. Memory: {paths.Memory}", ToolTipIcon.Info);
+                if (manual)
+                    Balloon($"I updated what I learned: {PlainReport.Plural(result.Screens.Count, "screen")}, {PlainReport.Plural(result.Rules.Count, "rule")} and {PlainReport.Plural(result.Flows.Count, "flow")} so far. Choose \"Open the folder with everything collected\" to read it.", ToolTipIcon.Info);
                 await RunAnalysisProviders(paths);
             }
             catch (Exception ex)
             {
                 Log.Error("learn failed", ex);
-                if (manual) Balloon("Learn failed: " + ex.Message, ToolTipIcon.Error);
+                if (manual) Balloon($"I could not update what I learned ({ex.Message}). I will try again tonight at {_config.LearnAt}.", ToolTipIcon.Error);
             }
             finally { Interlocked.Exchange(ref _busy, 0); }
         });
@@ -194,28 +288,30 @@ internal sealed class TrayContext : ApplicationContext
 
     private void RunExport()
     {
-        if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) return;
+        if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { Balloon("I am still busy with the last request. Try again in a minute.", ToolTipIcon.Info); return; }
         var app = _config.App.DisplayName;
         var paths = Paths.ForApp(app);
+        Balloon("Making the report folder; this takes a few seconds.", ToolTipIcon.Info);
         Task.Run(() =>
         {
             try
             {
                 var result = LearnRunner.Run(_config, paths, app, rebuild: false, out _);
-                var (folder, zip) = Exporter.Export(paths, app, result);
-                _lastExport = zip;
-                _copyExport.Enabled = true;
+                var (_, zip) = Exporter.Export(paths, app, result);
                 Log.Info("export written: " + zip);
-                Balloon($"Export ready: {zip}. Use 'Copy last export path' in the menu. Copy docs/raw into app-twin-kit and run /mode spec.", ToolTipIcon.Info);
+                try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{zip}\"") { UseShellExecute = true }); } catch { }
+                Balloon("Your report folder is ready and I opened it. Send the selected zip file to whoever is studying the program.", ToolTipIcon.Info);
             }
             catch (Exception ex)
             {
                 Log.Error("export failed", ex);
-                Balloon("Export failed: " + ex.Message, ToolTipIcon.Error);
+                Balloon($"I could not make the report folder ({ex.Message}). Try again in a minute.", ToolTipIcon.Error);
             }
             finally { Interlocked.Exchange(ref _busy, 0); }
         });
     }
+
+    // ---------- settings and quit ----------
 
     private bool AskPassword(string why)
     {
@@ -227,18 +323,20 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (!AskPassword("Open settings")) return;
         var oldApp = _config.App?.DisplayName;
-        using var f = new SettingsForm(_config, firstRun: false);
+        using var f = new SettingsForm(_config, firstRun: false, requestRebuild: () => RunLearn(manual: true, rebuild: true));
         if (f.ShowDialog() != DialogResult.OK) return;
         _config = f.Config;
         ConfigStore.Save(_config);
-        if (_config.App?.DisplayName != oldApp) Log.Info($"watched app changed to {_config.App?.DisplayName}; new data folder");
+        var changed = _config.App?.DisplayName != oldApp;
+        if (changed) Log.Info($"watched program changed to {_config.App?.DisplayName}; new data folder");
         StartWatching();
+        if (changed) { _soon.Start(); Balloon($"I am watching {Name} now. Just use it as usual.", ToolTipIcon.Info); }
     }
 
     private void Quit()
     {
         if (!AskPassword("Quit App Watcher")) return;
-        _minute.Stop();
+        _minute.Stop(); _soon.Stop();
         _watch?.Dispose();
         _icon.Visible = false;
         _icon.Dispose();

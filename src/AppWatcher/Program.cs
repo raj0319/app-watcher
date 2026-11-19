@@ -10,6 +10,23 @@ namespace AppWatcher;
 internal static class Program
 {
     [DllImport("kernel32.dll")] private static extern bool AttachConsole(int pid);
+    [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int which);
+    [DllImport("kernel32.dll")] private static extern uint GetFileType(IntPtr handle);
+    private const int StdOutput = -11;
+    private const uint FileTypeDisk = 1, FileTypePipe = 3;
+
+    /// <summary>
+    /// AppWatcher.exe is a windowed program. When a shell runs it with output to a file or a pipe
+    /// (`appwatcher --detect x > out.txt`, `| more`, or a test reading its output), that handle is already set and
+    /// AttachConsole would replace it with the console, so the output would be lost. Attach only when stdout goes nowhere.
+    /// </summary>
+    internal static bool StdoutRedirected()
+    {
+        var h = GetStdHandle(StdOutput);
+        if (h == IntPtr.Zero || h == new IntPtr(-1)) return false;
+        var type = GetFileType(h);
+        return type is FileTypeDisk or FileTypePipe;
+    }
 
     [STAThread]
     private static int Main(string[] args)
@@ -52,7 +69,7 @@ internal static class Program
     /// </summary>
     private static int Cli(string cmd, string[] args)
     {
-        AttachConsole(-1);
+        if (!StdoutRedirected()) AttachConsole(-1);
         var cfg = ConfigStore.Load();
         try
         {
@@ -73,22 +90,81 @@ internal static class Program
                 }
                 case "--setup":
                 {
-                    // scripted first-run (fleet installs, tests): --setup <exe> <password> [profile]; data sources can be added later in Settings
+                    // scripted first run for IT: the wizard's work without the window, with the same defaults
                     var rest = args.SkipWhile(a => a != "--setup").Skip(1).Where(a => !a.StartsWith("--")).ToList();
                     if (rest.Count < 2) { Console.Error.WriteLine("usage: --setup <path to exe> <settings password> [profile name]"); return 1; }
                     var exe = Path.GetFullPath(rest[0]);
                     if (!File.Exists(exe)) { Console.Error.WriteLine("not found: " + exe); return 1; }
+                    if (rest[1].Length < 4) { Console.Error.WriteLine("the password needs at least 4 characters"); return 1; }
                     var proc = Path.GetFileNameWithoutExtension(exe);
-                    var tk = ToolkitDetector.Detect(exe);
-                    cfg.App = new WatchedApp { ProcessName = proc, ExePath = exe, DisplayName = proc };
-                    cfg.PasswordProtected = Dpapi.Protect(PasswordHasher.CreateRecord(rest[1]));
-                    cfg.Toolkit = tk.Name;
-                    cfg.Backends = BackendDetector.Detect(exe, proc, null, proc);
-                    var profile = rest.Count > 2 ? ProfileStore.ByName(rest[2]) : ProfileStore.Match(exe, proc, ProductName(exe), tk.Name);
-                    profile?.ApplyTo(cfg);
-                    ConfigStore.Save(cfg);
-                    Console.WriteLine($"Set up to watch {proc} ({tk.Name}, profile {cfg.Profile ?? "none"}, {cfg.Backends.Count} backends found). Start AppWatcher.exe to begin watching.");
+                    var plan = Core.Setup.SetupDefaults.Prepare(exe, proc);
+                    var fresh = new WatcherConfig();
+                    var forced = rest.Count > 2 ? ProfileStore.ByName(rest[2]) : null;
+                    if (rest.Count > 2 && forced is null) { Console.Error.WriteLine($"no profile named {rest[2]}"); return 1; }
+                    Core.Setup.SetupDefaults.Apply(fresh, plan, forced);
+                    fresh.PasswordProtected = Dpapi.Protect(PasswordHasher.CreateRecord(rest[1]));
+                    ConfigStore.Save(fresh);
+                    Console.WriteLine($"Set up to watch {plan.FriendlyName} (profile {fresh.Profile ?? "none"}, {fresh.DataSources.Count(d => d.Enabled)} data places ticked). Start AppWatcher.exe to begin watching.");
+                    Console.WriteLine(Core.Setup.SetupDefaults.WhatIWillLearn(plan));
                     return 0;
+                }
+                case "--render-ui":
+                {
+                    // pictures of App Watcher's own windows for the docs, drawn off-screen (nothing is shown, nothing of other programs)
+                    var outDir = Path.GetFullPath(args.SkipWhile(a => a != "--render-ui").Skip(1).FirstOrDefault(a => !a.StartsWith("--")) ?? "ui");
+                    Directory.CreateDirectory(outDir);
+                    Application.EnableVisualStyles();
+                    // a made-up program, so the pictures show nothing of this PC (no real files, titles or connections)
+                    var demoPlan = new Core.Setup.SetupPlan
+                    {
+                        FriendlyName = "DDI inForm", ProcessName = "inform", ExePath = @"C:\DDI\inForm\inForm.exe",
+                        ProfileReason = "program", Profile = ProfileStore.ByName("ddi-inform"),
+                        Backends = { new Core.Learning.BackendInfo { Kind = "universe", Host = "uv01", Port = 31438, Where = "tcp connection" } },
+                    };
+                    using (var w = new Forms.SetupWizard())
+                    {
+                        OffScreen(w);
+                        w.ShowStep(0, demoPlan);
+                        Render(w, Path.Combine(outDir, "wizard-1-program.png"));
+                        w.ShowStep(1); Render(w, Path.Combine(outDir, "wizard-2-privacy.png"));
+                        w.ShowStep(2); Render(w, Path.Combine(outDir, "wizard-3-password.png"));
+                    }
+                    var sample = new WatcherConfig
+                    {
+                        App = new WatchedApp { DisplayName = demoPlan.FriendlyName, ProcessName = demoPlan.ProcessName, ExePath = demoPlan.ExePath }, PasswordProtected = "x",
+                        DataSources = { new DataSourceConfig { Kind = "dropfolder", Path = @"\\server\exports\inform", Label = "exports", Enabled = true } },
+                    };
+                    using (var s = new Forms.SettingsForm(sample, firstRun: false))
+                    {
+                        OffScreen(s);
+                        s.ShowView(advanced: false); Render(s, Path.Combine(outDir, "settings-simple.png"));
+                        s.ShowView(advanced: true, page: 1); Render(s, Path.Combine(outDir, "settings-advanced-data.png"));
+                        s.ShowView(advanced: true, page: 2); Render(s, Path.Combine(outDir, "settings-advanced-learning.png"));
+                        s.ShowView(advanced: true, page: 3); Render(s, Path.Combine(outDir, "settings-advanced-privacy.png"));
+                        s.ShowView(advanced: true, page: 4); Render(s, Path.Combine(outDir, "settings-advanced-ai.png"));
+                    }
+                    Console.WriteLine("Wrote the pictures to " + outDir);
+                    return 0;
+
+                    // controls only exist once a window is shown: show it fully transparent, far off-screen, not in the taskbar
+                    static void OffScreen(Form f)
+                    {
+                        f.StartPosition = FormStartPosition.Manual;
+                        f.Location = new Point(-32000, -32000);
+                        f.ShowInTaskbar = false;
+                        f.Opacity = 0;
+                        f.Show();
+                        Application.DoEvents();
+                    }
+
+                    static void Render(Form f, string path)
+                    {
+                        f.PerformLayout();
+                        Application.DoEvents();
+                        using var bmp = new Bitmap(f.Width, f.Height);
+                        f.DrawToBitmap(bmp, new Rectangle(0, 0, f.Width, f.Height));
+                        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                    }
                 }
                 case "--detect":
                 {

@@ -9,7 +9,7 @@ Keep replies short and in plain words; the user is usually not a developer.
 ```
 src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, data readers (SQLite, Access, SQL Server, ODBC, export drop folder),
                          SQL log readers, discovery (toolkit, backends, profiles), learner (incremental), export (twin kit + XES), merge, retention, API clients
-src/AppWatcher/          the tray app: WinForms tray icon, settings window, UI Automation collector (with MSAA, menu and press-inference fallbacks),
+src/AppWatcher/          the tray app: WinForms tray icon, three-step first-run wizard, settings window (Simple/Advanced), UI Automation collector (with MSAA, menu and press-inference fallbacks),
                          window capture (one picture per screen), ETW file-access trace
 profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
 tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test)
@@ -29,7 +29,8 @@ kills only the two processes it started).
 
 The exe also has headless commands: `AppWatcher.exe --learn` (incremental), `--rebuild` (from day one),
 `--export`, `--payload`, `--status`, `--expect`, `--detect <exe>`, `--setup <exe> <password> [profile]`,
-`--merge <folder or zip>`, `--trace-files <pid> <seconds> <out.json>` (admin). Add `--portable` when the
+`--merge <folder or zip>`, `--trace-files <pid> <seconds> <out.json>` (admin), and the hidden `--render-ui <dir>`
+(pictures of the wizard and Settings for the docs, with a made-up program, never this PC's). Add `--portable` when the
 data lives in `AppWatcherData\` next to the exe. The exe is a windowed program, so from a shell use
 `scripts\appwatcher.cmd <command>` (start /wait) to get its output and exit code.
 
@@ -40,7 +41,7 @@ On a client PC the watcher writes to `%ProgramData%\AppWatcher\data\<app-name>\`
 ```
 events/<yyyy-MM-dd>.jsonl   one line per user action in the watched app (values typed; passwords masked; "how" says how a press was seen)
 screens/<title>.md          the control tree of each window or tab document, once, in the App Twin Kit screen format (kind: screen | tab | session | dialog)
-screens/shots/<title>.png   the one picture of that screen (the app's window only; off on the Privacy tab)
+screens/shots/<screen>/     one picture per state of that screen (the app's window only; off in Settings, Simple)
 screens/index.json          structure hash -> screen file, kind, every title seen for that screen
 effects/<timestamp>.json    what changed in the data right after a save-type action (rows added/removed/changed per table, files changed)
 snapshots/before.json       the latest read-only snapshot of the app's data (tables, rows)
@@ -86,10 +87,14 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   The diff text format is the one printed by the kit's `scripts/snapshot_diff.py diff`.
 - The collector never installs a keyboard hook, never records while another program is in front, and never
   invokes a control of the watched app. Keep it that way. Pictures: one per distinct screen, of the app's
-  window only (PrintWindow), never the desktop, never a login or excluded window; the setting is on the Privacy tab.
-- The app never shows a file dialog or a message box on its own: the tray menu, the password-protected
-  settings window (whose program picker and data-source pickers the user opens on purpose with a
-  Browse button) and short balloon notices are the only UI.
+  window only (PrintWindow), never the desktop, never a login or excluded window; the setting is in Settings, Simple.
+- The app never shows a file dialog or a message box on its own: the three-step first-run wizard, the tray
+  menu, the password-protected settings window (whose program picker and data-source pickers the user opens
+  on purpose) and short balloon notices are the only UI. Notices say in one sentence what happened and what
+  to do next, never a path alone. Setup decides for the user: every default is the fullest safe, local
+  choice (`SetupDefaults`), and the same defaults serve the wizard, Settings and `--setup`.
+  Validation messages go to the settings window's status line. Export writes to a fixed path.
+- Dialogs are decided by structure (`DialogDetector`), never by a title pattern alone.
   Validation messages go to the settings window's status line. Export writes to a fixed path.
 - When testing the collector against any app: start your own instance (tests/SampleApp is there for that),
   drive only that window by handle, never press Save or close with unsaved text (no "save changes?" prompt

@@ -438,7 +438,7 @@ internal sealed class UiaCollector : IDisposable
                 if (rec.Source == "msaa") _status.DumpsMsaa++;
                 if (excluded) { _status.ExcludedEvents++; return; }
                 var (dialogLike, dialogText) = DialogDetector.Detect(cls, rec.Controls);
-                if (!dialogLike && _settings.DialogWindows.Any(p => DialogDetector.Wildcard(rec.Title, p))) dialogLike = true;
+                if (!dialogLike && _settings.DialogWindows.Any(p => DialogDetector.Wildcard(rec.Title, p)) && DialogDetector.CouldBeDialog(rec.Controls)) dialogLike = true;
                 if (dialogLike && (dialogText is null || dialogText.Length < 8)) dialogText = ReadDialogBody(el, rec.Controls) ?? dialogText;
                 if (dialogLike && initial) dialogLike = false; // a window that was already there is a screen, not a reaction to anything
                 var session = !dialogLike && DialogDetector.IsSessionWindow(rec.Title, rec.Controls, firstWindow, _settings.SessionWindows);
@@ -721,6 +721,7 @@ internal sealed class UiaCollector : IDisposable
         if (withFilter) cr.TreeFilter = new PropertyCondition(lib.Element.IsControlElement, true);
         cr.Add(lib.Element.Name); cr.Add(lib.Element.ControlType); cr.Add(lib.Element.AutomationId); cr.Add(lib.Element.BoundingRectangle); cr.Add(lib.Element.IsPassword);
         cr.Add(lib.Element.IsOffscreen); cr.Add(lib.Element.AcceleratorKey); cr.Add(lib.Element.AccessKey);
+        try { cr.Add(_automation.PatternLibrary.ValuePattern); cr.Add(lib.Value.IsReadOnly); } catch { }
         return cr;
     }
 
@@ -801,7 +802,9 @@ internal sealed class UiaCollector : IDisposable
             var pwd = false; var key = "";
             try { pwd = el.Properties.IsPassword.ValueOrDefault; } catch { }
             try { key = el.Properties.AcceleratorKey.ValueOrDefault ?? ""; if (key.Length == 0) key = el.Properties.AccessKey.ValueOrDefault ?? ""; } catch { }
-            rows.Add(new ControlRow { Depth = depth, Type = ct, Name = name.Length > 120 ? name[..120] : name, AutomationId = aid, Position = $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}", IsPassword = pwd, Shortcut = key.Length > 24 ? "" : key });
+            bool? ro = null;
+            if (ct is "Edit" or "Document") { try { var vp = el.Patterns.Value.PatternOrDefault; if (vp is not null) ro = vp.IsReadOnly.ValueOrDefault; } catch { } }
+            rows.Add(new ControlRow { Depth = depth, Type = ct, Name = name.Length > 120 ? name[..120] : name, AutomationId = aid, Position = $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}", IsPassword = pwd, Shortcut = key.Length > 24 ? "" : key, IsReadOnly = ro });
         }
         catch { rows.Add(new ControlRow { Depth = depth, Type = ct, Name = "", AutomationId = "", Position = "" }); }
         AutomationElement[] children;
@@ -847,6 +850,7 @@ internal sealed class UiaCollector : IDisposable
         try { var name = (el.Properties.Name.ValueOrDefault ?? "").Replace("|", "/").Trim(); row.Name = name.Length > 120 ? name[..120] : name; } catch { }
         try { row.AutomationId = el.Properties.AutomationId.ValueOrDefault ?? ""; } catch { }
         try { row.IsPassword = el.Properties.IsPassword.ValueOrDefault; } catch { }
+        if (row.Type is "Edit" or "Document") { try { var vp = el.Patterns.Value.PatternOrDefault; if (vp is not null) row.IsReadOnly = vp.IsReadOnly.ValueOrDefault; } catch { } }
         rows.Add(row);
         AutomationElement? child = null;
         try { child = walker.GetFirstChild(el); } catch { }

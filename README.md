@@ -4,8 +4,8 @@ A small Windows program that sits in the tray, watches one chosen desktop app wh
 it, and slowly writes down how that app works: its screens, fields, tables, rules and flows. Think of it
 as a quiet architect taking notes behind the user.
 
-It does not watch other programs, it never shows a pop-up, and it never changes anything in the app it
-watches. It keeps pictures of the app's own window, one per state of each screen (never the desktop, never
+It does not watch other programs, it only shows a short notice near the clock now and then, and it never
+changes anything in the app it watches. It keeps pictures of the app's own window, one per state of each screen (never the desktop, never
 the same state twice), and that can be switched off.
 
 ## What you get
@@ -52,26 +52,48 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
    This copies the program to your user folder, makes it start at login, and starts it now.
    Add `-ScheduledTask` if your IT prefers a scheduled task over the Run key.
-3. The setup window opens:
-   - **1. App to watch**: pick the program from the list of running programs, or press **Browse...**
-     and choose any .exe on any drive (it does not need to be running yet; watching starts the moment
-     it runs). Any Windows program can be watched. As soon as a program is picked, the box at the bottom
-     says what App Watcher expects to learn from it: it looks at the program file (which toolkit it uses:
-     WinForms, WPF, Infragistics, DevExpress, Delphi, Java, Electron, ...), its config files and ODBC data
-     sources and open connections (where its data lives), and picks a matching profile.
-   - **2. Where its data lives**: App Watcher scans the usual places for database and data files and shows
-     the backends it found. Tick the ones that belong to the app, add a file, a folder, a read-only
-     SQL Server or ODBC connection (any engine with a driver on the PC: UniVerse, Pervasive, Progress,
-     MySQL, PostgreSQL, Oracle, ...), or an **export drop folder** where nightly CSV/Excel exports of the key
-     tables land. **Detect by watching file access** asks for administrator rights once and records, for two
-     minutes, which files the app really reads and writes. Nothing is written there, ever.
-   - **4. Privacy**: mask quoted parts of titles, keep or skip the pictures, windows never to record
-     (Payroll*, *HR*), or an allowlist.
-   - **6. Settings password**: choose a password. It is needed to open settings or quit.
-   Press **Start watching**. An eye icon appears in the tray. That is all.
+3. A small window asks three questions, one per step, with **Back** and **Next**. Everything else is
+   already decided for you, set to "collect everything that is safe and stays on this PC".
+
+   **Step 1. Which program should I watch?** The programs open right now, with their icons and the names
+   you know them by. Pick the one you use for work, or press **Find it on this PC...** if it is not open.
+   A green box then says in plain words what I recognised and what I will learn. The technical facts
+   (toolkit, profile, servers) are behind **Details**; you do not need them.
+
+   ![Step 1](docs/images/wizard-1-program.png)
+
+   **Step 2. Anything to keep private?** Three choices, all already ticked: hide names and numbers that
+   appear in window titles; keep pictures of the program's screens, never the desktop; read the text on
+   those pictures. Below them, type the windows I must never record (for example Payroll), or leave it empty.
+
+   ![Step 2](docs/images/wizard-2-privacy.png)
+
+   **Step 3. Choose a password**, type it twice, and press the big **Start watching** button. The password
+   keeps anyone from stopping the watcher or changing what it records by accident.
+
+   ![Step 3](docs/images/wizard-3-password.png)
+
+   A notice near the clock says "I am watching <program>. Just use it as usual." That is all.
+
+What the program decides for you, so you do not have to:
+
+- **Where its data lives.** Every data file and folder found on this PC is ticked. Nothing is ever written there.
+- **Which files it really uses.** For two minutes after the first start, while the program is running,
+  I note which files it reads and writes. If Windows needs your permission for that, it asks once with a
+  plain sentence; say No if you prefer, and I keep watching without it.
+- **The fullest safe recording:** tab documents, the older accessibility events, presses seen from a
+  window change, one picture per state of each screen, the text on those pictures, masked titles, raw
+  events kept for 180 days, learning at 02:00 every night and once one hour after the first start.
+- **Off until someone chooses them in Settings, Advanced:** SQL Server and ODBC connections (they need a
+  login), SQL statement capture, Windows ODBC tracing, and the AI analysis.
 
 Install is per Windows user: run it under the account that uses the app. Scripted installs:
-`AppWatcher.exe --setup <exe> <password> [profile]` does the first run without the window.
+`AppWatcher.exe --setup <exe> <password> [profile]` does the first run without the window, with exactly
+the same choices as the three steps above.
+
+**After one hour** a notice says what happened, for example "First hour done: 12 screens and 140 actions
+recorded. I cannot see this program's data; open Settings for what that means." The same words are in
+`memory\health.md` and in Settings.
 
 ## What is recorded
 
@@ -82,12 +104,12 @@ Only inside the chosen app, and only while it is the window in front:
   labels a person would use (the text next to a field, or its cleaned internal name)
 - pictures of the app's window, filed per screen: one for each distinct state (first seen, after each
   press, tab switch, typed value, dialog, suggestion list), never the same state twice, capped per screen
-  (never for login or password windows, never for excluded windows; Privacy tab: off, first time only, or every state)
+  (never for login or password windows, never for excluded windows; Settings, Simple to switch off)
 - the suggestion lists that open while typing (autocomplete, lookups): the field, the text typed so far,
   and the suggestions shown
 - what a grid shows right after a search, filter or open: its column names and first rows
 - the text on each picture, read by the built-in Windows OCR and stored next to the picture, so apps that
-  draw their own screens (Qt, Java, old Delphi) still give their labels and column headers (Privacy tab to switch off)
+  draw their own screens (Qt, Java, old Delphi) still give their labels and column headers (Settings, Simple to switch off)
 - the keyboard shortcut of each button and menu item, so the twin keeps the power users' keys
 - which buttons and menu items were pressed, seen four ways so that apps whose controls stay silent are
   covered too (UI Automation, the older accessibility events, a menu closing after an item was chosen, or a
@@ -104,20 +126,22 @@ Password fields, and any field whose name contains "password", "pin" or "secret"
 
 - other programs, the desktop, the browser, e-mail, chat: nothing outside the chosen app
 - anything while another program is in front, even if the app is still open behind it
-- the clipboard (the tray can *write* our own folder path to it; it never reads it)
+- the clipboard (App Watcher never reads or writes it)
 - pictures of the desktop or of other programs; only the watched app's own window, once per screen
 - keystrokes outside the app (there is no keyboard hook at all)
 - anything over the network: the watcher makes no network calls. The two optional exceptions are the
   AI analyses described below, both off by default; they send only the memory files.
 
-Everything stays in `C:\ProgramData\AppWatcher\`. The tray item **Copy data folder path for AI** puts
-that path on the clipboard.
+Everything stays in `C:\ProgramData\AppWatcher\`. The tray item **Open the folder with everything
+collected** opens it.
 
 ## What App Watcher never does on your screen
 
-- It never opens a file dialog or a message box on its own. Export writes to a fixed folder and tells you
-  the path in a short tray notice; learning and snapshots happen silently.
-- The only windows it opens are the tray menu, the password-protected settings window, and short tray notices.
+- It never opens a file dialog or a message box on its own. **Make a report folder** writes to a fixed
+  folder and opens it for you; learning and snapshots happen silently.
+- The only windows it opens are the three-step first-run window, the tray menu, the password-protected
+  settings window, and short notices near the clock. Each notice says in one sentence what happened and
+  what to do next.
 - It never presses anything in the watched app: it only listens to events and reads. It cannot cause a
   "save changes?" prompt or any other dialog in the app.
 
@@ -127,14 +151,14 @@ A profile says what to expect from one program or one toolkit: which windows are
 windows, which are message boxes, which buttons mean "save", whether tabs are documents, which
 fallbacks to switch on. Twelve are built in (`profiles\*.json`: generic, winforms, wpf, infragistics,
 devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform) and the setup
-picks one from the program file. **Export these settings as a profile** on tab 3 writes your tuned settings
+picks one from the program file. **Export these settings as a profile** (Settings, Advanced, Learning) writes your tuned settings
 to `C:\ProgramData\AppWatcher\profiles\`, so the next site with the same program is a one-click setup; put
 the file in `profiles\` of this repository to share it.
 
 ## How it learns
 
 Once a night (default 02:00, changeable in Settings), one hour after the first start, and whenever you
-choose **Learn now** from the tray, the learner reads the new evidence and updates the memory files. No AI,
+choose **Update what I learned** from the tray, the learner reads the new evidence and updates the memory files. No AI,
 no network, just rules:
 
 - **Flows**: user actions are grouped into sessions and into flows by the sequence of windows, starting
@@ -160,9 +184,9 @@ no network, just rules:
   of fields mapped, what the collector could not do (tree dumps that failed, no presses, no data source), advice.
 
 Learning is incremental: only sessions newer than the last learn are processed and merged into the
-stored counts, so a nightly learn takes seconds whatever the history. **Rebuild memory** in the tray
-recomputes everything from day one; the result is the same. Raw events older than the retention window
-(default 180 days, tab 3) are deleted once learned; the memory keeps the counts.
+stored counts, so a nightly learn takes seconds whatever the history. **Recompute everything I learned
+from day one** (Settings, Advanced, Learning) gives the same result. Raw events older than the retention
+window (default 180 days, same page) are deleted once learned; the memory keeps the counts.
 
 Resource use: the watcher is event driven. When the app is not in front it does nothing. Idle memory is
 small (about 15 MB working set after start-up). Screen trees are read with one cached UI Automation
@@ -182,10 +206,10 @@ script for the engine in `scripts\sql\`:
   UniVerse/UniData: `universe-logging.md` (three routes: a read-only ODBC login, a nightly export drop folder,
   or server-side logging).
 
-In App Watcher Settings, tab 2, tick **Use SQL statement log** and point it at the folder with the files
+In App Watcher Settings, Advanced, **2. Where its data lives**, tick **Use a SQL statement log** and point it at the folder with the files
 (`.xel`, CSV, or any text log with timestamped statements). To stop, the script's last block.
 
-Apps that use ODBC: Settings, tab 2, **Turn on Windows ODBC tracing**. This is a Windows setting for the
+Apps that use ODBC: the same page, **Turn on Windows ODBC tracing**. This is a Windows setting for the
 current user account: it logs the SQL of every ODBC program under that account to `%TEMP%\SQL.LOG`, slows
 them down a little, and the file grows. App Watcher keeps only the lines of the watched program. Turn it
 off when done.
@@ -196,21 +220,35 @@ Right-click the eye icon:
 
 | Item | What it does |
 |---|---|
-| Pause / Resume | stop or continue recording (the icon turns grey while paused) |
-| Learn now | update the memory files from the new evidence |
-| Rebuild memory | recompute the memory from day one |
-| Export for the twin kit | write the bundle (see below) and tell you the path in a tray notice |
-| Copy data folder path for AI | puts `C:\ProgramData\AppWatcher\data\<app-name>` on the clipboard |
-| Copy last export path | puts the last zip's path on the clipboard |
-| Settings... | change the app, data sources, SQL capture, learning, privacy, AI analysis, password (asks the password) |
+| Pause for an hour | stops recording for one hour, then starts again by itself (the icon turns grey) |
+| Resume | starts recording again now |
+| Update what I learned | updates the memory files from the new evidence and says how many screens, rules and flows it knows |
+| Make a report folder | writes the bundle for the twin kit and any AI (see below), then opens the folder with the zip selected |
+| Open the folder with everything collected | opens `C:\ProgramData\AppWatcher\data\<app-name>` |
+| Settings... | asks the password, then shows the Simple view (see below) |
 | Quit | stops App Watcher until the next login (asks the password) |
 
 Running until Quit is the normal state. It starts again at every login.
 
+## Settings
+
+**Simple** is what most people need: the program I watch with a **Change...** button, the three privacy
+choices from step 2, the windows never to record, the time I update what I learned (a clock picker), and
+**What has been collected so far**, the same plain words as the first-hour notice.
+
+![Settings, Simple](docs/images/settings-simple.png)
+
+**Advanced** has everything else on numbered pages: the program file and its profile, where its data lives
+(add files, folders, read-only SQL Server or ODBC connections, an export drop folder, the SQL statement log,
+**Find what it uses** again), learning, privacy details, AI analysis, password. Every option says in plain
+words what it does and shows the **recommended** value; **Reset this page to recommended** puts a page back.
+
+![Settings, Advanced, Learning](docs/images/settings-advanced-learning.png)
+
 ## Changing the watched app
 
-Open Settings, pick another program on the first tab, save. App Watcher starts a new folder
-`data\<new-app-name>\` and leaves the old folder exactly as it is.
+Open Settings, press **Change...** next to the program, pick another one, save. App Watcher starts a new
+folder `data\<new-app-name>\`, leaves the old folder exactly as it is, and finds the new program's data by itself.
 
 ## Several PCs
 
@@ -220,7 +258,7 @@ is rebuilt). health.md then counts users and PCs (names are hashed, never stored
 
 ## Stopping and removing
 
-- Pause from the tray to stop recording for a while.
+- **Pause for an hour** from the tray to stop recording for a while.
 - Quit from the tray to stop until the next login.
 - To remove it completely:
 
@@ -240,11 +278,12 @@ appwatcher --status | --learn | --rebuild | --export | --expect | --detect <exe>
 appwatcher --setup <exe> <password> [profile]
 ```
 
-`--detect` prints the toolkit, the profile and the backends of any program file without setting anything up.
+The output also works when redirected, for example `appwatcher --detect C:\Apps\erp.exe > out.txt`.
+`--setup` uses the same recommended choices as the first-run window. `--detect` prints the toolkit, the profile and the backends of any program file without setting anything up.
 
 ## Handing the result to the App Twin Kit, to a process-mining tool, or to any AI
 
-Choose **Export for the twin kit** from the tray (or `appwatcher --export`). It writes
+Choose **Make a report folder** from the tray (or `appwatcher --export`). It writes
 `data\<app-name>\export\<date>\` and a zip next to it:
 
 - `docs\raw\screens\*.md`: one per distinct screen, with the control tree, the learned menu path and predecessor;
@@ -275,7 +314,7 @@ same files run in Claude Code, OpenCode and OpenClaw without changes:
 
 `skills\README.md` has the install lines for each tool (Claude Code: copy into `.claude\skills`;
 OpenClaw: `openclaw skills install .\skills\app-watcher-analyze`; OpenCode: its skills folder).
-Point the tool at the data folder with **Copy data folder path for AI**. Neither skill opens raw events,
+Point the tool at the data folder (the tray's **Open the folder with everything collected** shows where it is). Neither skill opens raw events,
 and both are read-only towards the watched app.
 
 **OpenClaw support, as suggested by the client.** OpenClaw follows the Agent Skills specification, loads
@@ -287,7 +326,7 @@ chat connectors or access-restriction settings ourselves; follow the OpenClaw do
 
 ## Nightly analysis without clicking (optional, both off by default)
 
-Settings, tab 5:
+Settings, Advanced, **5. AI analysis**:
 
 - **Claude API**: paste the client's own API key. After each nightly learn, only the `memory\*.md` files
   are sent with the analyst prompt; the answer is saved as `memory\architecture-reviewed.md`.
@@ -316,12 +355,12 @@ Something like this can go on the notice board or in an e-mail:
 > so that we can document and later rebuild it. It keeps pictures of each screen of that program. It
 > does not record other programs, e-mails, the web, the clipboard or the desktop, and it does not send
 > anything over the internet. Passwords are never recorded. You will see a small eye icon near the clock;
-> it never shows pop-ups and does not need anything from you. Questions: ask <contact>.
+> now and then it shows a short notice there, and it does not need anything from you. Questions: ask <contact>.
 
 ## Honest limits
 
 - Apps that draw their own screens (some Qt, Java without the Access Bridge, or custom programs) show few
-  or no controls. The setup window says so before you start, and health.md after the first hour; the watcher
+  or no controls. The green box in step 1 says so before you start, and the first-hour notice after; the watcher
   still learns windows, timing, dialog text and the data side (SQL capture, drop folder).
 - Encrypted or server-only data cannot be read unless you give a read-only connection, an export drop folder,
   or SQL capture.
@@ -335,7 +374,7 @@ Something like this can go on the notice board or in an e-mail:
 C# on .NET 8, WinForms for the tray and settings, FlaUI (UI Automation) for the collector with MSAA
 (IAccessible) fallbacks, Microsoft.Data.Sqlite / OleDb / SqlClient / Odbc as read-only readers, XELite for
 Extended Events files, TraceEvent for the one-time file access detection. `dotnet build`, `dotnet test`
-(51 tests), `scripts\live-test.ps1` (drives `tests\SampleApp` by UI Automation and checks what the watcher
+(69 tests), `scripts\live-test.ps1` (drives `tests\SampleApp` by UI Automation and checks what the watcher
 recorded), `scripts\publish.ps1`. See `CLAUDE.md` for the folder layout and the rules the code follows,
 `docs\data-folder.md` for the file formats, and `docs\improvements.md` for what changed after the first real run.
 

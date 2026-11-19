@@ -28,7 +28,7 @@ public static class DataSourceScanner
         if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
         {
             var dir = Path.GetDirectoryName(exePath)!;
-            roots.Add((dir, "install folder", false));
+            if (!IsSharedFolder(dir)) roots.Add((dir, "install folder", false));
         }
         foreach (var sf in new[] { Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolder.LocalApplicationData,
                                    Environment.SpecialFolder.ApplicationData, Environment.SpecialFolder.MyDocuments })
@@ -90,6 +90,30 @@ public static class DataSourceScanner
             }
             catch { }
         }
+    }
+
+    /// <summary>
+    /// Folders many programs share (Windows, System32, Program Files itself, a drive root): their files are not this
+    /// program's data, so they are never scanned as its install folder.
+    /// </summary>
+    public static bool IsSharedFolder(string dir)
+    {
+        try
+        {
+            static string Norm(string p) => Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var full = Norm(dir);
+            var rootOf = Path.GetPathRoot(full);
+            if (rootOf is not null && Norm(rootOf) == full) return true;
+            var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            if (windows.Length > 0 && full.StartsWith(Norm(windows), StringComparison.OrdinalIgnoreCase)) return true;
+            foreach (var sf in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.CommonProgramFiles })
+            {
+                var p = Environment.GetFolderPath(sf);
+                if (p.Length > 0 && string.Equals(full, Norm(p), StringComparison.OrdinalIgnoreCase)) return true;
+            }
+        }
+        catch { }
+        return false;
     }
 
     /// <summary>Turns a candidate into a config entry.</summary>

@@ -43,7 +43,7 @@ distinct state, `02-after-press-search.png`, `03-after-type-customer-code.png`, 
 built-in Windows OCR read, with each line's box), and an `index.md` listing each picture with the action that caused it, the time
 and the event. Only the app's own window is pictured, never the desktop. The same state (judged by a coarse
 hash of the picture, so a blinking caret does not count) is never stored twice; the picture before an action
-is the previous row. Caps: 25 per screen and 500 MB per app by default (Privacy tab: off / first / actions;
+is the previous row. Caps: 25 per screen and 500 MB per app by default (Settings, Advanced, Privacy: off / first / actions;
 never for login or password windows or for excluded windows). The screen record's `Screenshot:` line names the first one.
 
 `screens/index.json` maps the structure hash of each tree (types, names, automation ids; no values or
@@ -78,11 +78,11 @@ tables changed in the last diffs, so very large databases are only partly read.
 dumps that worked, failed or came back empty, how many screens came through MSAA, presses by path (UIA,
 MSAA, menu, inferred), toggles, dialogs, values typed, excluded events. The learner copies its problems
 into `memory/health.md` ("What the collector could not do"). `expectations.md` says in plain words what
-can be learned from this app (toolkit, backends, data sources), the same text the setup window showed.
+can be learned from this app (toolkit, backends, data sources), the same text as the green box in step 1 of the first run.
 
 ## memory/
 
-Written by the learner (tray: Learn now; nightly; after the first hour; or `AppWatcher.exe --learn`). Six documents
+Written by the learner (tray: Update what I learned; nightly; one hour after the first start; or `AppWatcher.exe --learn`). Six documents
 (`data-model.md`, `screens.md`, `rules.md`, `flows.md`, `architecture.md`, `health.md`) plus
 `changelog.md`, every line with a confidence tag and an evidence pointer. `architecture-reviewed.md`
 is added by the analyze skill or by the optional API/local analysis. No raw values typed by users
@@ -90,12 +90,12 @@ appear in this folder; window titles have their quoted parts masked.
 
 `learn-state.json` holds the learner's accumulated counters and the watermark (time of the last closed
 session processed). Learning is incremental: only sessions newer than the watermark are processed and
-merged. Delete the file, or use "Rebuild memory", to recompute from day one; the result is the same.
+merged. Delete the file, or use "Recompute everything I learned from day one" (Settings, Advanced, Learning), to recompute from day one; the result is the same.
 (When new titles make the title normalizer fold a screen differently, a rebuild lines the counts up again.)
 
 ## SQL statement logs (optional)
 
-Not inside the data folder: the client chooses where they live (Settings, tab 2). Four forms are read:
+Not inside the data folder: the client chooses where they live (Settings, Advanced, page 2). Four forms are read:
 Extended Events `.xel` files written by `scripts/sql/xevents-session.sql`, a CSV with a timestamp and a
 statement column, the Windows ODBC trace `SQL.LOG` (only the watched program's lines are used), and any
 text log with timestamped INSERT/UPDATE/DELETE lines (MySQL general log, PostgreSQL `log_statement`,

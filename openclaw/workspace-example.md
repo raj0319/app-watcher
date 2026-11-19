@@ -27,7 +27,7 @@ example in the workspace's notes or in the first message:
 The App Watcher data folder is C:\ProgramData\AppWatcher\data\<app-name>. Read memory\ only.
 ```
 
-(In the tray menu, "Copy data folder path for AI" puts this path on the clipboard.)
+(In the tray menu, "Open the folder with everything collected" opens this folder, so you can copy its path from the address bar.)
 
 Keep it read-only in practice:
 

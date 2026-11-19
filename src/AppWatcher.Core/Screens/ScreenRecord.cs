@@ -12,6 +12,8 @@ public sealed class ControlRow
     public string AutomationId { get; set; } = "";
     public string Position { get; set; } = "";
     public bool IsPassword { get; set; }
+    /// <summary>For Edit and Document controls: true when the collector saw the field is read-only (a message box body), false when it can be typed into, null when unknown.</summary>
+    public bool? IsReadOnly { get; set; }
     /// <summary>AcceleratorKey or AccessKey of a button or menu item ("F3", "Ctrl+S", "Alt+S"); not part of the control tree table.</summary>
     public string Shortcut { get; set; } = "";
     /// <summary>UIA LabeledBy name when the collector could read it; else empty.</summary>

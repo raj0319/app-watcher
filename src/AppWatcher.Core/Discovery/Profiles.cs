@@ -114,16 +114,20 @@ public static class ProfileStore
     public static AppProfile? ByName(string? name) => name is null ? null : All().FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Best profile for an exe: exact process name, then product name, then toolkit, then the generic one.</summary>
-    public static AppProfile? Match(string? exePath, string processName, string? product, string? toolkit)
+    public static AppProfile? Match(string? exePath, string processName, string? product, string? toolkit) => MatchWithReason(exePath, processName, product, toolkit).profile;
+
+    /// <summary>Best profile and why: "program" (exe or product name: we recognise this very program), "toolkit" (we know how programs like it are built) or "generic".</summary>
+    public static (AppProfile? profile, string reason) MatchWithReason(string? exePath, string processName, string? product, string? toolkit)
     {
         var all = All();
-        var proc = processName.ToLowerInvariant();
+        var proc = (processName ?? "").ToLowerInvariant();
         var hit = all.FirstOrDefault(p => p.Match.Exe.Any(e => e.Equals(proc, StringComparison.OrdinalIgnoreCase)));
-        if (hit is not null) return hit;
+        if (hit is not null) return (hit, "program");
         if (!string.IsNullOrEmpty(product)) hit = all.FirstOrDefault(p => p.Match.Product.Any(x => product.Contains(x, StringComparison.OrdinalIgnoreCase)));
-        if (hit is not null) return hit;
+        if (hit is not null) return (hit, "program");
         if (!string.IsNullOrEmpty(toolkit)) hit = all.FirstOrDefault(p => p.Match.Toolkit.Any(x => toolkit.Contains(x, StringComparison.OrdinalIgnoreCase)));
-        return hit ?? all.FirstOrDefault(p => p.Name == "generic");
+        if (hit is not null) return (hit, "toolkit");
+        return (all.FirstOrDefault(p => p.Name == "generic"), "generic");
     }
 
     public static string Save(AppProfile p)

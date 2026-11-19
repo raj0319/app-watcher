@@ -1,11 +1,42 @@
 {
   "name": "ddi-inform",
   "description": "DDI inForm ERP (Infragistics on WinForms, UniVerse backend on port 31438). Tabbed workspace in the main window: Customer Master, Product Master, A/P Invoice, Purchase Order, ... Written after the first real run (2026-11-18).",
-  "match": { "exe": ["inform", "ddi.inform", "informclient"], "product": ["inForm", "DDI inForm"], "toolkit": [] },
-  "effectTriggers": ["add", "exit", "add price matrix break", "release", "receive", "invoice"],
-  "ignoreWindows": ["tooltip*", "*DropDown*", "Advanced Demand Forecasting"],
-  "sessionWindows": ["Splash Screen", "Login*", "Enter Register #*", "*Register Number*"],
-  "dialogWindows": ["Close?", "A/P Invoice Entry", "Confirm*", "Warning*", "Error*"],
+  "match": {
+    "exe": [
+      "inform",
+      "ddi.inform",
+      "informclient"
+    ],
+    "product": [
+      "inForm",
+      "DDI inForm"
+    ],
+    "toolkit": []
+  },
+  "effectTriggers": [
+    "add",
+    "exit",
+    "add price matrix break",
+    "release",
+    "receive",
+    "invoice"
+  ],
+  "ignoreWindows": [
+    "tooltip*",
+    "*DropDown*"
+  ],
+  "sessionWindows": [
+    "Splash Screen",
+    "Login*",
+    "Enter Register #*",
+    "*Register Number*"
+  ],
+  "dialogWindows": [
+    "Close?",
+    "Confirm",
+    "Warning",
+    "Error"
+  ],
   "excludeWindows": [],
   "tabDocuments": true,
   "msaaFallback": true,

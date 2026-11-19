@@ -334,6 +334,8 @@ public sealed class LearnResult
     public Dictionary<string, int> MessageWindows { get; set; } = new();
     /// <summary>What the watcher expects to learn from this app, in plain words (also shown at setup).</summary>
     public List<string> Expectations { get; set; } = new();
+    /// <summary>At least one data source was configured and enabled when this learn ran.</summary>
+    public bool HasDataSources { get; set; } = true;
 }
 
 /// <summary>Window titles vary by document name and counters; keys collapse those so flows line up.</summary>
