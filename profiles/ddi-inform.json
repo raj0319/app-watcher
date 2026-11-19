@@ -1,9 +1,10 @@
 {
   "name": "ddi-inform",
-  "description": "DDI inForm ERP (Infragistics on WinForms, UniVerse backend on port 31438). Tabbed workspace in the main window: Customer Master, Product Master, A/P Invoice, Purchase Order, ... Written after the first real run (2026-11-18).",
+  "description": "DDI inForm ERP (Infragistics on WinForms, UniVerse backend). Tabbed MDI workspace in the main window: Customer Master, Sales Order Entry, Purchase Order Entry, Price Change, ... Written after the first real run (2026-11-18), revised after the measured run of 2026-11-19.",
   "match": {
     "exe": [
       "inform",
+      "ddi inform",
       "ddi.inform",
       "informclient"
     ],
@@ -28,14 +29,17 @@
   "sessionWindows": [
     "Splash Screen",
     "Login*",
+    "DDI System Inform Login",
     "Enter Register #*",
     "*Register Number*"
   ],
   "dialogWindows": [
     "Close?",
-    "Confirm",
-    "Warning",
-    "Error"
+    "Confirm*",
+    "Warning*",
+    "Error*",
+    "No Selection Specified",
+    "*Specified"
   ],
   "excludeWindows": [],
   "tabDocuments": true,
@@ -45,5 +49,6 @@
   "dumpRowCap": 3500,
   "gridRowCap": 5,
   "maskTitles": true,
-  "note": "The data lives on a UniVerse server (ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names it). Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server."
+  "backendKind": "universe",
+  "note": "On this toolkit button presses come from inference (the control under the pointer or the focus when a window, tab or message changes; the buttons report nothing themselves) and the values the program fills in come from re-reads of the document after each typed value or press (its grid cells and bound editors report no change). The data lives on a UniVerse server: ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names the host (HostName) and account (AccountPath). Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server."
 }

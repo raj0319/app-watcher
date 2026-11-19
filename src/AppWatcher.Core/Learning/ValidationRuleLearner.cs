@@ -31,11 +31,13 @@ public static class ValidationRuleLearner
             {
                 var e = sorted[j];
                 if (e.Act is Acts.Dialog or Acts.Close) continue;
+                if (e.Act == Acts.Value && e.By == ValueBy.App) continue; // the program's own fill is not something the user did
                 if (e.Act == Acts.Value && value is null && d.T - e.T <= Window) { value = e; break; }
                 if (e.Act is Acts.Invoke or Acts.Select && action is null && e.Ct != "TabItem") action = e;
                 if (e.Act == Acts.Focus && action is null && e.Ct is "Button" or "MenuItem" && d.T - e.T <= Window) action = e;
             }
-            var cause = value ?? action;
+            // the nearest of the two is the cause: a menu chosen after a value was typed owns the message that follows it
+            var cause = value is not null && action is not null ? (action.T >= value.T ? action : value) : value ?? action;
             if (cause is null) continue;
             var screen = Titles.Key(cause.Win);
             var isValue = ReferenceEquals(cause, value);

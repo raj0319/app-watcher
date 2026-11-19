@@ -169,7 +169,7 @@ internal sealed class WatchService : IDisposable
             // one picture per distinct screen: taken before the record is written (the window may close soon), kept only
             // when the record is new or replaced, never for windows with a password field, never when excluded
             byte[]? png = null; var hash = "";
-            var noPicture = raw.Screen.Controls.Any(c => c.IsPassword) || raw.Screen.Kind == ScreenKinds.Session;
+            var noPicture = raw.Screen.Controls.Any(c => c.IsPassword) || raw.Screen.Kind is ScreenKinds.Session or ScreenKinds.Menu;
             if (noPicture) lock (_noPictureScreens) _noPictureScreens.Add(Core.Learning.Titles.Key(raw.Screen.Title));
             var wantShot = _shotMode != "off" && raw.Hwnd != IntPtr.Zero && !noPicture;
             if (wantShot) { png = Native.WindowCapture.Capture(raw.Hwnd, out hash); if (png is not null) raw.Screen.Screenshot = ShotStore.FolderFor(raw.Screen.Title) + "/01-first-seen.png"; }

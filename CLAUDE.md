@@ -12,7 +12,7 @@ src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, da
 src/AppWatcher/          the tray app: WinForms tray icon, three-step first-run wizard, settings window (Simple/Advanced), UI Automation collector (with MSAA, menu and press-inference fallbacks),
                          window capture (one picture per screen), ETW file-access trace
 profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
-tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test)
+tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform holds anonymised copies of a real session (see its README)
 tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
 scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
@@ -95,8 +95,15 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   to do next, never a path alone. Setup decides for the user: every default is the fullest safe, local
   choice (`SetupDefaults`), and the same defaults serve the wizard, Settings and `--setup`.
   Validation messages go to the settings window's status line. Export writes to a fixed path.
-- Dialogs are decided by structure (`DialogDetector`), never by a title pattern alone.
-  Validation messages go to the settings window's status line. Export writes to a fixed path.
+- Dialogs are decided by structure (`DialogDetector`), never by a title pattern alone; a profile's `dialogWindows`
+  pattern only helps when the structure allows it (`CouldBeNamedDialog`).
+- Presses on toolkits whose buttons announce nothing come from the control under the pointer (read with
+  ElementFromPoint when the mouse is captured or a state changes, never a hook) or the focused button, counted when a
+  window, tab or message changes within 1.5 s. Tab documents come from reading the tab strip after events (every 2 s
+  at most), never from a selection event alone. Values the program fills in come from the field's own change event
+  or from one re-read of the document 300 ms after a typed value or press (`FieldReads`). Keep all of that read-only.
+- Evidence folders copied from a client PC (`app-watcher-v*-evidence-*/`, `evidence/`) are ignored by git and must
+  stay out of it; anything that goes into `tests/` is anonymised first (`scripts\check-fixtures.ps1 -Forbidden <list kept outside the repo>`).
 - When testing the collector against any app: start your own instance (tests/SampleApp is there for that),
   drive only that window by handle, never press Save or close with unsaved text (no "save changes?" prompt
   on the user's desktop), and end the test by killing the process you started. Driving a WinForms

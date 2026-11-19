@@ -8,19 +8,30 @@ internal sealed class Visit
     public DateTime Start, End;
     public List<string> Controls = new();
     public string Source = "";
+    /// <summary>A close event of a tab document ("Window › Tab") happened during this visit: the document is gone.</summary>
+    public bool ClosedDocument;
 }
 
-/// <summary>Groups events into sessions and flows by window sequence. Accumulates per session into LearnState.</summary>
+/// <summary>
+/// Groups events into sessions and flows by window sequence. Accumulates per session into LearnState.
+/// A flow is what a person does between two returns to the main window. It also ends when a document closes:
+/// a prompt ("Close?") answered and a different window after it, a tab document's close event, or an Exit or
+/// Cancel press followed by the main window. A run that is still longer than 20 minutes and 40 steps is split at
+/// every prompt inside it, so one working day never becomes one flow.
+/// </summary>
 public static class FlowLearner
 {
     public static readonly TimeSpan SessionGap = TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan LongFlow = TimeSpan.FromMinutes(20);
+    public const int LongFlowSteps = 40;
     private const int MaxDurations = 2000;
+    private static readonly HashSet<string> LeaveButtons = new(StringComparer.OrdinalIgnoreCase) { "exit", "cancel", "close", "quit", "abandon", "discard" };
 
     /// <summary>Whole-history convenience wrapper (used by tests and the XES writer).</summary>
-    public static (List<FlowStat> flows, List<NavEdge> nav, string? main, int sessions) Learn(List<UiEvent> events, HashSet<string>? sessionWindows = null)
+    public static (List<FlowStat> flows, List<NavEdge> nav, string? main, int sessions) Learn(List<UiEvent> events, HashSet<string>? sessionWindows = null, HashSet<string>? dialogWindows = null)
     {
         var state = new LearnState();
-        foreach (var s in Sessions(events)) { state.Sessions++; Accumulate(state, s, sessionWindows); }
+        foreach (var s in Sessions(events)) { state.Sessions++; Accumulate(state, s, sessionWindows, dialogWindows); }
         var (flows, nav, main) = Finalize(state, sessionWindows);
         return (flows, nav, main, state.Sessions);
     }
@@ -39,7 +50,22 @@ public static class FlowLearner
         return sessions;
     }
 
-    public static void Accumulate(LearnState state, List<UiEvent> session, HashSet<string>? sessionWindows = null)
+    /// <summary>
+    /// The main window among window keys: the parent of the tab documents ("Window › Tab" share the prefix "Window") when
+    /// there are any, else the window with the most time. Tabbed workspaces credit most time to their documents, so the
+    /// prefix rule comes first.
+    /// </summary>
+    public static string? MainWindow(IEnumerable<(string win, double seconds, int visits)> windows)
+    {
+        var list = windows.ToList();
+        if (list.Count == 0) return null;
+        var prefixes = list.Where(w => w.win.Contains(" › ", StringComparison.Ordinal)).Select(w => w.win[..w.win.IndexOf(" › ", StringComparison.Ordinal)])
+            .GroupBy(p => p).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).Select(g => g.Key).ToList();
+        if (prefixes.Count > 0) return prefixes[0];
+        return list.OrderByDescending(w => w.seconds).ThenByDescending(w => w.visits).ThenBy(w => w.win, StringComparer.Ordinal).First().win;
+    }
+
+    public static void Accumulate(LearnState state, List<UiEvent> session, HashSet<string>? sessionWindows = null, HashSet<string>? dialogWindows = null)
     {
         var all = Visits(session);
         if (all.Count == 0) return;
@@ -59,26 +85,55 @@ public static class FlowLearner
         // flows start at the first working screen: splash, login and station prompts are left out
         var visits = sessionWindows is null ? all : all.Where(v => !sessionWindows.Contains(v.Win)).ToList();
         if (visits.Count == 0) return;
-        // flows are cut at the main window, which is only known at the end: store the raw visit runs by
-        // the window that opened them, and let Finalize re-cut by the main window. To keep this additive, we
-        // record every maximal run between visits of each candidate main window; the common case (one main
-        // window) makes that exact. We approximate: cut at the window with the most time inside THIS session.
-        var main = visits.GroupBy(v => v.Win).OrderByDescending(g => g.Sum(v => (v.End - v.Start).TotalSeconds)).ThenByDescending(g => g.Count()).First().Key;
-        var i2 = 0;
-        while (i2 < visits.Count)
+        bool IsDialog(Visit v) => dialogWindows is not null && dialogWindows.Contains(v.Win);
+        var main = MainWindow(visits.Where(v => !IsDialog(v)).GroupBy(v => v.Win).Select(g => (g.Key, g.Sum(v => (v.End - v.Start).TotalSeconds), g.Count())));
+        foreach (var run in Runs(visits, main, IsDialog)) Record(state, run.Where(v => !IsDialog(v)).ToList());
+    }
+
+    /// <summary>Cuts the visits into runs at the points where a flow ends; a long run is split at its prompts.</summary>
+    internal static List<List<Visit>> Runs(List<Visit> visits, string? main, Func<Visit, bool> isDialog)
+    {
+        var runs = new List<List<Visit>>();
+        var cur = new List<Visit>();
+        void Cut() { if (cur.Count > 0) { runs.Add(cur); cur = new List<Visit>(); } }
+        for (var i = 0; i < visits.Count; i++)
         {
-            if (visits[i2].Win == main) { i2++; continue; }
-            var j = i2;
-            while (j < visits.Count && visits[j].Win != main) j++;
-            Record(state, visits.GetRange(i2, j - i2));
-            i2 = j;
+            var v = visits[i];
+            if (v.Win == main) { Cut(); continue; }
+            cur.Add(v);
+            if (v.ClosedDocument) { Cut(); continue; }
+            // a prompt answered, and the window after it is not the one before it: the document closed
+            if (isDialog(v) && i + 1 < visits.Count)
+            {
+                var before = cur.Count >= 2 ? cur[^2].Win : "";
+                if (before.Length > 0 && visits[i + 1].Win != before) Cut();
+            }
+            // Exit or Cancel, then the main window (seen as the next visit) ends the flow
+            if (i + 1 < visits.Count && visits[i + 1].Win == main && v.Controls.Any(c => c.StartsWith("press ", StringComparison.Ordinal) && LeaveButtons.Contains(c[6..]))) Cut();
         }
+        Cut();
+        var result = new List<List<Visit>>();
+        foreach (var run in runs)
+        {
+            var steps = run.Where(v => !isDialog(v)).Sum(v => 1 + v.Controls.Count); // screens visited plus what was done on them
+            if (steps > LongFlowSteps && run[^1].End - run[0].Start > LongFlow)
+            {
+                var part = new List<Visit>();
+                foreach (var v in run)
+                {
+                    part.Add(v);
+                    if (isDialog(v)) { result.Add(part); part = new List<Visit>(); }
+                }
+                if (part.Count > 0) result.Add(part);
+            }
+            else result.Add(run);
+        }
+        return result.Where(r => r.Any(v => !isDialog(v))).ToList();
     }
 
     public static (List<FlowStat> flows, List<NavEdge> nav, string? main) Finalize(LearnState state, HashSet<string>? sessionWindows = null)
     {
-        var main = state.Windows.Where(w => sessionWindows is null || !sessionWindows.Contains(w.Key))
-            .OrderByDescending(w => w.Value.Seconds).ThenByDescending(w => w.Value.Visits).Select(w => w.Key).FirstOrDefault();
+        var main = MainWindow(state.Windows.Where(w => sessionWindows is null || !sessionWindows.Contains(w.Key)).Select(w => (w.Key, w.Value.Seconds, w.Value.Visits)));
         var flows = new List<FlowStat>();
         foreach (var (key, f) in state.Flows)
         {
@@ -128,6 +183,7 @@ public static class FlowLearner
             }
             cur.End = e.T;
             if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0) cur.Controls.Add(Verb(e));
+            if (e.Act == Acts.Close && e.Ct == "Window" && Titles.Key(e.Name) == key && key.Contains(" › ", StringComparison.Ordinal)) cur.ClosedDocument = true;
         }
         return visits;
     }

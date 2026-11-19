@@ -176,6 +176,7 @@ internal static class Program
                     int? pid = null;
                     try { pid = System.Diagnostics.Process.GetProcessesByName(proc).FirstOrDefault()?.Id; } catch { }
                     var backends = BackendDetector.Detect(exe, proc, pid, proc);
+                    Core.Setup.SetupDefaults.ApplyProfileBackendKind(backends, profile);
                     Console.WriteLine($"Toolkit: {tk.Name} ({string.Join("; ", tk.Hints.Take(6))})");
                     Console.WriteLine($"Expectation: {tk.Expectation}");
                     Console.WriteLine($"Profile: {profile?.Name ?? "none"}{(profile?.Note is null ? "" : " - " + profile.Note)}");

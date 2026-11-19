@@ -19,8 +19,11 @@ internal static class WindowCapture
     /// <summary>Returns the PNG bytes of the window, or null when it cannot be drawn (minimized, gone, too small).</summary>
     public static byte[]? Capture(IntPtr hwnd) => Capture(hwnd, out _);
 
+    /// <summary>A small window (a hover tip) with its own size floor.</summary>
+    public static byte[]? Capture(IntPtr hwnd, int minWidth, int minHeight) => Capture(hwnd, out _, minWidth, minHeight);
+
     /// <summary>Same, plus a coarse hash of what is on the window (small grey grid), used to tell one state from another.</summary>
-    public static byte[]? Capture(IntPtr hwnd, out string hash)
+    public static byte[]? Capture(IntPtr hwnd, out string hash, int minWidth = 40, int minHeight = 30)
     {
         hash = "";
         try
@@ -28,7 +31,7 @@ internal static class WindowCapture
             if (hwnd == IntPtr.Zero || !Win32.IsWindow(hwnd) || IsIconic(hwnd)) return null;
             if (!GetWindowRect(hwnd, out var r)) return null;
             var w = r.Right - r.Left; var h = r.Bottom - r.Top;
-            if (w < 40 || h < 30 || w > 8000 || h > 8000) return null;
+            if (w < minWidth || h < minHeight || w > 8000 || h > 8000) return null;
             using var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
             {

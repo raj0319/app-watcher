@@ -116,16 +116,16 @@ public class ImprovementTests
     public void Titles_mask_quoted_parts_and_normalizer_folds_varying_words()
     {
         Titles.MaskQuoted = true;
-        Assert.Equal("Vendor - # \"…\" Internal Notes", Titles.Key("Vendor - 00283 \"EVERFLOW SUPPLIES INC\" Internal Notes"));
+        Assert.Equal("Vendor - # \"…\" Internal Notes", Titles.Key("Vendor - 00001 \"ACME SUPPLIES INC\" Internal Notes"));
         Assert.Equal("A/P Invoice - INV#", Titles.Key("A/P Invoice - INV410987"));
-        var n = TitleNormalizer.FromGroups(new[] { new[] { "Customer - 0002776 \"Nate Test\"", "Customer - 0003001 \"Other Co\"" }, new[] { "Order ABC", "Order XYZ" }, new[] { "Report for March", "Report for the whole of April" } });
-        Assert.Equal("Customer - # \"…\"", n.Apply("Customer - 0002776 \"Nate Test\""));
+        var n = TitleNormalizer.FromGroups(new[] { new[] { "Customer - 0000001 \"Test Customer\"", "Customer - 0003001 \"Other Co\"" }, new[] { "Order ABC", "Order XYZ" }, new[] { "Report for March", "Report for the whole of April" } });
+        Assert.Equal("Customer - # \"…\"", n.Apply("Customer - 0000001 \"Test Customer\""));
         Assert.Equal("Order #", n.Apply("Order ABC"));
         Assert.Equal("Order #", n.Apply("Order XYZ"));
         Assert.Equal("Report for #", n.Apply("Report for March"));
         Assert.Equal("Main", n.Apply("Main"));
         Titles.MaskQuoted = false;
-        Assert.Equal("Vendor - # \"EVERFLOW SUPPLIES INC\" Internal Notes", Titles.Key("Vendor - 00283 \"EVERFLOW SUPPLIES INC\" Internal Notes"));
+        Assert.Equal("Vendor - # \"ACME SUPPLIES INC\" Internal Notes", Titles.Key("Vendor - 00001 \"ACME SUPPLIES INC\" Internal Notes"));
         Titles.MaskQuoted = true;
     }
 

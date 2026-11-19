@@ -29,6 +29,8 @@ public sealed class LearnInput
     public List<string> SessionWindowPatterns { get; set; } = new();
     /// <summary>Folder sizes in bytes (events, screens, effects, snapshots), for the health page.</summary>
     public Dictionary<string, long> DiskUse { get; set; } = new();
+    /// <summary>The text layers of the state pictures (OcrLogic.Load), evidence for calculations the tree did not show.</summary>
+    public List<OcrState> OcrStates { get; set; } = new();
 }
 
 /// <summary>How sure we are, and where to look. Every line in memory/*.md carries one of these.</summary>
@@ -293,6 +295,10 @@ public sealed class HealthMetrics
     public int DialogsSeen { get; set; }
     public int UsersSeen { get; set; }
     public int MachinesSeen { get; set; }
+    /// <summary>Tab documents selected in the events (to compare with the tab screens the collector recorded).</summary>
+    public int TabSelections { get; set; }
+    /// <summary>Windows that look like message boxes (by title or by shape) but were recorded as screens and visited 5+ times.</summary>
+    public int PromptScreens { get; set; }
     public Dictionary<string, long> DiskUse { get; set; } = new();
     /// <summary>Problems the collector reported (tree dumps failed, no presses, no data).</summary>
     public List<string> CollectorProblems { get; set; } = new();

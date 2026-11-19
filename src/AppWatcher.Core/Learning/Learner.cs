@@ -37,6 +37,7 @@ public static class Learner
             Collector = CollectorStatus.Load(paths.Root),
             SessionWindowPatterns = config?.Collector.SessionWindows ?? new(),
             DiskUse = DiskUse(paths),
+            OcrStates = OcrLogic.Load(paths.Screens),
         };
         // fold titles that share a structure but differ in record ids or names
         var normalizer = TitleNormalizer.FromGroups(ScreenWriter.TitleGroups(paths.Screens));
@@ -54,6 +55,7 @@ public static class Learner
         }
         foreach (var f in input.Effects) f.Win = normalizer.Apply(f.Win);
         foreach (var s in input.Screens) s.Title = normalizer.Apply(s.Title);
+        foreach (var o in input.OcrStates) o.Screen = normalizer.Apply(o.Screen);
     }
 
     private static Dictionary<string, long> DiskUse(AppPaths paths)
@@ -82,8 +84,14 @@ public static class Learner
         var keyIndex = RelationFinder.BuildKeyIndex(input.Latest);
         var triggers = BuildTriggerRegex(input.Triggers);
         var sessionWindows = SessionWindows(input);
+        var dialogWindows = DialogWindows(input);
+        // popup menus recorded as windows are not flow steps either; they cut like prompts
+        var flowCuts = new HashSet<string>(dialogWindows); flowCuts.UnionWith(MenuWindows(input));
 
         var events = input.Events.Where(e => state.Watermark is null || e.T > state.Watermark.Value).OrderBy(e => e.T).ToList();
+        AsDialogEvents(events, input.Screens, dialogWindows);
+        var ocr = input.OcrStates.Where(o => !state.OcrFiles.Contains(o.File)).OrderBy(o => o.T).ToList();
+        var usedOcr = new HashSet<OcrState>();
         var effects = input.Effects.Where(f => !state.EffectFiles.Contains(f.File)).OrderBy(f => f.T).ToList();
         var sqls = input.SqlStatements.Where(s => !state.SqlSources.Contains(s.Source)).OrderBy(s => s.T).ToList();
         var sessions = FlowLearner.Sessions(events);
@@ -103,23 +111,32 @@ public static class Learner
             var sq = sqls.Where(s => !usedSql.Contains(s) && s.T >= start && s.T <= end.AddMinutes(5)).ToList();
             foreach (var f in fx) usedEffects.Add(f);
             foreach (var s in sq) usedSql.Add(s);
-            ProcessSession(working, session, fx, sq, keyIndex, triggers, sessionWindows);
+            var oc = ocr.Where(o => !usedOcr.Contains(o) && o.T >= start.AddSeconds(-1) && o.T <= end.AddSeconds(5)).ToList();
+            foreach (var o in oc) usedOcr.Add(o);
+            ProcessSession(working, session, fx, sq, keyIndex, triggers, sessionWindows, flowCuts, oc);
             if (closed && !openSeen) state.Watermark = end;
+        }
+        // pictures outside any session (the collector pictured a state while no event was written)
+        var loose = ocr.Where(o => !usedOcr.Contains(o)).ToList();
+        if (loose.Count > 0)
+        {
+            if (loose.Any(o => o.T > cutoff)) Open();
+            OcrLogic.Accumulate(working, new List<UiEvent>(), loose);
         }
         // effects and statements outside any session (idle file changes, logs without timestamps)
         foreach (var f in effects.Where(f => !usedEffects.Contains(f)))
         {
             if (f.T > cutoff) Open();
-            ProcessSession(working, new List<UiEvent>(), new List<EffectRecord> { f }, new List<SqlStatement>(), keyIndex, triggers, sessionWindows, countSession: false);
+            ProcessSession(working, new List<UiEvent>(), new List<EffectRecord> { f }, new List<SqlStatement>(), keyIndex, triggers, sessionWindows, dialogWindows, null, countSession: false);
         }
         foreach (var s in sqls.Where(s => !usedSql.Contains(s)))
         {
             if (s.T > cutoff) Open();
-            ProcessSession(working, new List<UiEvent>(), new List<EffectRecord>(), new List<SqlStatement> { s }, keyIndex, triggers, sessionWindows, countSession: false);
+            ProcessSession(working, new List<UiEvent>(), new List<EffectRecord>(), new List<SqlStatement> { s }, keyIndex, triggers, sessionWindows, dialogWindows, null, countSession: false);
         }
 
         committed = state;
-        var r = Finalize(working, input, sessionWindows);
+        var r = Finalize(working, input, sessionWindows, dialogWindows);
         r.Incremental = wasIncremental;
         return r;
     }
@@ -150,8 +167,58 @@ public static class Learner
         return set;
     }
 
+    /// <summary>
+    /// Window keys that are message boxes: records the collector marked as dialogs, records whose shape says so (re-checked
+    /// with the current detector, so records made by an older collector count too), and windows of dialog events.
+    /// </summary>
+    public static HashSet<string> DialogWindows(LearnInput input)
+    {
+        var set = new HashSet<string>();
+        foreach (var rec in input.Screens)
+        {
+            var key = Titles.Key(rec.Title);
+            if (key.Length == 0) continue;
+            if (rec.Kind == ScreenKinds.Dialog || DialogDetector.Detect("", rec.Controls).isDialog) set.Add(key);
+        }
+        foreach (var e in input.Events.Where(e => e.Act == Acts.Dialog))
+        {
+            var key = Titles.Key(e.Name.Length > 0 ? e.Name : e.Win);
+            if (key.Length > 0) set.Add(key);
+        }
+        return set;
+    }
+
+    /// <summary>
+    /// An older collector recorded a message box as a screen: its "open" events become dialog events (with the body text the
+    /// record holds), so the rules learner sees the message after the action that caused it, as it would with a current collector.
+    /// </summary>
+    public static void AsDialogEvents(List<UiEvent> events, List<ScreenRecord> screens, HashSet<string> dialogWindows)
+    {
+        if (dialogWindows.Count == 0) return;
+        var bodies = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var rec in screens)
+        {
+            var key = Titles.Key(rec.Title);
+            if (!dialogWindows.Contains(key) || bodies.ContainsKey(key)) continue;
+            var (_, body) = DialogDetector.Detect("", rec.Controls);
+            bodies[key] = string.IsNullOrWhiteSpace(body) ? key : body!;
+        }
+        foreach (var e in events)
+        {
+            if (e.Act != Acts.Open || e.Ct != "Window") continue;
+            var key = Titles.Key(e.Name.Length > 0 ? e.Name : e.Win);
+            if (!dialogWindows.Contains(key)) continue;
+            e.Act = Acts.Dialog;
+            if (string.IsNullOrWhiteSpace(e.Val)) e.Val = bodies.GetValueOrDefault(key, key);
+        }
+    }
+
+    /// <summary>Window keys that are popup menus recorded as windows (their items and access keys are kept; they are not screens).</summary>
+    public static HashSet<string> MenuWindows(LearnInput input) =>
+        new(input.Screens.Where(r => r.Kind == ScreenKinds.Menu || DialogDetector.IsMenuWindow(r.Controls)).Select(r => Titles.Key(r.Title)).Where(k => k.Length > 0));
+
     private static void ProcessSession(LearnState s, List<UiEvent> session, List<EffectRecord> effects, List<SqlStatement> sqls,
-        Dictionary<string, HashSet<(string table, string col)>> keyIndex, Regex triggers, HashSet<string> sessionWindows, bool countSession = true)
+        Dictionary<string, HashSet<(string table, string col)>> keyIndex, Regex triggers, HashSet<string> sessionWindows, HashSet<string>? dialogWindows = null, List<OcrState>? ocr = null, bool countSession = true)
     {
         if (session.Count > 0)
         {
@@ -165,16 +232,18 @@ public static class Learner
             s.PressesSeen += session.Count(e => e.Act == Acts.Invoke && e.How != PressHow.Inferred);
             s.PressesInferred += session.Count(e => e.Act == Acts.Invoke && e.How == PressHow.Inferred);
             s.DialogsSeen += session.Count(e => e.Act == Acts.Dialog);
+            s.TabSelections += session.Count(e => e.Act == Acts.Select && e.Ct == "TabItem");
             foreach (var st in session.Where(e => e.Act == Acts.Start && !string.IsNullOrEmpty(e.Val)))
             {
                 var um = Regex.Match(st.Val!, @"user:(\w+)"); if (um.Success) s.Users.Add(um.Groups[1].Value);
                 var mm = Regex.Match(st.Val!, @"machine:(\w+)"); if (mm.Success) s.Machines.Add(mm.Groups[1].Value);
             }
-            FlowLearner.Accumulate(s, session, sessionWindows);
+            FlowLearner.Accumulate(s, session, sessionWindows, dialogWindows);
             ValidationRuleLearner.Accumulate(s, session);
             AccumulateScreens(s, session);
             LogicLearner.Accumulate(s, session);
         }
+        if (ocr is { Count: > 0 }) OcrLogic.Accumulate(s, session, ocr);
         foreach (var fx in effects)
         {
             s.EffectFiles.Add(fx.File);
@@ -253,8 +322,9 @@ public static class Learner
         }
     }
 
-    private static LearnResult Finalize(LearnState s, LearnInput input, HashSet<string> sessionWindows)
+    private static LearnResult Finalize(LearnState s, LearnInput input, HashSet<string> sessionWindows, HashSet<string>? dialogWindows = null)
     {
+        dialogWindows ??= DialogWindows(input);
         var r = new LearnResult { AppName = input.AppName, EventCount = s.EventCount, EffectCount = s.EffectsTotal, SessionCount = s.Sessions, FirstEvent = s.FirstEvent, LastEvent = s.LastEvent };
         r.Backends = input.Backends; r.Toolkit = input.Toolkit; r.Profile = input.Profile; r.Collector = input.Collector;
         r.HasDataSources = input.HasDataSources;
@@ -271,7 +341,7 @@ public static class Learner
         r.StatusFlows = StatusFlowLearner.Finalize(s, input.Latest);
         r.Sequences = SequenceLearner.Finalize(s, input.Latest);
         r.SqlWrites = s.SqlWrites.Values.OrderBy(w => w.Table).ThenBy(w => w.Kind).ToList();
-        r.Screens = DescribeScreens(s, input, sessionWindows, nav, r);
+        r.Screens = DescribeScreens(s, input, sessionWindows, dialogWindows, nav, r);
         r.Modules = BuildModules(r);
         r.Logic = LogicLearner.Finalize(s, input, r);
         r.Health = Health(s, r, input);
@@ -283,8 +353,9 @@ public static class Learner
         return r;
     }
 
-    private static List<ScreenInfo> DescribeScreens(LearnState s, LearnInput input, HashSet<string> sessionWindows, List<NavEdge> nav, LearnResult r)
+    private static List<ScreenInfo> DescribeScreens(LearnState s, LearnInput input, HashSet<string> sessionWindows, HashSet<string> dialogWindows, List<NavEdge> nav, LearnResult r)
     {
+        var menuWindows = MenuWindows(input);
         var byKey = new Dictionary<string, ScreenInfo>();
         foreach (var si in s.Screens.Values)
             byKey[si.Title] = new ScreenInfo
@@ -327,6 +398,8 @@ public static class Learner
         foreach (var si in byKey.Values)
         {
             if (si.Dialogs > 0 && si.Opens == 0) si.Kind = ScreenKinds.Dialog;
+            else if (dialogWindows.Contains(si.Title) && si.Kind != ScreenKinds.Tab) si.Kind = ScreenKinds.Dialog;
+            else if (menuWindows.Contains(si.Title)) si.Kind = ScreenKinds.Menu;
             else if (sessionWindows.Contains(si.Title) && si.Kind == ScreenKinds.Screen) si.Kind = ScreenKinds.Session;
             else if (si.Title.Contains(" › ") && si.Kind == ScreenKinds.Screen) si.Kind = ScreenKinds.Tab;
         }
@@ -338,8 +411,8 @@ public static class Learner
             foreach (var (field, pats) in si.FieldPatterns) si.FieldTypes[field] = InferFieldType(pats);
             si.NeverUsed = si.Fields.Where(f => !si.FieldTyped.ContainsKey(f)).ToList();
         }
-        foreach (var d in byKey.Values.Where(x => x.Kind == ScreenKinds.Dialog)) r.MessageWindows[d.Title] = d.Dialogs;
-        return byKey.Values.Where(x => x.Kind != ScreenKinds.Dialog).OrderBy(x => x.Title).ToList();
+        foreach (var d in byKey.Values.Where(x => x.Kind == ScreenKinds.Dialog)) r.MessageWindows[d.Title] = Math.Max(d.Dialogs, d.Visits);
+        return byKey.Values.Where(x => x.Kind is not (ScreenKinds.Dialog or ScreenKinds.Menu)).OrderBy(x => x.Title).ToList();
     }
 
     private static void MergeField(ScreenInfo si, string from, string to)
@@ -398,8 +471,11 @@ public static class Learner
         {
             Days = s.EventsPerDay.Count, TriggerInvokes = s.TriggerInvokes, EffectsTotal = s.EffectsTotal, EffectsWithDiff = s.EffectsWithDiff,
             PressesSeen = s.PressesSeen, PressesInferred = s.PressesInferred, DialogsSeen = s.DialogsSeen, UsersSeen = s.Users.Count, MachinesSeen = s.Machines.Count,
-            DiskUse = input.DiskUse,
+            DiskUse = input.DiskUse, TabSelections = s.TabSelections,
         };
+        // message boxes the collector recorded as screens (an older collector, or a shape it did not know): by title or by shape, visited 5+ times
+        h.PromptScreens = input.Screens.Where(rec => rec.Kind == ScreenKinds.Screen && (DialogDetector.LooksLikePromptTitle(rec.Title) || DialogDetector.Detect("", rec.Controls).isDialog))
+                .Select(rec => Titles.Key(rec.Title)).Distinct().Count(k => s.Screens.TryGetValue(k, out var si) && si.Visits >= 5);
         h.EventsPerDay = h.Days == 0 ? 0 : (double)s.EventCount / h.Days;
         var saves = Math.Max(s.TriggerInvokes, s.EffectsTotal);
         h.SavesWithDiffPct = saves == 0 ? 0 : 100.0 * s.EffectsWithDiff / saves;

@@ -11,6 +11,9 @@ internal static class Win32
     public const uint EVENT_SYSTEM_MENUEND = 0x0005;
     public const uint EVENT_SYSTEM_MENUPOPUPSTART = 0x0006;
     public const uint EVENT_SYSTEM_MENUPOPUPEND = 0x0007;
+    /// <summary>A window took the mouse capture: a button went down on it (WinForms and toolkit buttons capture on mouse down).</summary>
+    public const uint EVENT_SYSTEM_CAPTURESTART = 0x0008;
+    public const uint EVENT_SYSTEM_CAPTUREEND = 0x0009;
     public const uint EVENT_OBJECT_CREATE = 0x8000;
     public const uint EVENT_OBJECT_DESTROY = 0x8001;
     public const uint EVENT_OBJECT_SHOW = 0x8002;
@@ -54,6 +57,9 @@ internal static class Win32
 
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);
+
+    [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
 
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 

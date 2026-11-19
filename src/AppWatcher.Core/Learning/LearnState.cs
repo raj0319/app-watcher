@@ -40,8 +40,8 @@ public sealed class SeqAcc
 public sealed class LearnState
 {
     public const string Sep = "\u0001";
-    /// <summary>2: field connections, screen calculations, button leads, menus seen (a version-1 state is relearned from the events).</summary>
-    public const int CurrentVersion = 2;
+    /// <summary>3: flows cut at document closes, OCR-based calculations, tab selections (an older state is relearned from the events).</summary>
+    public const int CurrentVersion = 3;
     public int Version { get; set; } = CurrentVersion;
     public DateTime? Watermark { get; set; }
     public HashSet<string> EffectFiles { get; set; } = new();
@@ -85,6 +85,12 @@ public sealed class LearnState
     public int PressesSeen { get; set; }
     public int PressesInferred { get; set; }
     public int DialogsSeen { get; set; }
+    /// <summary>Tab documents selected (select events on a TabItem), to compare with the tab screens the collector recorded.</summary>
+    public int TabSelections { get; set; }
+    /// <summary>Picture text layers already fed to the calculation learner (screens/shots/.../*.ocr.json).</summary>
+    public HashSet<string> OcrFiles { get; set; } = new();
+    /// <summary>screen → label → the number last shown on a picture of it (so the next picture can tell what changed).</summary>
+    public Dictionary<string, Dictionary<string, string>> OcrLast { get; set; } = new();
     /// <summary>Hashes of Windows user names and machine names seen in start events (never the names).</summary>
     public HashSet<string> Users { get; set; } = new();
     public HashSet<string> Machines { get; set; } = new();

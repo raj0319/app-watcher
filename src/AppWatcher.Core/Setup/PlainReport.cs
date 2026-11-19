@@ -1,6 +1,7 @@
 using System.Text;
 using AppWatcher.Core.Learning;
 using AppWatcher.Core.Models;
+using AppWatcher.Core.Screens;
 
 namespace AppWatcher.Core.Setup;
 
@@ -17,6 +18,14 @@ public sealed class PlainFacts
     public bool NoPresses { get; set; }
     public bool NoData { get; set; }
     public bool PicturesOff { get; set; }
+    /// <summary>Many windows seen, and every press came from a fallback (UIA 0, MSAA 0): clicks are being guessed.</summary>
+    public bool PressesFallbackOnly { get; set; }
+    /// <summary>Windows named like a prompt that were recorded as screens while no dialog was counted.</summary>
+    public int PromptScreens { get; set; }
+    /// <summary>Share of control tree reads that failed, in percent (reported from 25%).</summary>
+    public int DumpFailPct { get; set; }
+    /// <summary>A tab document was selected more often than tab screens were recorded.</summary>
+    public bool TabsUnrecorded { get; set; }
     public bool Recording => Screens > 0 || Actions > 0;
 }
 
@@ -24,14 +33,20 @@ public sealed class PlainFacts
 /// One wording, used in four places: memory/health.md ("In plain words"), the first-hour health.md written even when
 /// no learn ran, Settings > Simple ("What has been collected so far") and the first-hour tray notice.
 /// What happened, what is missing, and one sentence each on what would fix it. No technical terms.
+/// It says what the collector could not do, so a page never claims that nothing is missing while clicks are
+/// guessed, message boxes were taken for screens, screen reads failed or a tab was never recorded.
 /// </summary>
 public static class PlainReport
 {
+    public const int FallbackWindows = 50;
+    public const int DumpFailFrom = 25;
+
     public static PlainFacts FromDisk(AppPaths paths, WatcherConfig cfg, string appName)
     {
         var s = CollectorStatus.Load(paths.Root);
         var f = new PlainFacts { AppName = appName, LastLearn = cfg.LastLearn };
-        try { f.Screens = Directory.Exists(paths.Screens) ? Directory.GetFiles(paths.Screens, "*.md").Length : 0; } catch { }
+        List<ScreenRecord> records = new();
+        try { records = ScreenWriter.ReadAll(paths.Screens); f.Screens = records.Count; } catch { }
         try
         {
             var shots = Path.Combine(paths.Screens, "shots");
@@ -48,8 +63,9 @@ public static class PlainReport
         if (s is not null)
         {
             f.Actions = s.PressesTotal + s.ValuesTyped + s.Toggles;
-            f.TreesFailed = s.WindowsSeen > 0 && s.DumpsOk == 0;
-            f.NoPresses = s.WindowsSeen > 2 && s.PressesTotal == 0;
+            Apply(f, s);
+            if (s.Dialogs == 0) f.PromptScreens = records.Count(r => r.Kind == ScreenKinds.Screen && (DialogDetector.LooksLikePromptTitle(r.Title) || DialogDetector.Detect("", r.Controls).isDialog));
+            f.TabsUnrecorded = s.TabSelections > s.TabScreens;
         }
         f.NoData = !cfg.DataSources.Any(d => d.Enabled);
         f.PicturesOff = cfg.Privacy.EffectiveShotMode == "off";
@@ -64,14 +80,25 @@ public static class PlainReport
         {
             f.Actions = c.PressesTotal + c.ValuesTyped + c.Toggles;
             f.Pictures = c.Pictures;
-            f.TreesFailed = c.WindowsSeen > 0 && c.DumpsOk == 0;
-            f.NoPresses = c.WindowsSeen > 2 && c.PressesTotal == 0;
+            Apply(f, c);
+            if (c.Dialogs == 0) f.PromptScreens = r.Health.PromptScreens;
+            f.TabsUnrecorded = Math.Max(c.TabSelections, r.Health.TabSelections) > c.TabScreens;
         }
         else
         {
             f.Actions = r.Health.PressesSeen + r.Health.PressesInferred + r.Screens.Sum(sc => sc.FieldTyped.Values.Sum());
         }
         return f;
+    }
+
+    private static void Apply(PlainFacts f, CollectorStatus s)
+    {
+        f.TreesFailed = s.WindowsSeen > 0 && s.DumpsOk == 0;
+        f.NoPresses = s.WindowsSeen > 2 && s.PressesTotal == 0;
+        f.PressesFallbackOnly = s.WindowsSeen > FallbackWindows && s.PressesUia == 0 && s.PressesMsaa == 0 && s.PressesTotal > 0;
+        var dumps = s.DumpsOk + s.DumpsFailed;
+        var pct = dumps == 0 ? 0 : (int)(100.0 * s.DumpsFailed / dumps);
+        f.DumpFailPct = pct > DumpFailFrom ? pct : 0;
     }
 
     /// <summary>What is missing, and one sentence each on what would fix it; most important first.</summary>
@@ -82,6 +109,10 @@ public static class PlainReport
         if (!f.Recording) list.Add(("Nothing has been recorded yet.", $"Open {app} and use it as usual; I only record while it is the window in front."));
         if (f.TreesFailed) list.Add(("I cannot read the fields and buttons of its screens.", "That happens with programs that draw their own screens; I read the text on the pictures instead, so keep \"Read the text on those pictures\" switched on."));
         if (f.NoPresses) list.Add(("I have not seen any button or menu clicks yet.", "Keep using the program as usual; if this stays, I learn from the screens it opens instead of the clicks."));
+        if (f.PressesFallbackOnly) list.Add(("Clicks are only counted by fallback: the program reports none of its button presses itself (UIA 0, MSAA 0), so I count a click when the screen changes right after it.", "Some clicks will be missed; the pictures and the screens that open still show what was done."));
+        if (f.PromptScreens > 0) list.Add((f.PromptScreens == 1 ? "1 window that looks like a message box was recorded as a screen." : $"{f.PromptScreens} windows that look like message boxes were recorded as screens.", "Their text is still in the pictures; this version tells message boxes apart by their shape, so the next learn files them as messages."));
+        if (f.DumpFailPct > 0) list.Add(($"{f.DumpFailPct}% of screen reads failed.", "The program is slow to answer when a screen opens; I try again, and the pictures with their text fill the gap."));
+        if (f.TabsUnrecorded) list.Add(("A tab was selected but never recorded as a screen.", "This version reads the selected tab itself instead of waiting for the program to say so."));
         if (f.NoData) list.Add(("I cannot see this program's data.", "That is fine for documenting how it is used; to learn its tables too, someone from IT can add a read-only connection in Settings, Advanced."));
         if (f.PicturesOff) list.Add(("Pictures of the screens are switched off.", "Switch on \"Keep pictures\" in Settings if you want them for comparing screens later."));
         return list;

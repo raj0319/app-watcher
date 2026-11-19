@@ -16,6 +16,11 @@ public static class DataSourceScanner
     public static readonly string[] DataExtensions =
         { ".db", ".sqlite", ".sqlite3", ".db3", ".s3db", ".mdb", ".accdb", ".fdb", ".gdb", ".mdf", ".dbf", ".xml", ".json", ".csv", ".ini", ".dat" };
 
+    /// <summary>Files that are a database by themselves: the only kind taken from the program's install folder, whose other files are its own configuration.</summary>
+    public static readonly string[] DatabaseExtensions = { ".db", ".sqlite", ".sqlite3", ".db3", ".s3db", ".mdb", ".accdb", ".fdb", ".gdb", ".mdf" };
+
+    public static bool IsDatabaseFile(string path) => DatabaseExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Files that describe how a program starts (.NET deps and runtimeconfig, app manifests), not its business data.</summary>
     public static bool IsProgramFile(string path)
     {
@@ -57,7 +62,7 @@ public static class DataSourceScanner
             catch { continue; }
             foreach (var d in subdirs)
             {
-                Walk(d, 0, mustMatch ? 6 : 4, ref budget, found, seen, why);
+                Walk(d, 0, mustMatch ? 6 : 4, ref budget, found, seen, why, databasesOnly: !mustMatch);
                 if (budget <= 0) break;
             }
             if (budget <= 0) break;
@@ -65,7 +70,7 @@ public static class DataSourceScanner
         return found.OrderByDescending(f => f.Kind is "sqlite" or "access").ThenByDescending(f => f.Size).ToList();
     }
 
-    private static void Walk(string dir, int depth, int maxDepth, ref int budget, List<DataCandidate> found, HashSet<string> seen, string why)
+    private static void Walk(string dir, int depth, int maxDepth, ref int budget, List<DataCandidate> found, HashSet<string> seen, string why, bool databasesOnly = false)
     {
         if (depth > maxDepth || budget <= 0) return;
         IEnumerable<string> entries;
@@ -80,12 +85,13 @@ public static class DataSourceScanner
                 {
                     var n = Path.GetFileName(e).ToLowerInvariant();
                     if (n is "node_modules" or "cache" or "caches" or "temp" or "tmp" or "logs" or "__pycache__") continue;
-                    Walk(e, depth + 1, maxDepth, ref budget, found, seen, why);
+                    Walk(e, depth + 1, maxDepth, ref budget, found, seen, why, databasesOnly);
                     continue;
                 }
                 var ext = Path.GetExtension(e);
                 if (!DataExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
                 if (IsProgramFile(e)) continue;
+                if (databasesOnly && !IsDatabaseFile(e)) continue; // the install folder's XML, INI and JSON are the program's own settings, not its data
                 if (!seen.Add(e)) continue;
                 var fi = new FileInfo(e);
                 if (fi.Length == 0) continue;

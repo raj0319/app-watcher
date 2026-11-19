@@ -215,14 +215,17 @@ public class EasySetupTests
         var inform = ProfileStore.ByName("ddi-inform")!;
         Assert.DoesNotContain("Advanced Demand Forecasting", inform.IgnoreWindows);
         Assert.DoesNotContain("A/P Invoice Entry", inform.DialogWindows);
-        // a real screen title never matches an ignore or dialog pattern of any shipped profile
+        // a real screen title never matches an ignore pattern of any shipped profile; a dialog pattern may match a screen's
+        // title ("Error*" and "Error Log"), because a named dialog still has to look like one: a grid, list, tree or tab says screen
         var screens = new[] { "Advanced Demand Forecasting", "A/P Invoice Entry", "Customer Master", "Error Log", "Job Progress", "Warning Letters" };
         foreach (var p in ProfileStore.All())
             foreach (var t in screens)
-            {
                 Assert.False(p.IgnoreWindows.Any(w => DialogDetector.Wildcard(t, w)), $"{p.Name} ignores the screen '{t}'");
-                Assert.False(p.DialogWindows.Any(w => DialogDetector.Wildcard(t, w)), $"{p.Name} calls the screen '{t}' a dialog");
-            }
+        var errorLog = new List<ControlRow> { R(0, "Window", "Error Log"), R(1, "DataGrid", "", "grdErrors"), R(2, "DataItem", "Row 1"), R(1, "Button", "Close") };
+        Assert.True(inform.DialogWindows.Any(w => DialogDetector.Wildcard("Error Log", w)));
+        Assert.False(DialogDetector.CouldBeNamedDialog(errorLog));
+        var closePrompt = new List<ControlRow> { R(0, "Window", "Close?"), R(1, "Edit", "", "lblBody", readOnly: false), R(2, "Edit", "", "[Editor] Edit Area", readOnly: false), R(1, "Button", "OK"), R(1, "Button", "Cancel") };
+        Assert.True(DialogDetector.CouldBeNamedDialog(closePrompt));
     }
 
     // ---------- G: the first-hour report in plain words ----------
@@ -335,10 +338,15 @@ public class EasySetupTests
             File.WriteAllText(Path.Combine(dir, "Shop.deps.json"), "{\"runtimeTarget\":{}}");
             File.WriteAllText(Path.Combine(dir, "Shop.runtimeconfig.json"), "{\"runtimeOptions\":{}}");
             File.WriteAllText(Path.Combine(dir, "orders.json"), "[{\"id\":1}]");
+            File.WriteAllText(Path.Combine(dir, "shop.accdb"), "x");
             var found = DataSourceScanner.Scan(exe, "Shop", "Shop").Select(c => Path.GetFileName(c.Path)).ToList();
-            Assert.Contains("orders.json", found);
+            // the install folder only yields database files: its JSON, XML and INI are the program's own settings
+            Assert.Contains("shop.accdb", found);
+            Assert.DoesNotContain("orders.json", found);
             Assert.DoesNotContain("Shop.deps.json", found);
             Assert.DoesNotContain("Shop.runtimeconfig.json", found);
+            Assert.True(DataSourceScanner.IsProgramFile(Path.Combine(dir, "Shop.deps.json")));
+            Assert.False(DataSourceScanner.IsProgramFile(Path.Combine(dir, "orders.json")));
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
     }

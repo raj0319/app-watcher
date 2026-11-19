@@ -27,7 +27,24 @@ if (-not (Test-Path $Sample)) { throw "sample app not built: $Sample (dotnet bui
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName Microsoft.VisualBasic
-Add-Type -Namespace LiveTest -Name Msg -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint msg, System.IntPtr w, System.IntPtr l);'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Add-Type -Namespace LiveTest -Name Msg -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint msg, System.IntPtr w, System.IntPtr l);
+public delegate bool EnumProc(System.IntPtr h, System.IntPtr l);
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, System.IntPtr l);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint pid);
+public static System.Collections.Generic.List<System.IntPtr> Visible(uint pid) { var r = new System.Collections.Generic.List<System.IntPtr>(); EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p); if (p == pid && IsWindowVisible(h)) r.Add(h); return true; }, System.IntPtr.Zero); return r; }
+'@
+# real mouse input, used for a few clicks only, inside the sample app's own window, after checking that window is in front
+Add-Type -Namespace LiveTest -Name Mouse -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+[DllImport("user32.dll")] public static extern bool GetCursorPos(out System.Drawing.Point p);
+[DllImport("user32.dll")] public static extern void mouse_event(uint f, int x, int y, uint d, System.UIntPtr e);
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out System.Drawing.Rectangle r);
+'@ -ReferencedAssemblies System.Drawing
 
 # the sample app is framework-dependent; when the SDK lives in the user profile the apphost needs DOTNET_ROOT
 if (-not $env:DOTNET_ROOT -and (Test-Path (Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"))) { $env:DOTNET_ROOT = Join-Path $env:USERPROFILE ".dotnet" }
@@ -69,8 +86,9 @@ function Top([string]$title, [int]$tries = 40) {
     foreach ($i in 1..$tries) {
         $wins = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pidCond)
         foreach ($w in $wins) { $n = $w.Current.Name; if ($n -like $title) { return $w }; if ($seen -notcontains $n) { $seen += $n } }
-        # a modal dialog owned by the main window is not always listed under the desktop: the process's main window handle points at it
+        # a modal dialog owned by the main window is not always listed under the desktop: the process's main window handle points at it, and Win32 lists it
         try { $app.Refresh(); if ($app.MainWindowHandle -ne 0) { $h = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle); if ($h.Current.Name -like $title) { return $h } } } catch { }
+        foreach ($hw in [LiveTest.Msg]::Visible([uint32]$app.Id)) { try { $e = [System.Windows.Automation.AutomationElement]::FromHandle($hw); if ($e.Current.Name -like $title) { return $e } } catch { } }
         Start-Sleep -Milliseconds 250
     }
     throw "window not found: $title (windows of the app: $($seen -join ', '))"
@@ -173,8 +191,48 @@ function Front() {
     try { [Microsoft.VisualBasic.Interaction]::AppActivate($app.Id) } catch { }
     Start-Sleep -Milliseconds 400
 }
+# ---- real mouse input: only on the window this script started, found by its handle; the pointer is put back afterwards ----
+$script:Inconclusive = @()
+function AppWindowRect() { $app.Refresh(); $h = $app.MainWindowHandle; $r = New-Object System.Drawing.Rectangle; [LiveTest.Mouse]::GetWindowRect($h, [ref]$r) | Out-Null; return @{ Handle = $h; Rect = $r } }
+function MoveTo([int]$x, [int]$y) {
+    # absolute moves in a few steps (a WinForms tip only shows after real mouse movement; SetCursorPos alone is not enough)
+    $p = New-Object System.Drawing.Point; [LiveTest.Mouse]::GetCursorPos([ref]$p) | Out-Null
+    $sw = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width; $sh = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height
+    foreach ($i in 1..3) {
+        $cx = $p.X + ($x - $p.X) * $i / 3; $cy = $p.Y + ($y - $p.Y) * $i / 3
+        [LiveTest.Mouse]::mouse_event(0x8001, [int](65535 * $cx / $sw), [int](65535 * $cy / $sh), 0, [System.UIntPtr]::Zero)   # MOVE | ABSOLUTE
+        Start-Sleep -Milliseconds 60
+    }
+}
+function RealClick($parent, [string]$automationId, [string]$what) {
+    $e = Find $parent $automationId
+    $r = $e.Current.BoundingRectangle
+    $w = AppWindowRect
+    $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
+    $inside = $x -ge $w.Rect.X -and $x -le $w.Rect.Right -and $y -ge $w.Rect.Y -and $y -le $w.Rect.Bottom
+    if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle -or -not $inside) { $script:Inconclusive += $what; Write-Host "   (skipped the real click on $what - the sample app is not the window in front, or the control is outside it)"; return $false }
+    MoveTo $x $y
+    Start-Sleep -Milliseconds 120
+    if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle) { $script:Inconclusive += $what; Write-Host "   (skipped the real click on $what - another window came in front)"; return $false }
+    [LiveTest.Mouse]::mouse_event(0x0002, 0, 0, 0, [System.UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [LiveTest.Mouse]::mouse_event(0x0004, 0, 0, 0, [System.UIntPtr]::Zero)
+    Start-Sleep -Milliseconds $SettleMs
+    return $true
+}
+function RealHover($parent, [string]$automationId, [string]$what) {
+    $e = Find $parent $automationId
+    $r = $e.Current.BoundingRectangle
+    $w = AppWindowRect
+    if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle) { $script:Inconclusive += $what; Write-Host "   (skipped the hover on $what - the sample app is not the window in front)"; return $false }
+    # a tip only shows after the pointer arrives and rests: leave the control first (to the window's status bar), then come back
+    MoveTo ([int]($w.Rect.X + $w.Rect.Width / 2)) ([int]($w.Rect.Bottom - 12))
+    Start-Sleep -Milliseconds 400
+    MoveTo ([int]($r.X + $r.Width / 2)) ([int]($r.Y + $r.Height / 2))
+    Start-Sleep -Milliseconds 1200   # a tip shows after the pointer rests
+    return $true
+}
 
 $finished = $false
+$cursorBefore = New-Object System.Drawing.Point; [LiveTest.Mouse]::GetCursorPos([ref]$cursorBefore) | Out-Null
 try {
 Write-Host "3. drive the sample app"
 Front
@@ -229,9 +287,18 @@ foreach ($step in @(@("txtQuoteCustomer", "ZZTEST-CUS-001"), @("txtDiscount", "1
 }
 try { Menu $main "Help" "About" } catch { Write-Host "   step failed: Menu $main 'Help' 'About' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 2500
+# a few real clicks and one hover on the sample app's own window (the toolkit path: a button that raises no event and only changes the window)
+Front
+try { RealClick $main "btnRefresh" "Refresh" | Out-Null } catch { Write-Host "   step failed: RealClick Refresh -> $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 1500
+try { RealClick $main "btnRefresh" "Refresh" | Out-Null } catch { Write-Host "   step failed: RealClick Refresh -> $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 1500
+try { RealHover $main "btnRefresh" "Refresh tip" | Out-Null } catch { Write-Host "   step failed: RealHover Refresh -> $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 1000
 try { Tab $main "Customer Master" } catch { Write-Host "   step failed: Tab $main 'Customer Master' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 1500
 
+[LiveTest.Mouse]::SetCursorPos($cursorBefore.X, $cursorBefore.Y) | Out-Null   # the pointer goes back where it was
 Write-Host "4. stop the sample app (killed: it is ours), learn, stop the watcher"
 Stop-Process -Id $app.Id -Force
 Start-Sleep -Milliseconds 5000   # the watcher checks the process every 3 s and saves its status when it sees it exit
@@ -244,6 +311,7 @@ $finished = $true
 } finally {
     # a failed step must not leave the two programs this test started running
     if (-not $finished) { foreach ($p in @($app, $watch)) { try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { } } }
+    try { [LiveTest.Mouse]::SetCursorPos($cursorBefore.X, $cursorBefore.Y) | Out-Null } catch { }
 }
 
 Write-Host "5. results"
@@ -254,6 +322,22 @@ Write-Host ("   events: {0}" -f $events.Count)
 $events | Group-Object act | Sort-Object Count -Descending | ForEach-Object { Write-Host ("     {0,-11} {1}" -f $_.Name, $_.Count) }
 Write-Host "   presses by how:"
 $events | Where-Object { $_.act -eq "invoke" } | Group-Object how | ForEach-Object { Write-Host ("     {0,-10} {1}" -f ($_.Name, "uia")[[string]::IsNullOrEmpty($_.Name)], $_.Count) }
+Write-Host "   presses seen:"
+$events | Where-Object { $_.act -eq "invoke" } | ForEach-Object { Write-Host ("     {0}  {1,-12} {2,-9} {3}" -f $_.t.Substring(11, 8), $_.name, ($_.how, "uia")[[string]::IsNullOrEmpty($_.how)], $_.win) }
+# the checks a real user's clicks must pass (the toolkit path): a button that raised no event was still counted, and its tip was read
+$refreshPresses = @($events | Where-Object { $_.act -eq "invoke" -and $_.name -eq "Refresh" }).Count
+$hints = @($events | Where-Object { $_.act -eq "hint" })
+$filled = @($events | Where-Object { $_.act -eq "value" -and $_.by -eq "app" })
+$tabScreens = @($events | Where-Object { $_.act -eq "select" -and $_.ct -eq "TabItem" }).Count
+if ($script:Inconclusive -contains "Refresh") { Write-Host "   PRESS CHECK: inconclusive (the real click was skipped)" }
+elseif ($refreshPresses -ge 1) { Write-Host "   PRESS CHECK: ok - the Refresh button (no event of its own) was counted $refreshPresses time(s) by inference" }
+else { Write-Host "   PRESS CHECK: MISSING - the Refresh clicks were not counted" }
+if ($script:Inconclusive -contains "Refresh tip") { Write-Host "   HINT CHECK: inconclusive (the hover was skipped)" }
+elseif ($hints.Count -ge 1) { Write-Host ("   HINT CHECK: ok - {0}" -f (($hints | ForEach-Object { $_.name + ': "' + $_.val + '"' }) -join "; ")) }
+else { Write-Host "   HINT CHECK: MISSING - no hover tip was recorded" }
+$statusJson = Get-Content (Join-Path $data "collector-status.json") -Raw | ConvertFrom-Json
+Write-Host ("   values filled by the program: {0} events ({1} found by re-reading the document, {2} by the field's own event)" -f $filled.Count, $statusJson.ValuesReread, ($statusJson.ValuesFilled - $statusJson.ValuesReread))
+Write-Host ("   tab selections: {0}" -f $tabScreens)
 Write-Host "   windows seen:"
 $events | Group-Object win | Sort-Object Count -Descending | ForEach-Object { Write-Host ("     {0,3}  {1}" -f $_.Count, $_.Name) }
 Write-Host "   screens:"

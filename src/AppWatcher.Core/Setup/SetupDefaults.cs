@@ -58,8 +58,18 @@ public static class SetupDefaults
             catch { }
         }
         try { p.Backends = BackendDetector.Detect(exePath, processName, pid, p.FriendlyName); } catch { }
+        ApplyProfileBackendKind(p.Backends, p.Profile);
         try { p.Candidates = DataSourceScanner.Scan(exePath, processName, p.FriendlyName); } catch { }
         return p;
+    }
+
+    /// <summary>A backend found by host name only (a vendor config file) takes the kind the profile knows for this program.</summary>
+    public static void ApplyProfileBackendKind(List<BackendInfo> backends, AppProfile? profile)
+    {
+        if (string.IsNullOrEmpty(profile?.BackendKind)) return;
+        foreach (var b in backends)
+            if (b.Kind == "unknown" && b.Host is not null && b.Where != "tcp connection" && !b.Where.Contains("ODBC DSN", StringComparison.OrdinalIgnoreCase))
+                b.Kind = profile.BackendKind;
     }
 
     /// <summary>

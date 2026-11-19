@@ -8,3 +8,5 @@ TestResults/
 *.log
 AppWatcherData/
 sample-data.json
+app-watcher-v0.7-inform-evidence-*/
+evidence/

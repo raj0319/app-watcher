@@ -26,6 +26,8 @@ public sealed class AppProfile
     public int? DumpRowCap { get; set; }
     public int? GridRowCap { get; set; }
     public bool? MaskTitles { get; set; }
+    /// <summary>The kind of data server this program uses ("universe", "sqlserver", ...), for backends found by host name only.</summary>
+    public string? BackendKind { get; set; }
     /// <summary>Plain-words note shown at setup.</summary>
     public string? Note { get; set; }
 

@@ -18,6 +18,8 @@ public sealed class FieldLink
     public int CauseCount { get; set; }
     public Evidence Evidence { get; set; } = new();
     [JsonIgnore] public string WhenText => LogicLearner.CauseText(When);
+    /// <summary>Some of the evidence is the text read from the pictures, not the control tree.</summary>
+    [JsonIgnore] public bool FromOcr => Evidence.Files.Any(f => f.EndsWith(".ocr.json", StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>A field the program calculates on screen, and the formula over the other fields on that screen that keeps fitting.</summary>
@@ -32,6 +34,8 @@ public sealed class ScreenCalc
     public List<string> Alternatives { get; set; } = new();
     public Evidence Evidence { get; set; } = new();
     [JsonIgnore] public int Exceptions => Tested - Fits;
+    /// <summary>Some of the evidence is the text read from the pictures, not the control tree.</summary>
+    [JsonIgnore] public bool FromOcr => Evidence.Files.Any(f => f.EndsWith(".ocr.json", StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>What pressing a button led to: a window or a message.</summary>
@@ -95,8 +99,7 @@ public static class LogicLearner
 {
     public const int MaxInputs = 8;
     public const double LinkWindowSeconds = 3;
-    private static readonly HashSet<string> WindowButtons = new(StringComparer.OrdinalIgnoreCase)
-        { "Minimize", "Maximize", "Restore", "Close", "System", "System Menu", "Help", "Restore Down" };
+    private static readonly HashSet<string> WindowButtons = DialogDetector.WindowButtons;
 
     public static void Accumulate(LearnState s, List<UiEvent> session)
     {
@@ -192,35 +195,44 @@ public static class LogicLearner
 
     private static void LearnCalc(LearnState s, string win, string field, string value, Dictionary<string, string> cur, string src)
     {
-        var fits = new List<string>();
         var text = value.Trim();
         if (Values.TryDecimal(text, out var t))
         {
-            if (t == 0) return;
             var xs = new List<(string n, decimal v)>();
             foreach (var kv in cur.OrderBy(k => k.Key, StringComparer.Ordinal))
                 if (kv.Key != field && Values.TryDecimal(kv.Value.Trim(), out var d) && d != 0) xs.Add((kv.Key, d));
-            if (xs.Count == 0) return;
-            if (xs.Count > MaxInputs) xs = xs.Take(MaxInputs).ToList();
-            fits = Formulas(t, xs);
-            if (fits.Count == 0)
-            {
-                // a constant factor (a tax or unit rate): only counts when the same factor keeps coming back
-                foreach (var x in xs)
-                {
-                    var k = Calc(() => t / x.v);
-                    if (k is not { } kk || kk == 1 || Math.Abs(kk) < 0.0001m || Math.Abs(kk) > 10000m) continue;
-                    var kr = Math.Round(kk, 4);
-                    if (Close(t, x.v * kr)) fits.Add($"{x.n} × {kr.ToString("0.####", CultureInfo.InvariantCulture)}");
-                }
-            }
+            LearnCalc(s, win, field, t, xs, src);
+            return;
         }
-        else
+        if (text.Length < 2) return;
+        var fits = new List<string>();
+        foreach (var kv in cur.OrderBy(k => k.Key, StringComparer.Ordinal))
+            if (kv.Key != field && string.Equals(kv.Value.Trim(), text, StringComparison.OrdinalIgnoreCase)) fits.Add("= " + kv.Key);
+        if (fits.Count == 0) return; // a text the program looked up (a name for a code) is a link, not a calculation
+        Count(s.CalcTests, LearnState.Key(win, field));
+        foreach (var f in fits.Distinct()) Add(s.CalcFits, LearnState.Key(win, field, f), src);
+    }
+
+    /// <summary>
+    /// Tests one number the program showed against the given inputs (in the caller's order of relevance; at most
+    /// <see cref="MaxInputs"/> are used). Shared by the tree path and the picture-text path (OcrLogic).
+    /// </summary>
+    public static void LearnCalc(LearnState s, string win, string field, decimal t, List<(string n, decimal v)> inputs, string src)
+    {
+        if (t == 0) return;
+        var xs = inputs.Where(x => x.v != 0 && x.n.Length > 0 && x.n != field).Take(MaxInputs).ToList();
+        if (xs.Count == 0) return;
+        var fits = Formulas(t, xs);
+        if (fits.Count == 0)
         {
-            if (text.Length < 2) return;
-            foreach (var kv in cur.OrderBy(k => k.Key, StringComparer.Ordinal))
-                if (kv.Key != field && string.Equals(kv.Value.Trim(), text, StringComparison.OrdinalIgnoreCase)) fits.Add("= " + kv.Key);
-            if (fits.Count == 0) return; // a text the program looked up (a name for a code) is a link, not a calculation
+            // a constant factor (a tax or unit rate): only counts when the same factor keeps coming back
+            foreach (var x in xs)
+            {
+                var k = Calc(() => t / x.v);
+                if (k is not { } kk || kk == 1 || Math.Abs(kk) < 0.0001m || Math.Abs(kk) > 10000m) continue;
+                var kr = Math.Round(kk, 4);
+                if (Close(t, x.v * kr)) fits.Add($"{x.n} × {kr.ToString("0.####", CultureInfo.InvariantCulture)}");
+            }
         }
         Count(s.CalcTests, LearnState.Key(win, field));
         foreach (var f in fits.Distinct()) Add(s.CalcFits, LearnState.Key(win, field, f), src);
@@ -366,12 +378,22 @@ public static class LogicLearner
 
         var list = new List<NotUsedItem>();
         var menuItems = new SortedSet<string>(StringComparer.Ordinal);
-        foreach (var rec in input.Screens.OrderBy(x => Titles.Key(x.Title), StringComparer.Ordinal))
+        var records = input.Screens.OrderBy(x => Titles.Key(x.Title), StringComparer.Ordinal).ToList();
+        var dialogs = new HashSet<string>(records.Where(x => x.Kind == ScreenKinds.Dialog || DialogDetector.Detect("", x.Controls).isDialog).Select(x => Titles.Key(x.Title)), StringComparer.Ordinal);
+        foreach (var rec in records)
         {
             var key = Titles.Key(rec.Title);
-            var content = DialogDetector.Content(rec.Controls);
+            var controls = rec.Controls;
+            // a tab record made before documents were dumped on their own holds the parent window's toolbars too: not this document's
+            if (key.Contains(" › ", StringComparison.Ordinal))
+            {
+                var parentKey = key[..key.IndexOf(" › ", StringComparison.Ordinal)];
+                var parent = records.FirstOrDefault(x => Titles.Key(x.Title) == parentKey);
+                if (parent is not null) controls = TabDocuments.WithoutParentControls(controls, parent.Controls);
+            }
+            var content = DialogDetector.Content(controls);
             foreach (var m in content.Where(c => c.Type == "MenuItem" && c.Name.Trim().Length > 0)) menuItems.Add(m.Name.Trim());
-            if (rec.Kind is ScreenKinds.Dialog or ScreenKinds.Session) continue;
+            if (rec.Kind is ScreenKinds.Dialog or ScreenKinds.Session or ScreenKinds.Menu || dialogs.Contains(key)) continue;
             s.Screens.TryGetValue(key, out var si);
             var listControls = !tabbed.Contains(key);
             foreach (var b in !listControls ? Enumerable.Empty<string>() : content.Where(c => c.Type is "Button" or "SplitButton" && !PartOfAnotherControl(content, c)).Select(c => c.Name.Trim()).Where(n => n.Length > 0 && !WindowButtons.Contains(n)).Distinct().OrderBy(n => n, StringComparer.Ordinal))
@@ -381,7 +403,7 @@ public static class LogicLearner
                     list.Add(new NotUsedItem { Screen = key, Kind = "tab", Name = tab });
             foreach (var row in content.Where(c => listControls && c.Type is "Edit" or "ComboBox" && c.IsReadOnly != true && !c.IsPassword))
             {
-                var label = Labels.Resolve(row, rec.Controls).Trim();
+                var label = Labels.Resolve(row, controls).Trim();
                 if (label.Length == 0) continue;
                 if (UsedOn(key, "typed:" + label, "chose:" + label) || si?.Fields.Contains(label) == true || filled.Contains(key + LearnState.Sep + label)) continue;
                 if (list.Any(x => x.Screen == key && x.Kind == "field" && x.Name == label)) continue;
@@ -412,15 +434,19 @@ public static class LogicLearner
             q.Add(new() { Kind = "calculation", Screen = c.Screen, Text = $"On {c.Screen}, {c.Field} matched {c.Formula} {c.Fits} of {c.Tested} times. What decides the other {c.Exceptions}?" });
         foreach (var c in rep.Unexplained)
             q.Add(new() { Kind = "calculation", Screen = c.Screen, Text = $"On {c.Screen}, the program fills {c.Field} itself ({c.Tested}×), but I could not work out how. How is it calculated?" });
-        foreach (var rule in r.Rules.Where(x => x.Evidence.Seen == 1).OrderBy(x => x.Screen, StringComparer.Ordinal).ThenBy(x => x.Message, StringComparer.Ordinal).Take(8))
+        foreach (var rule in r.Rules.Where(x => x.Evidence.Seen == 1).OrderBy(x => x.Screen, StringComparer.Ordinal).ThenBy(x => x.Message, StringComparer.Ordinal))
             q.Add(new() { Kind = "rule", Screen = rule.Screen, Text = $"I saw the message \"{rule.Message}\" only once on {rule.Screen}{(rule.Field.Length == 0 ? "" : rule.Field.StartsWith("on ", StringComparison.Ordinal) ? $" ({rule.Field})" : $" (after {rule.Field})")}. When exactly does it appear?" });
-        foreach (var b in rep.NotUsed.Where(x => x.Kind == "button").Take(10))
-            q.Add(new() { Kind = "button", Screen = b.Screen, Text = $"What does {b.Name} on {b.Screen} do? Nobody pressed it while I watched." });
+        // buttons of the documents people opened, never the window's own toolbar (its buttons belong to no document), at most ten per screen
+        var opened = new HashSet<string>(s.Screens.Keys, StringComparer.Ordinal); // a ScreenInfo exists only where events happened
+        var tabbedWindows = new HashSet<string>(s.Screens.Keys.Where(k => k.Contains(" › ", StringComparison.Ordinal)).Select(k => k[..k.IndexOf(" › ", StringComparison.Ordinal)]), StringComparer.Ordinal);
+        foreach (var g in rep.NotUsed.Where(x => x.Kind == "button" && opened.Contains(x.Screen) && !tabbedWindows.Contains(x.Screen)).GroupBy(x => x.Screen).OrderBy(g => g.Key, StringComparer.Ordinal))
+            foreach (var b in g.Take(10))
+                q.Add(new() { Kind = "button", Screen = b.Screen, Text = $"What does {b.Name} on {b.Screen} do? Nobody pressed it while I watched." });
         foreach (var m in rep.NotUsed.Where(x => x.Kind == "menu item").Take(10))
             q.Add(new() { Kind = "menu", Screen = "", Text = $"The menu item {m.Name} was never chosen. What is it for, and who uses it?" });
         foreach (var si in r.Screens.Where(x => x.Kind == ScreenKinds.Screen && x.Visits == 1).OrderBy(x => x.Title, StringComparer.Ordinal).Take(5))
             q.Add(new() { Kind = "screen", Screen = si.Title, Text = $"{si.Title} was opened only once. Is it part of a regular task, and who does it?" });
-        return q.Take(40).ToList();
+        return q.Take(60).ToList();
     }
 
     private static void Add(Dictionary<string, Evidence> d, string key, string src)

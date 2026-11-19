@@ -107,14 +107,22 @@ Only inside the chosen app, and only while it is the window in front:
   press, tab switch, typed value, dialog, suggestion list), never the same state twice, capped per screen
   (never for login or password windows, never for excluded windows; Settings, Simple to switch off)
 - the suggestion lists that open while typing (autocomplete, lookups): the field, the text typed so far,
-  and the suggestions shown
+  and the suggestions shown, whether the list is its own window or opens inside the window under the field
 - what a grid shows right after a search, filter or open: its column names and first rows
 - the text on each picture, read by the built-in Windows OCR and stored next to the picture, so apps that
   draw their own screens (Qt, Java, old Delphi) still give their labels and column headers (Settings, Simple to switch off)
 - the keyboard shortcut of each button and menu item, so the twin keeps the power users' keys
-- which buttons and menu items were pressed, seen four ways so that apps whose controls stay silent are
-  covered too (UI Automation, the older accessibility events, a menu closing after an item was chosen, or a
-  button focus followed by a window change), which fields got focus, what was selected or ticked
+- which tab document of a tabbed workspace is open: the tab strip is read after each event (at most every two
+  seconds), because MDI tab strips do not announce a selection; only the selected document is the screen, never
+  the window's toolbars or the other documents, and a closed document ends its flow
+- which buttons and menu items were pressed, seen five ways so that apps whose controls stay silent are
+  covered too (UI Automation, the older accessibility events, a menu closing after an item was chosen, and, for
+  toolkits whose buttons say nothing, the control under the pointer when the click began or the button with
+  focus, counted when a window, tab or message changes within 1.5 s; no mouse hook, the pointer is only read),
+  which fields got focus, what was selected or ticked
+- the values the program fills in by itself (a name looked up from a code, a total recalculated, the cells a new
+  order line gets): from the field's own change event, or, when a toolkit's grid cells and bound editors report
+  nothing, by reading the document's fields once, 300 ms after each typed value or press, and taking what changed
 - the values typed into fields of the app, one event per typed value, not per keystroke
   (so a typed value can be matched to the column it lands in)
 - the text of message windows (validation errors, confirmations)
@@ -162,7 +170,12 @@ works even when it cannot read the program's database:
   exceptions, and becomes a question.
 - **What each button leads to**: the window or message that appears right after it.
 - **Hover tips**: the help text the program shows when the pointer rests on a button, menu item or field (read once
-  when the tip appears, no mouse hook; never the tips of grid cells or lists, which show data).
+  when the tip appears, no mouse hook; never the tips of grid cells or lists, which show data). Windows tooltips and
+  the plain small windows some toolkits draw their tips in are both read; a tip with no readable text is read by OCR.
+- **Numbers on the pictures.** When the control tree gives no values (the grid cells of some toolkits), the text read
+  from the state pictures stands in: every number on a picture is paired with its label (the text on its left, or the
+  column header above it), and a number that changed since the previous picture, or appeared right after the user did
+  something, is tested like a field value. Such findings say "from the pictures' text" and point at the `.ocr.json` file.
 - **What nobody used**: buttons, tabs, fields and menu items it saw but nobody touched while it watched.
 - **Questions I would ask an experienced user**: calculations it could not explain, formulas with exceptions,
   messages seen once, buttons and menu items nobody used.
@@ -392,7 +405,11 @@ Something like this can go on the notice board or in an e-mail:
 - Encrypted or server-only data cannot be read unless you give a read-only connection, an export drop folder,
   or SQL capture.
 - Presses seen through the fallbacks (menus, inference) are a lower bound, and an inferred press can be wrong
-  now and then; health.md shows how many came which way.
+  now and then (a window that opens by itself while the pointer rests on a button is credited to that button);
+  health.md shows how many came which way, and says plainly when every press came from a fallback, when
+  message boxes were recorded as screens, when screen reads failed, or when a tab was never recorded.
+- Formulas found from the pictures' text depend on how well the OCR read the numbers; they carry the picture as
+  evidence so a person can check.
 - The learner finds simple formulas and plain rules. Anything cleverer is for the analyze skill and for people.
 - A rule is only as sure as its count. One observation is a hint, not a fact.
 - The logic it learns comes from what people do on screen: it finds connections and simple formulas (sums,

@@ -51,7 +51,7 @@ public static class LogicWriter
             {
                 sb.AppendLine("- **Filled in by the program:**");
                 foreach (var g in links.GroupBy(l => l.When).OrderBy(g => g.Key, StringComparer.Ordinal))
-                    sb.AppendLine($"  - {Cap(g.First().WhenText)} fills {string.Join(", ", g.OrderBy(l => l.Field, StringComparer.Ordinal).Select(l => $"{l.Field} (seen {l.Seen}× of {l.CauseCount})"))}; evidence: {g.First().Evidence.Pointer}");
+                    sb.AppendLine($"  - {Cap(g.First().WhenText)} fills {string.Join(", ", g.OrderBy(l => l.Field, StringComparer.Ordinal).Select(l => $"{l.Field} (seen {l.Seen}× of {l.CauseCount})"))}{(g.Any(l => l.FromOcr) ? " (from the pictures' text)" : "")}; evidence: {g.First().Evidence.Pointer}");
             }
             var calcs = L.Calculations.Where(c => c.Screen == key).ToList();
             if (calcs.Count > 0)
@@ -62,7 +62,7 @@ public static class LogicWriter
                     var f = c.Formula.StartsWith("= ", StringComparison.Ordinal) ? $"{c.Field} is copied from {c.Formula[2..]}" : $"{c.Field} = {c.Formula}";
                     var alt = c.Alternatives.Count > 0 ? $" (also fits: {string.Join("; ", c.Alternatives)})" : "";
                     var exc = c.WithExceptions ? $", {c.Exceptions} exceptions: ask why" : "";
-                    sb.AppendLine($"  - {f}{alt} (seen {c.Fits}× of {c.Tested}{exc}); evidence: {c.Evidence.Pointer}");
+                    sb.AppendLine($"  - {f}{alt} (seen {c.Fits}× of {c.Tested}{exc}{(c.FromOcr ? ", from the pictures' text" : "")}); evidence: {c.Evidence.Pointer}");
                 }
             }
             var leads = L.Leads.Where(l => l.Screen == key).ToList();
@@ -146,7 +146,7 @@ public static class LogicWriter
                         .Select(f => (object)new { name = f.Key, typed = f.Value, kind = TopPattern(si, f.Key) }).ToList(),
                     filledByProgram = L.Links.Where(l => l.Screen == key).Select(l => new { when = l.WhenText, field = l.Field, seen = l.Seen, of = l.CauseCount }).ToList(),
                     calculations = L.Calculations.Where(c => c.Screen == key)
-                        .Select(c => new { field = c.Field, formula = c.Formula, fits = c.Fits, tested = c.Tested, withExceptions = c.WithExceptions, alternatives = c.Alternatives }).ToList(),
+                        .Select(c => new { field = c.Field, formula = c.Formula, fits = c.Fits, tested = c.Tested, withExceptions = c.WithExceptions, alternatives = c.Alternatives, source = c.FromOcr ? "ocr" : "tree" }).ToList(),
                     hoverTips = L.Hints.Where(h => h.Screen == key).Select(h => new { control = h.Control, text = h.Text, seen = h.Seen }).ToList(),
                     buttons = L.Leads.Where(l => l.Screen == key).Select(l => new { button = l.Button, opens = l.Opens, message = l.Message, seen = l.Seen }).ToList(),
                     rules = r.Rules.Where(x => Titles.Key(x.Screen) == key).OrderBy(x => x.Field, StringComparer.Ordinal).ThenBy(x => x.Message, StringComparer.Ordinal)
@@ -178,7 +178,7 @@ public static class LogicWriter
         foreach (var k in L.Links.Select(l => l.Screen).Concat(L.Hints.Select(h => h.Screen)).Concat(L.Calculations.Select(c => c.Screen)).Concat(L.Leads.Select(l => l.Screen))
                      .Concat(L.NotUsed.Where(n => n.Screen != "(menus)").Select(n => n.Screen)))
             if (k.Length > 0) keys.Add(k);
-        foreach (var s in r.Screens.Where(s => s.Kind is ScreenKinds.Dialog or ScreenKinds.Session)) keys.Remove(s.Title);
+        foreach (var s in r.Screens.Where(s => s.Kind is ScreenKinds.Dialog or ScreenKinds.Session or ScreenKinds.Menu)) keys.Remove(s.Title);
         return keys.ToList();
     }
 

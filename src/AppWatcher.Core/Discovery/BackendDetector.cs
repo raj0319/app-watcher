@@ -18,6 +18,9 @@ public static partial class BackendDetector
     [GeneratedRegex(@"(?i)(password|pwd|pass|secret|token|apikey|api_key)\s*=\s*[^;""'\s<]+")]
     private static partial Regex Secret();
 
+    /// <summary>Hosts that appear in config files as XML namespaces and schema locations, never as a service the program talks to.</summary>
+    private static readonly string[] SchemaHosts = { "w3.org", "xmlsoap.org", "schemas.microsoft.com", "schemas.datacontract.org", "tempuri.org", "schemas.xmlsoap.org", "json-schema.org" };
+
     private static readonly string[] ConfigExtensions = { ".config", ".ini", ".udl", ".xml", ".json", ".conf", ".cfg", ".properties", ".dsn", ".txt" };
 
     public static readonly Dictionary<int, string> KnownPorts = new()
@@ -27,13 +30,56 @@ public static partial class BackendDetector
         [5000] = "rest", [8080] = "rest", [8443] = "rest", [443] = "rest", [80] = "rest", [3050] = "firebird", [2638] = "sqlanywhere", [9092] = "h2", [6379] = "redis",
     };
 
-    public static List<BackendInfo> Detect(string? exePath, string processName, int? pid, string? displayName = null)
+    /// <summary>User DSNs every Windows PC has; they say nothing about the watched program.</summary>
+    public static readonly HashSet<string> StockDsns = new(StringComparer.OrdinalIgnoreCase)
+        { "MS Access Database", "Excel Files", "dBASE Files", "Visio Database Samples", "Xtreme Sample Database", "Xtreme Sample Database 2008" };
+
+    public static List<BackendInfo> Detect(string? exePath, string processName, int? pid, string? displayName = null, string? company = null)
     {
         var list = new List<BackendInfo>();
-        try { list.AddRange(FromConfigFiles(exePath, processName, displayName)); } catch (Exception ex) { Log.Warn("backend config scan failed: " + ex.Message); }
+        try { list.AddRange(FromConfigFiles(exePath, processName, displayName, company ?? CompanyOf(exePath))); } catch (Exception ex) { Log.Warn("backend config scan failed: " + ex.Message); }
         try { list.AddRange(FromOdbc()); } catch (Exception ex) { Log.Warn("backend ODBC scan failed: " + ex.Message); }
         if (pid is not null) { try { list.AddRange(FromTcp(pid.Value)); } catch (Exception ex) { Log.Warn("backend TCP scan failed: " + ex.Message); } }
-        return Dedupe(list);
+        return Dedupe(Confirm(list));
+    }
+
+    /// <summary>The first word of the program's company name ("DDI System, Inc." → "ddi"), which names its ProgramData folder more often than the product does.</summary>
+    public static string? CompanyOf(string? exePath)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
+            var c = (System.Diagnostics.FileVersionInfo.GetVersionInfo(exePath).CompanyName ?? "").Trim();
+            var first = c.Split(' ', ',', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+            return first.Length >= 3 ? first : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// A host named in the program's own config file and reached by an open connection of the process is the data server,
+    /// whatever port the connection uses now (UniRPC and the like move to a dynamic port after the first call): the
+    /// connection confirms the config entry, and the unknown-kind connection rows to that host are folded into it.
+    /// </summary>
+    public static List<BackendInfo> Confirm(List<BackendInfo> list)
+    {
+        var fromConfig = list.Where(b => b.Host is not null && b.Where != "tcp connection" && !b.Where.Contains("ODBC DSN", StringComparison.OrdinalIgnoreCase)).ToList();
+        var result = new List<BackendInfo>();
+        foreach (var b in list)
+        {
+            if (b.Where == "tcp connection" && b.Kind == "unknown" && b.Host is not null)
+            {
+                var cfg = fromConfig.FirstOrDefault(c => string.Equals(c.Host, b.Host, StringComparison.OrdinalIgnoreCase));
+                if (cfg is not null)
+                {
+                    if (!cfg.Where.Contains("tcp connection")) cfg.Where += "; tcp connection to that host (port " + b.Port + ")";
+                    cfg.Readable = cfg.Readable;
+                    continue;
+                }
+            }
+            result.Add(b);
+        }
+        return result;
     }
 
     private static List<BackendInfo> Dedupe(List<BackendInfo> list)
@@ -48,29 +94,47 @@ public static partial class BackendDetector
         return result;
     }
 
-    /// <summary>Config files next to the exe and in the usual data folders that mention the program.</summary>
-    public static List<BackendInfo> FromConfigFiles(string? exePath, string processName, string? displayName)
+    /// <summary>Config files next to the exe and in the usual data folders that mention the program or its maker (ProgramData\&lt;vendor&gt;\&lt;product&gt;\**).</summary>
+    public static List<BackendInfo> FromConfigFiles(string? exePath, string processName, string? displayName, string? company = null)
     {
-        var found = new List<BackendInfo>();
         var dirs = new List<string>();
         if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath) && !DataSourceScanner.IsSharedFolder(Path.GetDirectoryName(exePath)!)) dirs.Add(Path.GetDirectoryName(exePath)!);
-        var names = new[] { processName, displayName ?? "" }.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.ToLowerInvariant()).Distinct().ToList();
-        foreach (var sf in new[] { Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData })
+        var roots = new[] { Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData }
+            .Select(Environment.GetFolderPath).Where(r => !string.IsNullOrEmpty(r) && Directory.Exists(r)).ToList();
+        dirs.AddRange(VendorFolders(roots, processName, displayName, company));
+        return FromFolders(dirs.Distinct());
+    }
+
+    /// <summary>
+    /// The folders under the given roots that belong to the program: a folder whose name holds the process name, the display
+    /// name or the maker's name, one or two levels down (ProgramData\DDISYSTEM\Inform\ is found through "DDI" or "Inform").
+    /// </summary>
+    public static List<string> VendorFolders(IEnumerable<string> roots, string processName, string? displayName, string? company)
+    {
+        var names = new[] { processName, displayName ?? "", company ?? "" }.Where(n => !string.IsNullOrWhiteSpace(n) && n.Trim().Length >= 3).Select(n => n.Trim().ToLowerInvariant()).Distinct().ToList();
+        bool Matches(string dir) { var n = Path.GetFileName(dir).ToLowerInvariant(); return names.Any(x => n.Contains(x) || (x.Contains(n) && n.Length > 3)); }
+        var dirs = new List<string>();
+        foreach (var root in roots)
         {
-            var root = Environment.GetFolderPath(sf);
-            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) continue;
             try
             {
                 foreach (var d in Directory.EnumerateDirectories(root))
                 {
-                    var n = Path.GetFileName(d).ToLowerInvariant();
-                    if (names.Any(x => n.Contains(x) || x.Contains(n) && n.Length > 3)) dirs.Add(d);
+                    if (Matches(d)) { dirs.Add(d); continue; }
+                    try { foreach (var d2 in Directory.EnumerateDirectories(d)) if (Matches(d2)) dirs.Add(d2); } catch { }
                 }
             }
             catch { }
         }
+        return dirs;
+    }
+
+    /// <summary>Every backend named in the config files of the given folders (three levels deep, 400 files at most).</summary>
+    public static List<BackendInfo> FromFolders(IEnumerable<string> dirs)
+    {
+        var found = new List<BackendInfo>();
         var budget = 400;
-        foreach (var dir in dirs.Distinct())
+        foreach (var dir in dirs)
             foreach (var f in Walk(dir, 3))
             {
                 if (--budget <= 0) return found;
@@ -85,6 +149,51 @@ public static partial class BackendDetector
                 catch { }
             }
         return found;
+    }
+
+    [GeneratedRegex(@"(?is)<(?<k>HostName|Host|Server|ServerName|ServerAddress|DataSource|DbServer|DatabaseServer)(?:\s[^>]*)?>(?<v>[^<]{1,200})</\k<k>>")]
+    private static partial Regex XmlHost();
+
+    [GeneratedRegex(@"(?is)<(?<k>Port|ServerPort|DbPort|DatabasePort)(?:\s[^>]*)?>(?<v>\d{2,5})</\k<k>>")]
+    private static partial Regex XmlPort();
+
+    [GeneratedRegex(@"(?is)<(?<k>Database|DatabaseName|DbName|AccountPath|Account|Catalog|InitialCatalog|Schema)(?:\s[^>]*)?>(?<v>[^<]{1,200})</\k<k>>")]
+    private static partial Regex XmlDatabase();
+
+    [GeneratedRegex(@"(?i)\b(?<k>HostName|ServerName|ServerAddress|DataSource|Port|Database|AccountPath|Account)\s*=\s*""(?<v>[^""]{1,200})""")]
+    private static partial Regex XmlAttribute();
+
+    /// <summary>
+    /// Backends named by XML elements or attributes the way vendor config files do it (&lt;HostName&gt;, &lt;AccountPath&gt;,
+    /// &lt;Port xsi:nil="true" /&gt;), per connection block when the file has several. No credentials are read: user and
+    /// password elements are never looked at. The kind comes from the port when one is given, else stays unknown (a profile
+    /// or the open connections of the process say more).
+    /// </summary>
+    public static List<BackendInfo> ParseXmlConfig(string text, string where)
+    {
+        var list = new List<BackendInfo>();
+        if (string.IsNullOrEmpty(text) || !text.Contains('<')) return list;
+        // one entry per block that holds a host: split on the elements that usually wrap one connection
+        var blocks = Regex.Split(text, @"(?i)(?=<(?:ConnectionInfo|Connection|Server|Database|DataSource|Environment|Site)\b[^>]*>)").Where(b => b.Length > 0).ToList();
+        if (blocks.Count == 0) blocks.Add(text);
+        foreach (var block in blocks)
+        {
+            var host = XmlHost().Match(block);
+            var attrHost = XmlAttribute().Matches(block).FirstOrDefault(m => m.Groups["k"].Value.ToLowerInvariant() is "hostname" or "servername" or "serveraddress" or "datasource");
+            var h = host.Success ? host.Groups["v"].Value.Trim() : attrHost?.Groups["v"].Value.Trim();
+            if (string.IsNullOrEmpty(h) || h.Contains('\\') || h.Contains('/') || h.Length > 120) continue;
+            if (h.Contains(':')) { var i = h.LastIndexOf(':'); if (int.TryParse(h[(i + 1)..], out _)) h = h[..i]; }
+            var b = new BackendInfo { Kind = "unknown", Host = h, Where = Path.GetFileName(where) };
+            var port = XmlPort().Match(block);
+            var attrPort = XmlAttribute().Matches(block).FirstOrDefault(m => m.Groups["k"].Value.Equals("Port", StringComparison.OrdinalIgnoreCase));
+            if ((port.Success && int.TryParse(port.Groups["v"].Value, out var p)) || (attrPort is not null && int.TryParse(attrPort.Groups["v"].Value, out p))) { b.Port = p; b.Kind = KnownPorts.GetValueOrDefault(p, "unknown"); }
+            var db = XmlDatabase().Match(block);
+            var attrDb = XmlAttribute().Matches(block).FirstOrDefault(m => m.Groups["k"].Value.ToLowerInvariant() is "database" or "accountpath" or "account");
+            var d = db.Success ? db.Groups["v"].Value.Trim() : attrDb?.Groups["v"].Value.Trim();
+            if (!string.IsNullOrEmpty(d) && d.Length <= 120) b.Database = d;
+            if (!list.Any(x => string.Equals(x.Host, b.Host, StringComparison.OrdinalIgnoreCase) && x.Port == b.Port && string.Equals(x.Database, b.Database, StringComparison.OrdinalIgnoreCase))) list.Add(b);
+        }
+        return list;
     }
 
     private static IEnumerable<string> Walk(string dir, int depth)
@@ -103,6 +212,7 @@ public static partial class BackendDetector
     {
         var list = new List<BackendInfo>();
         if (string.IsNullOrEmpty(text)) return list;
+        list.AddRange(ParseXmlConfig(text, where));
         var safe = Secret().Replace(text, "$1=***");
         // connection strings: a line or attribute value with Data Source / Server / Provider / Driver / DSN
         foreach (Match m in Regex.Matches(safe, @"(?i)(?:connectionString|value|url|dsn|ConnectString|DataSource)\s*=\s*[""']([^""']{6,500})[""']"))
@@ -113,7 +223,13 @@ public static partial class BackendDetector
             if (l.Length < 8 || l.Length > 600) continue;
             if (Regex.IsMatch(l, @"(?i)\b(data source|server|provider|driver|dsn|initial catalog|jdbc:)\b") && l.Contains('=')) Add(list, l, where);
             else if (Regex.IsMatch(l, @"(?i)^(host|hostname|server|dbserver|db_host|port|dbport|database|dbname|db_name)\s*[=:]")) Add(list, l, where);
-            else if (Regex.IsMatch(l, @"(?i)https?://[\w.-]+(:\d+)?/")) { var u = Regex.Match(l, @"(?i)https?://(?<h>[\w.-]+)(:(?<p>\d+))?/"); list.Add(new BackendInfo { Kind = "rest", Host = u.Groups["h"].Value, Port = u.Groups["p"].Success ? int.Parse(u.Groups["p"].Value) : null, Where = Path.GetFileName(where) }); }
+            else if (Regex.IsMatch(l, @"(?i)https?://[\w.-]+(:\d+)?/"))
+            {
+                var u = Regex.Match(l, @"(?i)https?://(?<h>[\w.-]+)(:(?<p>\d+))?/");
+                var host = u.Groups["h"].Value;
+                if (SchemaHosts.Any(sh => host.EndsWith(sh, StringComparison.OrdinalIgnoreCase))) continue; // XML namespaces, not services
+                list.Add(new BackendInfo { Kind = "rest", Host = host, Port = u.Groups["p"].Success ? int.Parse(u.Groups["p"].Value) : null, Where = Path.GetFileName(where) });
+            }
         }
         return list;
     }
@@ -208,6 +324,7 @@ public static partial class BackendDetector
                 if (key is null) continue;
                 foreach (var name in key.GetValueNames())
                 {
+                    if (StockDsns.Contains(name)) continue; // every Windows PC has these; they are not the program's
                     var driver = key.GetValue(name)?.ToString() ?? "";
                     var b = Classify($"DSN={name};Driver={{{driver}}}") ?? new BackendInfo { Kind = "odbc" };
                     b.Kind = b.Kind == "unknown" ? "odbc" : b.Kind;

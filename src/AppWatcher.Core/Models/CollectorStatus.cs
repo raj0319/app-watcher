@@ -19,6 +19,13 @@ public sealed class CollectorStatus
     public int DumpsEmpty { get; set; }
     public int DumpsMsaa { get; set; }
     public int TabScreens { get; set; }
+    /// <summary>Tab documents selected (seen by event or by reading the tab strip); compared with TabScreens on the health page.</summary>
+    public int TabSelections { get; set; }
+    /// <summary>Presses inferred from the control under the pointer when a window, tab or message changed.</summary>
+    public int PressesPointer { get; set; }
+    /// <summary>Values the program filled in that were found by re-reading the document (grid cells, bound editors).</summary>
+    public int ValuesReread { get; set; }
+    public int Hints { get; set; }
     public int PressesUia { get; set; }
     public int PressesMsaa { get; set; }
     public int PressesMenu { get; set; }
@@ -83,7 +90,10 @@ public sealed class CollectorStatus
         else if (DumpsFailed + DumpsEmpty > DumpsOk) list.Add($"{DumpsFailed + DumpsEmpty} of {DumpsFailed + DumpsEmpty + DumpsOk} control tree dumps failed or were empty");
         if (DumpsMsaa > 0) list.Add($"{DumpsMsaa} screens were read through the older MSAA interface (names only, no automation ids)");
         if (WindowsSeen > 2 && PressesTotal == 0) list.Add("no button or menu press was seen at all (the app's controls do not report presses); flows have windows but no actions, and saves cannot be tied to data changes");
-        else if (PressesUia == 0 && PressesTotal > 0) list.Add($"presses were only seen through fallbacks (MSAA {PressesMsaa}, menus {PressesMenu}, inferred {PressesInferred}); counts are a lower bound");
+        else if (PressesUia == 0 && PressesTotal > 0) list.Add($"presses were only seen through fallbacks (MSAA {PressesMsaa}, menus {PressesMenu}, inferred {PressesInferred}, of which {PressesPointer} from the control under the pointer); counts are a lower bound");
+        var dumps = DumpsOk + DumpsFailed;
+        if (dumps > 0 && DumpsFailed * 100 > dumps * 25 && DumpsOk > 0) list.Add($"{(int)(100.0 * DumpsFailed / dumps)}% of control tree reads failed (the program did not answer in time); screens read later or from the pictures fill the gap");
+        if (TabSelections > TabScreens) list.Add($"{TabSelections - TabScreens} tab selection(s) left no tab screen record");
         if (!HasDataSources) list.Add("no data source is configured, so tables and rules cannot be learned");
         list.AddRange(Notes);
         return list;

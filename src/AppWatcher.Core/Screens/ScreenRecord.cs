@@ -18,6 +18,8 @@ public sealed class ControlRow
     public string Shortcut { get; set; } = "";
     /// <summary>UIA LabeledBy name when the collector could read it; else empty.</summary>
     public string LabeledBy { get; set; } = "";
+    /// <summary>The control's value at the time of a field read (collector only; never written to a screen file).</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public string? Value { get; set; }
 }
 
 /// <summary>Kinds of window the collector tells apart.</summary>
@@ -27,6 +29,8 @@ public static class ScreenKinds
     public const string Dialog = "dialog";
     public const string Session = "session";
     public const string Tab = "tab";
+    /// <summary>A popup menu that is an ordinary window: its items and access keys are kept, it is never a screen.</summary>
+    public const string Menu = "menu";
 }
 
 /// <summary>One window's control tree, written once in the twin kit's screen format.</summary>
@@ -150,6 +154,7 @@ public sealed class ScreenRecord
         if (Kind == ScreenKinds.Dialog) sb.AppendLine("- This is a message window; its text becomes a rule in memory/rules.md.");
         if (Kind == ScreenKinds.Session) sb.AppendLine("- Session window (splash, login or station prompt); flows start after it.");
         if (Kind == ScreenKinds.Tab) sb.AppendLine("- A tab document inside its parent window; recorded as a screen of its own.");
+        if (Kind == ScreenKinds.Menu) sb.AppendLine("- A popup menu (its items and access keys); not a screen.");
         sb.AppendLine();
         sb.AppendLine("## Control tree (auto-generated)");
         sb.AppendLine();
@@ -169,6 +174,7 @@ public sealed class ScreenRecord
         ScreenKinds.Dialog => "message window of the watched app (text recorded as a dialog event).",
         ScreenKinds.Session => "session window (splash, login or station prompt) of the watched app.",
         ScreenKinds.Tab => "tab document of the watched app, recorded the first time the tab was selected.",
+        ScreenKinds.Menu => "popup menu of the watched app (items and access keys), recorded the first time it opened.",
         _ => "window of the watched app, recorded by App Watcher the first time it opened.",
     };
 

@@ -382,7 +382,8 @@ public static class MemoryWriter
         sb.AppendLine($"| Events per day | {h.EventsPerDay:0} |");
         sb.AppendLine($"| Button and menu presses seen | {h.PressesSeen} (+ {h.PressesInferred} inferred from focus and a window change) |");
         sb.AppendLine($"| Save-type presses seen | {h.TriggerInvokes} |");
-        sb.AppendLine($"| Message windows seen | {h.DialogsSeen} |");
+        sb.AppendLine($"| Message windows seen | {h.DialogsSeen}{(h.PromptScreens > 0 ? $" (+ {h.PromptScreens} recorded as screens by the collector, filed as messages by their shape)" : "")} |");
+        sb.AppendLine($"| Tab documents selected | {h.TabSelections} |");
         sb.AppendLine($"| Data checks (effects) | {h.EffectsTotal}, {h.EffectsWithDiff} with a change |");
         sb.AppendLine($"| Saves with a data diff | {h.SavesWithDiffPct:0}% |");
         sb.AppendLine($"| Fields typed into | {h.FieldsSeen} |");

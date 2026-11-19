@@ -65,6 +65,7 @@ internal sealed class MainForm : Form
     private readonly TextBox _lineTotal = new() { Name = "txtLineTotal", Width = 100, ReadOnly = true, TabStop = false };
     private readonly StatusStrip _status = new();
     private readonly ToolStripStatusLabel _statusText = new("Ready");
+    private int _refreshes;
 
     public MainForm(bool corner)
     {
@@ -147,10 +148,18 @@ internal sealed class MainForm : Form
         printQuote.Click += (_, _) => Message("Print", "Printing is not part of this sample.");
         quote.Controls.Add(printQuote);
 
+        // a toolbar-style button that raises no Invoke event and only changes the window (its title): the press can only be inferred
+        var toolbar = new Panel { Dock = DockStyle.Top, Height = 30, Name = "pnlToolbar" };
+        var refresh = new Button { Text = "Refresh", Name = "btnRefresh", Left = 4, Top = 2, Width = 80, Height = 26 };
+        refresh.Click += (_, _) => { _refreshes++; Text = $"Sample ERP - refreshed {_refreshes}"; _statusText.Text = $"Refreshed {_refreshes}"; };
+        tips.SetToolTip(refresh, "Reload the lists from the database");
+        toolbar.Controls.Add(refresh);
+
         _tabs.TabPages.Add(customers); _tabs.TabPages.Add(orders); _tabs.TabPages.Add(quote);
         _status.Items.Add(_statusText);
-        Controls.Add(_tabs); Controls.Add(_status); Controls.Add(menu);
-        _tabs.Top = menu.Height;
+        Controls.Add(_tabs); Controls.Add(_status); Controls.Add(toolbar); Controls.Add(menu);
+        toolbar.Top = menu.Height;
+        _tabs.Top = menu.Height + toolbar.Height;
     }
 
     /// <summary>Line total = quantity × unit price × (1 − discount / 100), shown with two decimals once quantity and price are numbers.</summary>

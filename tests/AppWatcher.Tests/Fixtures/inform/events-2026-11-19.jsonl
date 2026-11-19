@@ -1,0 +1,346 @@
+{"t": "2026-11-19T09:49:12.4238454-05:00", "win": "", "ct": "watcher", "name": "App Watcher started", "aid": "", "act": "start", "val": "user:00000001 machine:00000002 version:0.7", "dt": 0}
+{"t": "2026-11-19T09:49:12.8712584-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "open", "dt": 447}
+{"t": "2026-11-19T09:51:09.0257605-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 116154}
+{"t": "2026-11-19T09:51:09.0920382-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 66}
+{"t": "2026-11-19T09:51:14.3812323-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "TEST", "dt": 5289}
+{"t": "2026-11-19T09:51:15.2038296-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 822}
+{"t": "2026-11-19T09:51:16.1664296-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "***", "dt": 962}
+{"t": "2026-11-19T09:51:26.1105261-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtComments_EmbeddableTextBox", "act": "value", "val": "", "dt": 9944, "by": "app"}
+{"t": "2026-11-19T09:51:26.1647216-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtFirstName_EmbeddableTextBox", "act": "value", "val": "***", "dt": 54}
+{"t": "2026-11-19T09:51:36.791622-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 10626}
+{"t": "2026-11-19T09:52:02.6462269-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 25854}
+{"t": "2026-11-19T09:52:07.9054988-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "TEST", "dt": 5259}
+{"t": "2026-11-19T09:52:08.3530223-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 447}
+{"t": "2026-11-19T09:52:09.1219102-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "***", "dt": 768}
+{"t": "2026-11-19T09:52:18.4432246-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtComments_EmbeddableTextBox", "act": "value", "val": "", "dt": 9321, "by": "app"}
+{"t": "2026-11-19T09:52:18.535071-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtFirstName_EmbeddableTextBox", "act": "value", "val": "***", "dt": 91}
+{"t": "2026-11-19T09:52:29.2789052-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 10743}
+{"t": "2026-11-19T09:52:38.2580548-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 8979}
+{"t": "2026-11-19T09:52:39.1199565-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 861}
+{"t": "2026-11-19T09:52:42.3693298-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 3249}
+{"t": "2026-11-19T09:52:42.7261292-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 356}
+{"t": "2026-11-19T09:52:43.1157852-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 389}
+{"t": "2026-11-19T09:52:43.5008205-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 385}
+{"t": "2026-11-19T09:52:43.892401-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 391}
+{"t": "2026-11-19T09:52:44.282894-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 390}
+{"t": "2026-11-19T09:52:44.8180849-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 535}
+{"t": "2026-11-19T09:52:52.5895715-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 7771}
+{"t": "2026-11-19T09:53:00.3769697-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 7787}
+{"t": "2026-11-19T09:53:01.2182326-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 841}
+{"t": "2026-11-19T09:53:04.4715751-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 3253}
+{"t": "2026-11-19T09:53:04.8391718-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 367}
+{"t": "2026-11-19T09:53:05.247738-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 408}
+{"t": "2026-11-19T09:53:05.6379798-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 390}
+{"t": "2026-11-19T09:53:06.0430797-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 405}
+{"t": "2026-11-19T09:53:06.4364771-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 393}
+{"t": "2026-11-19T09:53:06.9656786-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 529}
+{"t": "2026-11-19T09:53:14.7753384-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 7809}
+{"t": "2026-11-19T09:53:22.8852915-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "ACME", "dt": 8109}
+{"t": "2026-11-19T09:53:23.4719648-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 586}
+{"t": "2026-11-19T09:53:23.9195784-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "***", "dt": 447}
+{"t": "2026-11-19T09:53:24.3277079-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtComments_EmbeddableTextBox", "act": "value", "val": "", "dt": 408, "by": "app"}
+{"t": "2026-11-19T09:53:44.1731276-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 19845}
+{"t": "2026-11-19T09:53:53.1087742-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 8935}
+{"t": "2026-11-19T09:53:53.5500693-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 441}
+{"t": "2026-11-19T09:53:55.6597346-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 2109}
+{"t": "2026-11-19T09:53:55.6600014-05:00", "win": "DDI System Inform - Sample Co", "ct": "Button", "name": "Edit", "aid": "", "act": "invoke", "dt": 0, "how": "inferred"}
+{"t": "2026-11-19T09:53:56.7670555-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 1107}
+{"t": "2026-11-19T09:54:03.717928-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 6950}
+{"t": "2026-11-19T09:54:16.7506448-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 13032}
+{"t": "2026-11-19T09:54:25.6495481-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 8898}
+{"t": "2026-11-19T09:54:26.0840974-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 434}
+{"t": "2026-11-19T09:54:27.5805355-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 1496}
+{"t": "2026-11-19T09:54:29.8004862-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 2219}
+{"t": "2026-11-19T09:54:35.583895-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 5783}
+{"t": "2026-11-19T09:54:48.6075263-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 13023}
+{"t": "2026-11-19T09:54:57.5570922-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 8949}
+{"t": "2026-11-19T09:54:57.9913736-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 434}
+{"t": "2026-11-19T09:55:19.6620356-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 21670}
+{"t": "2026-11-19T09:55:28.6145104-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 8952}
+{"t": "2026-11-19T09:55:29.0446829-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 430}
+{"t": "2026-11-19T09:55:50.2089888-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 21164}
+{"t": "2026-11-19T09:55:59.1700524-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 8961}
+{"t": "2026-11-19T09:56:00.0629284-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 892}
+{"t": "2026-11-19T09:56:03.2681694-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 3205}
+{"t": "2026-11-19T09:56:03.6424661-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 374}
+{"t": "2026-11-19T09:56:04.0327136-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 390}
+{"t": "2026-11-19T09:56:04.4220444-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 389}
+{"t": "2026-11-19T09:56:04.8138524-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 391}
+{"t": "2026-11-19T09:56:05.2077402-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 393}
+{"t": "2026-11-19T09:56:05.7364123-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 528}
+{"t": "2026-11-19T09:56:13.54547-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 7809}
+{"t": "2026-11-19T09:56:38.6026388-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 25057}
+{"t": "2026-11-19T09:56:39.0094117-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 406}
+{"t": "2026-11-19T09:56:40.362915-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 1353}
+{"t": "2026-11-19T09:56:42.4866208-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 2123}
+{"t": "2026-11-19T09:56:48.6559444-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 6169}
+{"t": "2026-11-19T09:57:01.6279871-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 12972}
+{"t": "2026-11-19T09:57:10.5978523-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 8969}
+{"t": "2026-11-19T09:57:11.1414471-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 543}
+{"t": "2026-11-19T09:57:32.2285126-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 21087}
+{"t": "2026-11-19T09:59:25.5195667-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "TEST", "dt": 113291}
+{"t": "2026-11-19T09:59:26.6974311-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 1177}
+{"t": "2026-11-19T09:59:26.6974438-05:00", "win": "DDI System Inform - Sample Co", "ct": "Button", "name": "Edit", "aid": "", "act": "invoke", "dt": 0, "how": "inferred"}
+{"t": "2026-11-19T09:59:26.7173594-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "***", "dt": 19}
+{"t": "2026-11-19T09:59:36.2653206-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtComments_EmbeddableTextBox", "act": "value", "val": "", "dt": 9547, "by": "app"}
+{"t": "2026-11-19T09:59:46.8361521-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 10570}
+{"t": "2026-11-19T09:59:55.8288181-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 8992}
+{"t": "2026-11-19T09:59:56.6446226-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 815}
+{"t": "2026-11-19T09:59:59.9040157-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 3259}
+{"t": "2026-11-19T10:00:00.2670084-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 362}
+{"t": "2026-11-19T10:00:00.6614361-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 394}
+{"t": "2026-11-19T10:00:01.0564884-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 395}
+{"t": "2026-11-19T10:00:01.4506559-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 394}
+{"t": "2026-11-19T10:00:01.8411495-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 390}
+{"t": "2026-11-19T10:00:02.3634267-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 522}
+{"t": "2026-11-19T10:00:10.1376357-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 7774}
+{"t": "2026-11-19T10:00:18.2523809-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 8114}
+{"t": "2026-11-19T10:00:18.9989183-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 746}
+{"t": "2026-11-19T10:00:22.2411805-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 3242}
+{"t": "2026-11-19T10:00:22.6043374-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 363}
+{"t": "2026-11-19T10:00:22.9938928-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 389}
+{"t": "2026-11-19T10:00:23.3852048-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 391}
+{"t": "2026-11-19T10:00:23.7780212-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 392}
+{"t": "2026-11-19T10:00:24.1737592-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 395}
+{"t": "2026-11-19T10:00:24.6975118-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 523}
+{"t": "2026-11-19T10:00:32.4441382-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 7746}
+{"t": "2026-11-19T10:00:40.5370491-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "ACME", "dt": 8092}
+{"t": "2026-11-19T10:00:41.3654318-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 828}
+{"t": "2026-11-19T10:00:41.6680276-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "***", "dt": 302}
+{"t": "2026-11-19T10:00:41.9845024-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtComments_EmbeddableTextBox", "act": "value", "val": "", "dt": 316, "by": "app"}
+{"t": "2026-11-19T10:01:01.8184371-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 19833}
+{"t": "2026-11-19T10:01:10.8594356-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 9040}
+{"t": "2026-11-19T10:01:11.2668901-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 407}
+{"t": "2026-11-19T10:01:12.5367407-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 1269}
+{"t": "2026-11-19T10:01:13.5647869-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 1028}
+{"t": "2026-11-19T10:01:20.5323611-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 6967}
+{"t": "2026-11-19T10:01:33.5483267-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 13015}
+{"t": "2026-11-19T10:01:42.5732266-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 9024}
+{"t": "2026-11-19T10:01:42.9902754-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 417}
+{"t": "2026-11-19T10:01:44.0365941-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 1046}
+{"t": "2026-11-19T10:01:45.4246847-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 1388}
+{"t": "2026-11-19T10:01:52.6089721-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 7184}
+{"t": "2026-11-19T10:02:05.635831-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 13026}
+{"t": "2026-11-19T10:02:14.7205238-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 9084}
+{"t": "2026-11-19T10:02:15.1561033-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 435}
+{"t": "2026-11-19T10:02:37.3642612-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 22208}
+{"t": "2026-11-19T10:02:46.4418017-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 9077}
+{"t": "2026-11-19T10:02:46.885482-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 443}
+{"t": "2026-11-19T10:03:08.0427832-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 21157}
+{"t": "2026-11-19T10:03:17.0813423-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 9038}
+{"t": "2026-11-19T10:03:17.8620312-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 780}
+{"t": "2026-11-19T10:03:21.096896-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 3234}
+{"t": "2026-11-19T10:03:21.4816045-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 384}
+{"t": "2026-11-19T10:03:21.877098-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 395}
+{"t": "2026-11-19T10:03:22.2834167-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 406}
+{"t": "2026-11-19T10:03:22.6808081-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 397}
+{"t": "2026-11-19T10:03:23.0727653-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 391}
+{"t": "2026-11-19T10:03:23.610392-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 537}
+{"t": "2026-11-19T10:03:31.3864852-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 7776}
+{"t": "2026-11-19T10:03:56.6122014-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 25225}
+{"t": "2026-11-19T10:03:57.0434181-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 431}
+{"t": "2026-11-19T10:03:58.2203925-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 1176}
+{"t": "2026-11-19T10:04:00.6735296-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 2453}
+{"t": "2026-11-19T10:04:06.5739793-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 5900}
+{"t": "2026-11-19T10:04:19.5399716-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 12965}
+{"t": "2026-11-19T10:04:28.6644215-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 9124}
+{"t": "2026-11-19T10:04:29.1127103-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 448}
+{"t": "2026-11-19T10:04:50.6605445-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 21547}
+{"t": "2026-11-19T10:12:08.6293837-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcCustomer_EmbeddableTextBox", "act": "value", "val": "000000", "dt": 437968}
+{"t": "2026-11-19T10:12:08.7192178-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 89}
+{"t": "2026-11-19T10:12:10.899391-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcCustomer_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 2180}
+{"t": "2026-11-19T10:12:15.3237626-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 4424}
+{"t": "2026-11-19T10:12:17.8194663-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 2495, "by": "app"}
+{"t": "2026-11-19T10:12:21.7823824-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "5", "dt": 3962}
+{"t": "2026-11-19T10:12:30.5311099-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 8748}
+{"t": "2026-11-19T10:12:32.2258365-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "1000000001", "dt": 1694, "by": "app"}
+{"t": "2026-11-19T10:12:32.3706255-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "1", "dt": 144}
+{"t": "2026-11-19T10:12:38.3289479-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "12", "dt": 5958}
+{"t": "2026-11-19T10:12:41.4318312-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "20", "dt": 3102}
+{"t": "2026-11-19T10:12:53.4529375-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtSpecialInstructions_EmbeddableTextBox", "act": "value", "val": "", "dt": 12021}
+{"t": "2026-11-19T10:13:03.233715-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 9780}
+{"t": "2026-11-19T10:13:03.8001002-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 566}
+{"t": "2026-11-19T10:13:57.4170557-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 53616}
+{"t": "2026-11-19T10:13:57.7733985-05:00", "win": "DDI System Inform - Sample Co", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 356}
+{"t": "2026-11-19T10:13:57.7885526-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 15}
+{"t": "2026-11-19T10:15:30.6253432-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcCustomer_EmbeddableTextBox", "act": "value", "val": "00000", "dt": 92836}
+{"t": "2026-11-19T10:15:30.6990911-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 73}
+{"t": "2026-11-19T10:15:32.7109202-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "srcCustomer_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 2011}
+{"t": "2026-11-19T10:15:38.8851096-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 6174}
+{"t": "2026-11-19T10:15:40.7282413-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 1843, "by": "app"}
+{"t": "2026-11-19T10:15:46.7602723-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "5", "dt": 6032}
+{"t": "2026-11-19T10:15:51.6638693-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "5", "dt": 4903}
+{"t": "2026-11-19T10:15:52.7712702-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "20", "dt": 1107}
+{"t": "2026-11-19T10:16:05.4919433-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "100", "dt": 12720}
+{"t": "2026-11-19T10:16:06.3388108-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 846}
+{"t": "2026-11-19T10:16:11.440877-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 5102}
+{"t": "2026-11-19T10:16:12.2054315-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "12", "dt": 764}
+{"t": "2026-11-19T10:16:13.3241167-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 1118}
+{"t": "2026-11-19T10:16:17.4259639-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 4101}
+{"t": "2026-11-19T10:16:37.9143164-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtSpecialInstructions_EmbeddableTextBox", "act": "value", "val": "", "dt": 20488}
+{"t": "2026-11-19T10:16:53.7801953-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 15865}
+{"t": "2026-11-19T10:16:54.3554185-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 575}
+{"t": "2026-11-19T10:16:59.0100859-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 4654}
+{"t": "2026-11-19T10:16:59.0714262-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 61}
+{"t": "2026-11-19T10:17:07.5540865-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 8482}
+{"t": "2026-11-19T10:17:08.1037966-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 549}
+{"t": "2026-11-19T10:17:08.1038126-05:00", "win": "Close?", "ct": "Button", "name": "OK", "aid": "", "act": "invoke", "dt": 0, "how": "inferred"}
+{"t": "2026-11-19T10:17:11.0200433-05:00", "win": "DDI System Inform - Sample Co", "ct": "Window", "name": "DDI System Inform - Sample Co", "aid": "", "act": "foreground", "dt": 2916}
+{"t": "2026-11-19T10:17:11.0877153-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 67}
+{"t": "2026-11-19T10:17:19.9635589-05:00", "win": "DDI System Inform - Sample Co", "ct": "Edit", "name": "", "aid": "txtSpecialInstructions_EmbeddableTextBox", "act": "value", "val": "", "dt": 8875}
+{"t": "2026-11-19T10:17:20.0735799-05:00", "win": "DDI System Inform - Sample Co › Purchase Order Entry", "ct": "TabItem", "name": "Purchase Order Entry", "aid": "", "act": "select", "dt": 110}
+{"t": "2026-11-19T10:17:21.7289883-05:00", "win": "DDI System Inform - Sample Co › Purchase Order Entry", "ct": "Window", "name": "DDI System Inform - Sample Co › Purchase Order Entry", "aid": "", "act": "open", "dt": 1655}
+{"t": "2026-11-19T10:17:26.1579856-05:00", "win": "DDI System Inform - Sample Co › Purchase Order Entry", "ct": "Edit", "name": "", "aid": "srcVendor_EmbeddableTextBox", "act": "value", "val": "002", "dt": 4428}
+{"t": "2026-11-19T10:17:26.2189419-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 60}
+{"t": "2026-11-19T10:17:26.711794-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 492}
+{"t": "2026-11-19T10:17:27.2057477-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Edit", "name": "", "aid": "srcVendor_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 493}
+{"t": "2026-11-19T10:17:27.5473169-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 341}
+{"t": "2026-11-19T10:17:37.0195558-05:00", "win": "DDI System Inform - Sample Co › Purchase Order Entry", "ct": "Window", "name": "DDI System Inform - Sample Co › Purchase Order Entry", "aid": "", "act": "foreground", "dt": 9472}
+{"t": "2026-11-19T10:17:37.0950514-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 75}
+{"t": "2026-11-19T10:18:09.2457783-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 32150}
+{"t": "2026-11-19T10:18:09.8561205-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 610}
+{"t": "2026-11-19T10:18:15.1714459-05:00", "win": "DDI System Inform - Sample Co › Purchase Order Entry", "ct": "Window", "name": "DDI System Inform - Sample Co › Purchase Order Entry", "aid": "", "act": "foreground", "dt": 5315}
+{"t": "2026-11-19T10:18:15.2624645-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 91}
+{"t": "2026-11-19T10:18:25.4785279-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 10216}
+{"t": "2026-11-19T10:18:26.0466446-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 568}
+{"t": "2026-11-19T10:18:26.046661-05:00", "win": "Close?", "ct": "Button", "name": "OK", "aid": "", "act": "invoke", "dt": 0, "how": "inferred"}
+{"t": "2026-11-19T10:18:29.7653747-05:00", "win": "DDI System Inform - Sample Co › Purchase Order Entry", "ct": "Window", "name": "DDI System Inform - Sample Co › Purchase Order Entry", "aid": "", "act": "foreground", "dt": 3718}
+{"t": "2026-11-19T10:18:29.8194433-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 54}
+{"t": "2026-11-19T10:18:38.4050482-05:00", "win": "DDI System Inform - Sample Co › Customer Order Pad", "ct": "TabItem", "name": "Customer Order Pad", "aid": "", "act": "select", "dt": 8585}
+{"t": "2026-11-19T10:18:40.3861464-05:00", "win": "DDI System Inform - Sample Co › Customer Order Pad", "ct": "Window", "name": "DDI System Inform - Sample Co › Customer Order Pad", "aid": "", "act": "open", "dt": 1981}
+{"t": "2026-11-19T10:18:46.2232118-05:00", "win": "DDI System Inform - Sample Co › Customer Order Pad", "ct": "Edit", "name": "", "aid": "srcCustomerID_EmbeddableTextBox", "act": "value", "val": "00", "dt": 5837}
+{"t": "2026-11-19T10:18:46.4593757-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 236}
+{"t": "2026-11-19T10:18:47.0097338-05:00", "win": "DDI System Inform - Sample Co › Customer Order Pad", "ct": "Edit", "name": "", "aid": "srcCustomerID_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 550}
+{"t": "2026-11-19T10:19:51.6655185-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 64655}
+{"t": "2026-11-19T10:19:52.2309915-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 565}
+{"t": "2026-11-19T10:19:55.7612388-05:00", "win": "DDI System Inform - Sample Co › Customer Order Pad", "ct": "Window", "name": "DDI System Inform - Sample Co › Customer Order Pad", "aid": "", "act": "foreground", "dt": 3530}
+{"t": "2026-11-19T10:19:55.7889852-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 27}
+{"t": "2026-11-19T10:20:04.1293229-05:00", "win": "DDI System Inform - Sample Co › Price Change", "ct": "TabItem", "name": "Price Change", "aid": "", "act": "select", "dt": 8340}
+{"t": "2026-11-19T10:20:05.7958246-05:00", "win": "DDI System Inform - Sample Co › Price Change", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Change", "aid": "", "act": "open", "dt": 1666}
+{"t": "2026-11-19T10:21:15.8455241-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 70049}
+{"t": "2026-11-19T10:21:16.4113755-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 565}
+{"t": "2026-11-19T10:21:19.8926912-05:00", "win": "DDI System Inform - Sample Co › Price Change", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Change", "aid": "", "act": "foreground", "dt": 3481}
+{"t": "2026-11-19T10:21:19.9604947-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 67}
+{"t": "2026-11-19T10:21:28.483252-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "open", "dt": 8522}
+{"t": "2026-11-19T10:21:30.0529042-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "open", "dt": 1569}
+{"t": "2026-11-19T10:21:31.1906456-05:00", "win": "DDI System Inform - Sample Co › Price Change", "ct": "MenuItem", "name": "Price Matrix", "aid": "", "act": "invoke", "dt": 1137, "how": "menu"}
+{"t": "2026-11-19T10:21:31.649613-05:00", "win": "DDI System Inform - Sample Co › Price Change", "ct": "MenuItem", "name": "Price Matrix", "aid": "", "act": "invoke", "dt": 458, "how": "menu"}
+{"t": "2026-11-19T10:21:31.8895384-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "close", "dt": 239}
+{"t": "2026-11-19T10:21:31.9191009-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "close", "dt": 29}
+{"t": "2026-11-19T10:21:31.9506707-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "TabItem", "name": "Price Matrix Master", "aid": "", "act": "select", "dt": 31}
+{"t": "2026-11-19T10:21:33.9012894-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "open", "dt": 1950}
+{"t": "2026-11-19T10:21:41.4760954-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcProduct_EmbeddableTextBox", "act": "value", "val": "000", "dt": 7574}
+{"t": "2026-11-19T10:21:41.5838441-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 107}
+{"t": "2026-11-19T10:21:41.8750082-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcProduct_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 291}
+{"t": "2026-11-19T10:21:52.7845077-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 10909}
+{"t": "2026-11-19T10:21:59.7430775-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "Work", "aid": "pnlWork", "act": "focus", "dt": 6958}
+{"t": "2026-11-19T10:22:41.0965745-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 41353}
+{"t": "2026-11-19T10:22:41.6637469-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 567}
+{"t": "2026-11-19T10:22:45.172187-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 3508}
+{"t": "2026-11-19T10:22:45.2459461-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 73}
+{"t": "2026-11-19T10:22:53.6161888-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "open", "dt": 8370}
+{"t": "2026-11-19T10:22:55.6355002-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "open", "dt": 2019}
+{"t": "2026-11-19T10:22:57.5113829-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "MenuItem", "name": "Price Book Report", "aid": "", "act": "invoke", "dt": 1875, "how": "menu"}
+{"t": "2026-11-19T10:22:57.8309188-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "close", "dt": 319}
+{"t": "2026-11-19T10:22:57.831105-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "foreground", "dt": 0}
+{"t": "2026-11-19T10:22:57.8945329-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "close", "dt": 63}
+{"t": "2026-11-19T10:22:58.5051761-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "open", "dt": 610}
+{"t": "2026-11-19T10:23:39.8856042-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 41380}
+{"t": "2026-11-19T10:23:40.7675125-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 881}
+{"t": "2026-11-19T10:23:41.4299363-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 662}
+{"t": "2026-11-19T10:24:09.5496923-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 28119}
+{"t": "2026-11-19T10:25:31.0946901-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 81544}
+{"t": "2026-11-19T10:25:44.6242533-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "foreground", "dt": 13529}
+{"t": "2026-11-19T10:26:07.6922575-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 23068}
+{"t": "2026-11-19T10:26:12.2498617-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "foreground", "dt": 4557}
+{"t": "2026-11-19T10:31:59.469238-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 347219}
+{"t": "2026-11-19T10:31:59.5542809-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "close", "dt": 85}
+{"t": "2026-11-19T10:32:02.7680785-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 3213}
+{"t": "2026-11-19T10:32:03.3332498-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 565}
+{"t": "2026-11-19T10:32:07.761266-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 4428}
+{"t": "2026-11-19T10:32:08.0553788-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 294}
+{"t": "2026-11-19T10:32:12.7244905-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 4669}
+{"t": "2026-11-19T10:32:13.3330068-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 608}
+{"t": "2026-11-19T10:32:13.3330248-05:00", "win": "Close?", "ct": "Button", "name": "OK", "aid": "", "act": "invoke", "dt": 0, "how": "inferred"}
+{"t": "2026-11-19T10:32:16.9890118-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 3655}
+{"t": "2026-11-19T10:32:17.2724244-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 283}
+{"t": "2026-11-19T10:32:17.2886256-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 16}
+{"t": "2026-11-19T10:33:33.5070887-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 76218}
+{"t": "2026-11-19T10:33:37.0537909-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcCustomer_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 3546, "by": "app"}
+{"t": "2026-11-19T10:33:43.2960509-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 6242}
+{"t": "2026-11-19T10:33:45.1210364-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "10", "dt": 1824, "by": "app"}
+{"t": "2026-11-19T10:33:46.7818742-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 1660, "by": "app"}
+{"t": "2026-11-19T10:33:52.5962864-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "5", "dt": 5814}
+{"t": "2026-11-19T10:33:57.5398955-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "20", "dt": 4943}
+{"t": "2026-11-19T10:34:10.4186968-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "1", "dt": 12878}
+{"t": "2026-11-19T10:34:10.6362098-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 217}
+{"t": "2026-11-19T10:34:11.0956963-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "10", "dt": 459}
+{"t": "2026-11-19T10:34:13.0253062-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "_EmbeddableTextBox", "act": "value", "val": "1000000001", "dt": 1929}
+{"t": "2026-11-19T10:34:13.8632168-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "1", "dt": 837}
+{"t": "2026-11-19T10:34:20.0000151-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "gridLIs_EmbeddableTextBox", "act": "value", "val": "12", "dt": 6136}
+{"t": "2026-11-19T10:35:01.7542926-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 41754}
+{"t": "2026-11-19T10:35:02.3667036-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 612}
+{"t": "2026-11-19T10:35:06.9618496-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 4595}
+{"t": "2026-11-19T10:35:07.2576337-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 295}
+{"t": "2026-11-19T10:35:07.2825822-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 24}
+{"t": "2026-11-19T10:35:21.6054945-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 14322}
+{"t": "2026-11-19T10:35:21.8937916-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 288}
+{"t": "2026-11-19T10:35:22.6177672-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Edit", "name": "", "aid": "srcVendor_EmbeddableTextBox", "act": "value", "val": "00", "dt": 723, "by": "app"}
+{"t": "2026-11-19T10:35:22.6700774-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 52}
+{"t": "2026-11-19T10:35:23.2173745-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Edit", "name": "", "aid": "srcVendor_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 547, "by": "app"}
+{"t": "2026-11-19T10:35:58.5614937-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 35344}
+{"t": "2026-11-19T10:35:59.259582-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 698}
+{"t": "2026-11-19T10:35:59.2766085-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 17}
+{"t": "2026-11-19T10:35:59.380331-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 103}
+{"t": "2026-11-19T10:36:12.4296974-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "foreground", "dt": 13049}
+{"t": "2026-11-19T10:36:13.0320335-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "open", "dt": 602}
+{"t": "2026-11-19T10:36:15.9878314-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 2955}
+{"t": "2026-11-19T10:36:16.1176259-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 129}
+{"t": "2026-11-19T10:36:16.1390137-05:00", "win": "Close?", "ct": "Window", "name": "Close?", "aid": "", "act": "close", "dt": 21}
+{"t": "2026-11-19T10:36:27.301064-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 11162}
+{"t": "2026-11-19T10:36:29.0650062-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcCustomerID_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 1763, "by": "app"}
+{"t": "2026-11-19T10:36:40.6041757-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 11539}
+{"t": "2026-11-19T10:37:11.6780593-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 31073}
+{"t": "2026-11-19T10:37:23.5293065-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "open", "dt": 11851}
+{"t": "2026-11-19T10:37:24.8548728-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "open", "dt": 1325}
+{"t": "2026-11-19T10:37:25.653245-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "MenuItem", "name": "Price Matrix", "aid": "", "act": "invoke", "dt": 798, "how": "menu"}
+{"t": "2026-11-19T10:37:25.6543034-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "close", "dt": 1}
+{"t": "2026-11-19T10:37:26.1130042-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "close", "dt": 458}
+{"t": "2026-11-19T10:37:34.0728781-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "open", "dt": 7959}
+{"t": "2026-11-19T10:37:35.2380258-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcProduct_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 1165}
+{"t": "2026-11-19T10:37:46.2438349-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 11005}
+{"t": "2026-11-19T10:37:46.2438494-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Button", "name": "Exit", "aid": "", "act": "invoke", "dt": 0, "how": "inferred"}
+{"t": "2026-11-19T10:37:55.0437133-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 8799}
+{"t": "2026-11-19T10:38:06.7944227-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "open", "dt": 11750}
+{"t": "2026-11-19T10:38:08.1243112-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "open", "dt": 1329}
+{"t": "2026-11-19T10:38:08.9741162-05:00", "win": "&Pricing - 1", "ct": "Window", "name": "&Pricing - 1", "aid": "", "act": "close", "dt": 849}
+{"t": "2026-11-19T10:38:08.9749013-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "MenuItem", "name": "Price Book Report", "aid": "", "act": "invoke", "dt": 0, "how": "menu"}
+{"t": "2026-11-19T10:38:09.1332686-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "foreground", "dt": 158}
+{"t": "2026-11-19T10:38:09.402354-05:00", "win": "&Sales - 0", "ct": "Window", "name": "&Sales - 0", "aid": "", "act": "close", "dt": 269}
+{"t": "2026-11-19T10:38:10.2413746-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "open", "dt": 839}
+{"t": "2026-11-19T10:38:15.9483071-05:00", "win": "No Selection Specified", "ct": "Window", "name": "No Selection Specified", "aid": "", "act": "foreground", "dt": 5706}
+{"t": "2026-11-19T10:38:16.6282145-05:00", "win": "No Selection Specified", "ct": "Window", "name": "No Selection Specified", "aid": "", "act": "open", "dt": 679}
+{"t": "2026-11-19T10:38:25.77466-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "foreground", "dt": 9146}
+{"t": "2026-11-19T10:38:25.8334173-05:00", "win": "No Selection Specified", "ct": "Window", "name": "No Selection Specified", "aid": "", "act": "close", "dt": 58}
+{"t": "2026-11-19T10:38:34.8038866-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 8970}
+{"t": "2026-11-19T10:38:34.8840502-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 80}
+{"t": "2026-11-19T10:38:34.8919765-05:00", "win": "Product Selection Criteria - PRICE BOOK REPORT", "ct": "Window", "name": "Product Selection Criteria - PRICE BOOK REPORT", "aid": "", "act": "close", "dt": 7}
+{"t": "2026-11-19T10:38:53.0330811-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 18141}
+{"t": "2026-11-19T10:38:54.3168266-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcFilter_EmbeddableTextBox", "act": "value", "val": "100EX", "dt": 1283, "by": "app"}
+{"t": "2026-11-19T10:39:28.8238437-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 34507}
+{"t": "2026-11-19T10:39:47.6486923-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 18824}
+{"t": "2026-11-19T10:39:50.9729076-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Edit", "name": "", "aid": "srcMasterSearch_EmbeddableTextBox", "act": "value", "val": "0000001", "dt": 3324, "by": "app"}
+{"t": "2026-11-19T10:40:11.496802-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 20523}
+{"t": "2026-11-19T10:40:29.2556015-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 17758}
+{"t": "2026-11-19T10:40:29.4383317-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "foreground", "dt": 182}
+{"t": "2026-11-19T10:40:31.0561172-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "open", "dt": 1617}
+{"t": "2026-11-19T10:40:32.4315332-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Edit", "name": "", "aid": "srcMasterSearch_EmbeddableTextBox", "act": "value", "val": "00001", "dt": 1375, "by": "app"}
+{"t": "2026-11-19T10:41:30.3088167-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 57877}
+{"t": "2026-11-19T10:41:30.4955744-05:00", "win": "Vendor - 00001 \"ACME\" Internal Notes", "ct": "Window", "name": "Vendor - 00001 \"ACME\" Internal Notes", "aid": "", "act": "close", "dt": 186}
+{"t": "2026-11-19T10:41:39.3812945-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 8885}
+{"t": "2026-11-19T10:41:51.2415039-05:00", "win": "Advanced Demand Forecasting and Purchasing", "ct": "Window", "name": "Advanced Demand Forecasting and Purchasing", "aid": "", "act": "foreground", "dt": 11860}
+{"t": "2026-11-19T10:41:51.5523322-05:00", "win": "", "ct": "Window", "name": "", "aid": "", "act": "close", "dt": 310}
+{"t": "2026-11-19T10:41:52.0855212-05:00", "win": "Advanced Demand Forecasting and Purchasing", "ct": "Window", "name": "Advanced Demand Forecasting and Purchasing", "aid": "", "act": "open", "dt": 533}
+{"t": "2026-11-19T10:41:56.3580657-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Window", "name": "DDI System Inform - Sample Co › Price Matrix Master", "aid": "", "act": "foreground", "dt": 4272}
+{"t": "2026-11-19T10:41:56.4383972-05:00", "win": "Advanced Demand Forecasting and Purchasing", "ct": "Window", "name": "Advanced Demand Forecasting and Purchasing", "aid": "", "act": "close", "dt": 80}
+{"t": "2026-11-19T10:42:33.2731826-05:00", "win": "DDI System Inform - Sample Co › Price Matrix Master", "ct": "Pane", "name": "197300", "aid": "197300", "act": "focus", "dt": 36834}
