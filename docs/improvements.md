@@ -62,6 +62,30 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.7: learning the logic like a trainee
+
+Asked for by the client: a watcher that learns a program the way a new person does next to an experienced user,
+useful on its own to fill gaps in a system that already exists.
+
+- **Who changed a value** (`by: app` in the events): a value that changes in a field without keyboard focus (or a
+  focused inner editor) was filled in by the program. These no longer count as typed and take no picture of their own.
+- **What fills what** (`LogicLearner`): the program filling a field within 3 seconds after the user typed, chose,
+  ticked or pressed something, reported once seen twice and after at least half of the times the cause happened.
+- **Calculations on screen**: every number the program fills in is tested against sums, differences, products,
+  ratios, percentages, discount and tax forms over the other numbers on that screen; the formula that keeps fitting
+  is reported with its fit count, a formula with exceptions becomes a question, a fill nothing explains too.
+- **Cause first**: a program that recalculates while the user types reports its total some milliseconds before the
+  typed value; such a fill is processed after the value that caused it (found in the live test).
+- **What each button leads to, hover tips** (help texts read when a tip shows, no mouse hook, never grid or list tips),
+  **menus as they open** (`menu` events), and **what nobody used** (buttons, tabs, fields, menu items).
+- **Questions I would ask an experienced user**, from what could not be explained.
+- `memory/logic.md` for people and `memory/logic.json` for a program or an AI; both are in the export.
+- Learn state version 2: an older state is relearned from the events once.
+- Sample program: a Quote tab where the program fills the customer name from the code and calculates the line total.
+- Live test (19 November): Line total = Quantity × Unit price × (1 − Discount % / 100), seen 5× of 5; typing
+  Customer code fills Customer name, seen 3× of 3; the order number Post assigns was seen as filled by the program.
+- Tests: `LogicTests` (6). 76 tests in all. Not proven live: hover tips (the test cannot hover without moving the mouse).
+
 ## Version 0.6: setup for an office user, not IT
 
 Principle: the program decides, the user only confirms. Every default is the "collect everything that is

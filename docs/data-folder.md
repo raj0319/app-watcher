@@ -16,12 +16,13 @@ another program is in front. After a merge from another PC the file is `<yyyy-MM
 | `ct` | control type from UI Automation (Button, Edit, ComboBox, MenuItem, Document, Window, ...) |
 | `name` | the control's label: its own Name, else the text left of or above it, else its cleaned AutomationId |
 | `aid` | the control's AutomationId, when the app sets one (raw) |
-| `act` | `focus`, `open`, `close`, `invoke` (button or menu pressed), `select`, `value` (a field changed), `foreground`, `dialog` (a message window appeared; `val` holds its text), `dropdown` (a suggestion list opened while typing into `name`; `val` is the text typed so far, `items` the suggestions), `result` (what a grid showed right after the action in `name`; `val` is the grid, `items` the header line then the first rows, cells joined by " \| "), `start`, `stop` |
+| `act` | `focus`, `open`, `close`, `invoke` (button or menu pressed), `select`, `value` (a field changed), `foreground`, `dialog` (a message window appeared; `val` holds its text), `dropdown` (a suggestion list opened while typing into `name`; `val` is the text typed so far, `items` the suggestions), `result` (what a grid showed right after the action in `name`; `val` is the grid, `items` the header line then the first rows, cells joined by " \| "), `menu` (a menu opened: `name` is the menu, `items` what it offers), `hint` (a hover tip: `name` is the control under the pointer, `val` the tip's text), `start`, `stop` |
 | `how` | for `invoke`: how the press was seen: `uia` (Invoke event), `msaa` (older accessibility event or pressed state), `menu` (a menu closed after the item was highlighted), `inferred` (focus on a button followed within half a second by a window change), `toggle` (check box) |
 | `val` | the new value for `value` events (`***` for password-like fields, text cut at 500 characters), the message text for `dialog` events, `on`/`off` for toggles |
 | `dt` | milliseconds since the previous event |
 | `fx` | the effects file written for this event, when there is one |
-| `items` | for `dropdown` and `result` events: the suggestions, or the grid's header and first rows |
+| `items` | for `dropdown`, `result` and `menu` events: the suggestions, the grid's header and first rows, or the menu's items |
+| `by` | for `value` events: `app` when the program filled the value in itself (the field did not have keyboard focus: a total recalculated, a name looked up); absent when the user typed it |
 
 The `start` event's `val` holds hashes of the Windows user and machine names (`user:… machine:… version:…`),
 never the names, so a merged memory can count users and PCs. Typing is coalesced: only the final value of
@@ -82,9 +83,11 @@ can be learned from this app (toolkit, backends, data sources), the same text as
 
 ## memory/
 
-Written by the learner (tray: Update what I learned; nightly; one hour after the first start; or `AppWatcher.exe --learn`). Six documents
-(`data-model.md`, `screens.md`, `rules.md`, `flows.md`, `architecture.md`, `health.md`) plus
-`changelog.md`, every line with a confidence tag and an evidence pointer. `architecture-reviewed.md`
+Written by the learner (tray: Update what I learned; nightly; one hour after the first start; or `AppWatcher.exe --learn`). Seven documents
+(`data-model.md`, `screens.md`, `rules.md`, `flows.md`, `architecture.md`, `health.md`, `logic.md`), `logic.json`
+(the same logic for a program or an AI: per screen the fields typed, what the program fills in and after what,
+the calculations with their fit counts, what each button leads to, hover tips, rules, tables written, what nobody
+used; plus the questions to ask), and `changelog.md`, every line with a confidence tag and an evidence pointer. `architecture-reviewed.md`
 is added by the analyze skill or by the optional API/local analysis. No raw values typed by users
 appear in this folder; window titles have their quoted parts masked.
 

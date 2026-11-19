@@ -25,7 +25,9 @@ structure, never proved) and names its evidence file.
    `AppWatcher.exe --learn` (it lives in `%LOCALAPPDATA%\AppWatcher\` after install, or in `publish\`).
    If the exe is not found, say so once and continue with what is there.
 3. **Read, in this order:** `memory/architecture.md`, `memory/data-model.md`, `memory/screens.md`,
-   `memory/rules.md`, `memory/flows.md`, `memory/health.md` (its "What the collector could not do" and
+   `memory/rules.md`, `memory/flows.md`, `memory/logic.md` (what fills what, on-screen calculations, what
+   buttons lead to, what nobody used, and the trainee's open questions: answer the ones the evidence can),
+   `memory/health.md` (its "What the collector could not do" and
    "What this app lets the watcher learn" sections say what is missing and why), `memory/changelog.md`,
    and `expectations.md` in the data folder.
 4. **Check the weak lines.** For every finding tagged `inferred`, `candidate` or `seen 1×` that matters

@@ -116,11 +116,11 @@ public class MoreLearnerTests
 
         var result = Learner.Learn(input);
         var files = MemoryWriter.Render(result);
-        Assert.Equal(6, files.Count);
+        Assert.Equal(8, files.Count); // six documents plus logic.md and logic.json
         foreach (var (name, text) in files)
         {
             Assert.DoesNotContain("Secret Person", text);
-            Assert.True(text.Contains("seen ") || text.Contains("inferred"), name + " has no confidence tag");
+            if (name.EndsWith(".md")) Assert.True(text.Contains("seen ") || text.Contains("inferred"), name + " has no confidence tag"); // logic.json carries counts as numbers
         }
         Assert.Contains("New Customer › Name (candidate)", files["data-model.md"]); // one observation is a candidate, not seen
         Assert.Contains("effects/fx.json", files["screens.md"]);
@@ -129,7 +129,7 @@ public class MoreLearnerTests
         try
         {
             var changes = MemoryWriter.Write(dir, result);
-            Assert.Equal(6, changes.Count);
+            Assert.Equal(8, changes.Count);
             Assert.True(File.Exists(Path.Combine(dir, "changelog.md")));
             var again = MemoryWriter.Write(dir, result);
             Assert.Empty(again);

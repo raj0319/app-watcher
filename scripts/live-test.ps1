@@ -109,7 +109,16 @@ function SetVal($parent, [string]$automationId, [string]$value) {
 function Tab($parent, [string]$name) {
     # real ERPs open tab documents from a menu; the sample app has View > <tab>. (WinForms hides tab items from a
     # second UIA client while an event subscriber is attached, so selecting the TabItem directly is not reliable.)
-    Menu $parent "View" $name
+    # When the menu cannot be driven, a TCM_SETCURFOCUS posted to the tab strip selects the tab (scoped to that window).
+    try { Menu $parent "View" $name }
+    catch {
+        $index = @{ "Customer Master" = 0; "Orders" = 1; "Quote" = 2 }[$name]
+        if ($null -eq $index) { throw }
+        $strip = Find $parent "tabWorkspace"
+        [LiveTest.Msg]::PostMessage([System.IntPtr]$strip.Current.NativeWindowHandle, 0x1330, [System.IntPtr]$index, [System.IntPtr]::Zero) | Out-Null
+        Start-Sleep -Milliseconds $SettleMs
+        Write-Host "   (menu View > $name not found; selected the tab through the tab strip)"
+    }
 }
 function Menu($parent, [string]$top, [string]$itemName) {
     $m = $null
@@ -211,6 +220,13 @@ Start-Sleep -Milliseconds 2000
 try { SetVal $main "neAmount" "40" } catch { Write-Host "   step failed: SetVal $main 'neAmount' '40' -> $($_.Exception.Message)" }
 try { Act $main "btnPost" } catch { Write-Host "   step failed: Act $main 'btnPost' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 2000
+# the Quote tab: the program fills the customer name and calculates the line total (what the logic report should explain)
+try { Tab $main "Quote" } catch { Write-Host "   step failed: Tab $main 'Quote' -> $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 800
+foreach ($step in @(@("txtQuoteCustomer", "ZZTEST-CUS-001"), @("txtDiscount", "10"), @("txtPrice", "12.50"), @("txtQty", "4"), @("txtQty", "3"),
+                    @("txtPrice", "20"), @("txtQuoteCustomer", "ZZTEST-CUS-002"), @("txtDiscount", "5"), @("txtQuoteCustomer", "ZZTEST-NOBODY"), @("txtQty", "7"))) {
+    try { SetVal $main $step[0] $step[1]; Start-Sleep -Milliseconds 500 } catch { Write-Host "   step failed: SetVal $main '$($step[0])' -> $($_.Exception.Message)" }
+}
 try { Menu $main "Help" "About" } catch { Write-Host "   step failed: Menu $main 'Help' 'About' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 2500
 try { Tab $main "Customer Master" } catch { Write-Host "   step failed: Tab $main 'Customer Master' -> $($_.Exception.Message)" }
@@ -249,5 +265,7 @@ Write-Host "   memory files:"
 Get-ChildItem (Join-Path $data "memory") -Filter *.md | ForEach-Object { Write-Host ("     {0} ({1} lines)" -f $_.Name, (Get-Content $_.FullName).Count) }
 Write-Host "   first part of health.md:"
 Get-Content (Join-Path $data "memory\health.md") -TotalCount 14 | ForEach-Object { Write-Host ("     " + $_) }
+Write-Host "   logic.md (what a trainee would know):"
+Get-Content (Join-Path $data "memory\logic.md") -Encoding UTF8 | Where-Object { $_ -match '^## |fills|=|opens|Not used|nobody|\?' } | Select-Object -First 45 | ForEach-Object { Write-Host ("     " + $_) }
 Write-Host ("   pictures: {0}, OCR text files: {1}" -f (Get-ChildItem (Join-Path $data "screens\shots") -Recurse -Filter *.png -ErrorAction SilentlyContinue).Count, (Get-ChildItem (Join-Path $data "screens\shots") -Recurse -Filter *.png.txt -ErrorAction SilentlyContinue).Count)
 Write-Host ("   data folder: {0}" -f $data)

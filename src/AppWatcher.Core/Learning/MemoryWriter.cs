@@ -6,7 +6,7 @@ namespace AppWatcher.Core.Learning;
 /// <summary>Writes memory/*.md from a LearnResult and keeps changelog.md. Memory files never contain raw data values.</summary>
 public static class MemoryWriter
 {
-    public static readonly string[] Files = { "data-model.md", "screens.md", "rules.md", "flows.md", "architecture.md", "health.md" };
+    public static readonly string[] Files = { "data-model.md", "screens.md", "rules.md", "flows.md", "architecture.md", "health.md", "logic.md", "logic.json" };
 
     public static Dictionary<string, string> Render(LearnResult r) => new()
     {
@@ -16,6 +16,8 @@ public static class MemoryWriter
         ["flows.md"] = Flows(r),
         ["architecture.md"] = Architecture(r),
         ["health.md"] = Health(r),
+        ["logic.md"] = LogicWriter.Markdown(r),
+        ["logic.json"] = LogicWriter.Json(r),
     };
 
     public static List<string> Write(string memoryDir, LearnResult r)

@@ -29,8 +29,10 @@ internal sealed class RawEvent
     /// <summary>Set for window-open events: the dumped control tree.</summary>
     public ScreenRecord? Screen;
     public bool IsDialog;
-    /// <summary>Dropdown suggestions or grid rows.</summary>
+    /// <summary>Dropdown suggestions, grid rows, or the items of a menu that opened.</summary>
     public List<string>? Items;
+    /// <summary>ValueBy.App when the program changed the value itself.</summary>
+    public string? By;
 }
 
 /// <summary>
@@ -364,7 +366,8 @@ internal sealed class UiaCollector : IDisposable
         var title = Win32.WindowText(hwnd);
         if (!Win32.IsWindowVisible(hwnd)) return;
         var cls = Win32.ClassName(hwnd);
-        if (cls is "tooltips_class32" or "IME" or "MSCTFIME UI" or "Shell_TrayWnd") return;
+        if (cls is "tooltips_class32" || cls.Contains("ToolTip", StringComparison.OrdinalIgnoreCase)) { OnTooltip(hwnd); return; }
+        if (cls is "IME" or "MSCTFIME UI" or "Shell_TrayWnd") return;
         if (cls == "#32768" || cls.Contains("ToolTip", StringComparison.OrdinalIgnoreCase)) { if (cls == "#32768") { lock (_gate) _menuPopups.Add(hwnd); _menuOpenedAt = DateTime.Now; } return; }
         if (Ignored(title)) return;
         var excluded = Excluded(title);
@@ -425,6 +428,10 @@ internal sealed class UiaCollector : IDisposable
                     {
                         lock (_gate) _menuPopups.Add(hwnd);
                         _menuOpenedAt = DateTime.Now;
+                        // what the menu offers, even if nothing is chosen: shows the screens nobody opened
+                        var menuItems = rec.Controls.Where(c => c.Type == "MenuItem" && c.Name.Trim().Length > 0).Select(c => c.Name.Trim()).Distinct().Take(60).ToList();
+                        if (menuItems.Count > 0 && _inFront)
+                            Emit(new RawEvent { Act = Acts.Menu, Ct = "Menu", Name = menuPath ?? "", Items = menuItems, Hwnd = hwnd, WindowTitle = CurrentTitle });
                         _knownWindows.Remove(hwnd);
                         return;
                     }
@@ -591,11 +598,77 @@ internal sealed class UiaCollector : IDisposable
             var r = Describe(el, Acts.Value);
             var v = newValue as string ?? newValue?.ToString();
             r.Val = Masking.ForEvent(v, r.Name, r.Aid, r.IsPassword);
+            if (!ChangedByUser(el, r))
+            {
+                // a total recalculated, a name looked up from a code: the program filled it in
+                r.By = ValueBy.App;
+                _status.ValuesFilled++;
+                Emit(r);
+                return;
+            }
             _status.ValuesTyped++;
             lock (_gate) { _lastTyped[r.Aid.Length > 0 ? r.Aid : r.Name] = r.Val ?? ""; if (_lastField.name.Length == 0 || _lastField.aid != r.Aid) _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now); }
             Emit(r);
         }
         catch { }
+    }
+
+    /// <summary>
+    /// True when the value changed in the field the user is in: the last focused field, the element with keyboard
+    /// focus, or a field whose focused inner editor sits inside it (Infragistics, DevExpress editors).
+    /// </summary>
+    private bool ChangedByUser(AutomationElement el, RawEvent r)
+    {
+        (string name, string aid, string ct, DateTime t) lf;
+        lock (_gate) lf = _lastField;
+        if (lf.name.Length + lf.aid.Length > 0 && (r.Aid.Length > 0 ? lf.aid == r.Aid : lf.name == r.Name)) return true;
+        try { if (el.Properties.HasKeyboardFocus.ValueOrDefault) return true; } catch { return true; }
+        try
+        {
+            var focused = _automation.FocusedElement();
+            if (focused is null) return true;
+            var a = el.BoundingRectangle; var b = focused.BoundingRectangle;
+            if (a.IsEmpty || b.IsEmpty) return false;
+            return a.Contains(b) || b.Contains(a);
+        }
+        catch { return true; }
+    }
+
+    private (string key, DateTime t) _lastHint;
+
+    /// <summary>
+    /// A hover tip of the watched program: its text and the control under the pointer (read once, when the tip shows;
+    /// no mouse hook). Only for controls whose tips are help texts (buttons, menu items, fields), never grid cells or
+    /// list rows, whose tips show data.
+    /// </summary>
+    private void OnTooltip(IntPtr hwnd)
+    {
+        if (!_inFront) return;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                Thread.Sleep(150); // the tip's text is set as it shows
+                if (!Win32.IsWindowVisible(hwnd)) return;
+                var text = Win32.WindowText(hwnd).Trim();
+                if (text.Length == 0) text = Msaa.FromEvent(hwnd, Win32.OBJID_CLIENT, 0)?.Name?.Trim() ?? "";
+                if (text.Length == 0 || text.Length > 300) return;
+                var el = _automation.FromPoint(System.Windows.Forms.Cursor.Position);
+                if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return;
+                var r = Describe(el, Acts.Hint);
+                if (r.Ct is not ("Button" or "SplitButton" or "MenuItem" or "CheckBox" or "RadioButton" or "Edit" or "ComboBox" or "Spinner" or "TabItem" or "Hyperlink" or "Image" or "Text")) return;
+                var key = r.Ct + "\u0001" + r.Name + "\u0001" + text;
+                lock (_gate)
+                {
+                    if (_lastHint.key == key && (DateTime.Now - _lastHint.t).TotalSeconds < 30) return;
+                    _lastHint = (key, DateTime.Now);
+                }
+                r.Val = Masking.ForEvent(text, r.Name, r.Aid, r.IsPassword);
+                r.WindowTitle = CurrentTitle;
+                Emit(r);
+            }
+            catch { }
+        });
     }
 
     private void OnToggleChanged(AutomationElement el, PropertyId prop, object newValue)

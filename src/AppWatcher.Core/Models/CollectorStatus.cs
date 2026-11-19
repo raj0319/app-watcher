@@ -26,6 +26,8 @@ public sealed class CollectorStatus
     public int Toggles { get; set; }
     public int Dialogs { get; set; }
     public int ValuesTyped { get; set; }
+    /// <summary>Values the program filled in itself (a calculated total, a name looked up from a code).</summary>
+    public int ValuesFilled { get; set; }
     public int Dropdowns { get; set; }
     public int Results { get; set; }
     public int Pictures { get; set; }

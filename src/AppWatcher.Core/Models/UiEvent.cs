@@ -24,6 +24,8 @@ public sealed class UiEvent
     [JsonPropertyName("items")] public List<string>? Items { get; set; }
     /// <summary>Picture of the screen state right after this event, relative to the screens folder ("shots/&lt;screen&gt;/03-after-press-save.png").</summary>
     [JsonPropertyName("shot")] public string? Shot { get; set; }
+    /// <summary>For value events: "app" when the program filled the value in itself (the field did not have keyboard focus); null when the user typed it.</summary>
+    [JsonPropertyName("by")] public string? By { get; set; }
 
     /// <summary>"events/2026-01-01.jsonl#L12" - set by the reader, never serialized.</summary>
     [JsonIgnore] public string Source { get; set; } = "";
@@ -54,8 +56,18 @@ public static class Acts
     public const string Dropdown = "dropdown";
     /// <summary>A grid's content right after an action: Name = the action, Val = grid name, Items = header and first rows.</summary>
     public const string Result = "result";
+    /// <summary>A menu opened: Name = the menu it belongs to (when known), Items = its items. Shows what exists even if nobody chooses it.</summary>
+    public const string Menu = "menu";
+    /// <summary>A hover tip the program showed: Name = the control under the pointer, Val = the tip's text.</summary>
+    public const string Hint = "hint";
     public const string Start = "start";
     public const string Stop = "stop";
+}
+
+/// <summary>Who changed a value (UiEvent.By).</summary>
+public static class ValueBy
+{
+    public const string App = "app";
 }
 
 /// <summary>How an invoke event was observed (UiEvent.How).</summary>

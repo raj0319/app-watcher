@@ -40,7 +40,9 @@ public sealed class SeqAcc
 public sealed class LearnState
 {
     public const string Sep = "\u0001";
-    public int Version { get; set; } = 1;
+    /// <summary>2: field connections, screen calculations, button leads, menus seen (a version-1 state is relearned from the events).</summary>
+    public const int CurrentVersion = 2;
+    public int Version { get; set; } = CurrentVersion;
     public DateTime? Watermark { get; set; }
     public HashSet<string> EffectFiles { get; set; } = new();
     public HashSet<string> SqlSources { get; set; } = new();
@@ -66,6 +68,20 @@ public sealed class LearnState
     public Dictionary<string, Evidence> Relations { get; set; } = new();
     public Dictionary<string, ScreenInfo> Screens { get; set; } = new();
     public Dictionary<string, SqlTableWrite> SqlWrites { get; set; } = new();
+    /// <summary>win, cause ("typed:X"), field the program filled right after it.</summary>
+    public Dictionary<string, Evidence> Fills { get; set; } = new();
+    /// <summary>win, cause: how often the user did it (typed, chose, pressed, ticked).</summary>
+    public Dictionary<string, int> Causes { get; set; } = new();
+    /// <summary>win, field: how often the program filled a number (or a copy) in that field.</summary>
+    public Dictionary<string, int> CalcTests { get; set; } = new();
+    /// <summary>win, field, formula: how often the formula gave the value shown.</summary>
+    public Dictionary<string, Evidence> CalcFits { get; set; } = new();
+    /// <summary>win, button, window or message it led to, "window" | "message".</summary>
+    public Dictionary<string, Evidence> Leads { get; set; } = new();
+    /// <summary>menu, item: menu items seen when a menu opened.</summary>
+    public Dictionary<string, Evidence> MenuSeen { get; set; } = new();
+    /// <summary>win, control, tip text: hover tips the program showed.</summary>
+    public Dictionary<string, Evidence> Hints { get; set; } = new();
     public int PressesSeen { get; set; }
     public int PressesInferred { get; set; }
     public int DialogsSeen { get; set; }
@@ -84,7 +100,7 @@ public sealed class LearnState
             if (File.Exists(path))
             {
                 var s = JsonSerializer.Deserialize<LearnState>(File.ReadAllText(path), Opts);
-                if (s is not null && s.Version == 1) return s;
+                if (s is not null && s.Version == CurrentVersion) return s;
             }
         }
         catch (Exception ex) { Log.Warn("learn state unreadable, starting fresh: " + ex.Message); }

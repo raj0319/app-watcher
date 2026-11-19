@@ -190,7 +190,7 @@ internal sealed class WatchService : IDisposable
         if (!inFront) return; // another program is in front: record nothing
         _lastActivity = DateTime.Now;
 
-        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How };
+        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How, By = raw.By };
         if (raw.Act == Acts.Value)
         {
             // one event per typed value: committed when focus moves on or after the quiet time
@@ -199,6 +199,7 @@ internal sealed class WatchService : IDisposable
         }
         FlushPending(all: true); // focus left the control (or anything else happened): commit pending values first
         if (raw.Act == Acts.Dropdown) { ev.Items = raw.Items; _status.Dropdowns = Math.Max(_status.Dropdowns, 0); }
+        if (raw.Act == Acts.Menu) ev.Items = raw.Items;
         Write(ev);
         if (raw.Act == Acts.Invoke) _effects.OnInvoke(ev);
         // a new state of the screen may follow: picture it (and read what a grid shows) once the app has settled
@@ -218,7 +219,8 @@ internal sealed class WatchService : IDisposable
         foreach (var e in _debounce.Flush(DateTime.Now, all))
         {
             Write(e);
-            ScheduleState("after-type-" + e.FieldKey, $"type {e.FieldKey}", readGrids: true);
+            // a value the program filled in follows the user's own action, whose picture already shows it
+            if (e.By != ValueBy.App) ScheduleState("after-type-" + e.FieldKey, $"type {e.FieldKey}", readGrids: true);
         }
     }
 

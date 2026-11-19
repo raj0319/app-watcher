@@ -15,7 +15,7 @@ Answer questions about the watched application using only what App Watcher has a
 ## What you may read
 
 - `memory/*.md` in the app's data folder: `architecture.md`, `data-model.md`, `screens.md`, `rules.md`,
-  `flows.md`, `health.md`, `changelog.md`, and `architecture-reviewed.md` when it exists.
+  `flows.md`, `logic.md` (what fills what, calculations, what buttons lead to, open questions), `health.md`, `changelog.md`, and `architecture-reviewed.md` when it exists.
 - The newest `export/<date>/docs/raw/` folder (screens, tasks, probes, data-model) when a question needs
   per-screen detail the memory files do not have.
 

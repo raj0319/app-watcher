@@ -173,6 +173,7 @@ public static class Learner
             FlowLearner.Accumulate(s, session, sessionWindows);
             ValidationRuleLearner.Accumulate(s, session);
             AccumulateScreens(s, session);
+            LogicLearner.Accumulate(s, session);
         }
         foreach (var fx in effects)
         {
@@ -212,7 +213,7 @@ public static class Learner
             if (e.Act == Acts.Dialog && (Titles.Key(e.Name) == key || e.Ct == "Window")) si.Dialogs++;
             if (e.Act is Acts.Open or Acts.Dialog && lastMenu is not null && (e.T - lastMenu.Value.t).TotalSeconds <= 5 && Titles.Key(e.Name) == key)
                 si.MenuPaths[lastMenu.Value.name] = si.MenuPaths.GetValueOrDefault(lastMenu.Value.name) + 1;
-            if (e.Act is Acts.Value or Acts.Select && !string.IsNullOrEmpty(e.Val))
+            if (e.Act is Acts.Value or Acts.Select && !string.IsNullOrEmpty(e.Val) && e.By != ValueBy.App)
             {
                 var f = e.FieldKey;
                 if (!si.FieldValues.TryGetValue(f, out var vals)) si.FieldValues[f] = vals = new List<string>();
@@ -272,6 +273,7 @@ public static class Learner
         r.SqlWrites = s.SqlWrites.Values.OrderBy(w => w.Table).ThenBy(w => w.Kind).ToList();
         r.Screens = DescribeScreens(s, input, sessionWindows, nav, r);
         r.Modules = BuildModules(r);
+        r.Logic = LogicLearner.Finalize(s, input, r);
         r.Health = Health(s, r, input);
         r.Expectations = Expectations(input, r);
 

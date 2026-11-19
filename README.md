@@ -11,7 +11,7 @@ the same state twice), and that can be switched off.
 ## What you get
 
 After a few days of normal work, the folder `C:\ProgramData\AppWatcher\data\<app-name>\memory\` holds
-six living documents, rewritten every night:
+seven living documents, rewritten every night:
 
 | File | What it says |
 |---|---|
@@ -20,6 +20,7 @@ six living documents, rewritten every night:
 | `rules.md` | validation messages (which field, which kind of value, which message), messages after a button or menu, calculated columns with the formula that fits and its exceptions, numbering sequences |
 | `flows.md` | status flows (for example open → paid → shipped) with rare and not-allowed transitions, user flows with the presses and typed fields on each step, and a directly-follows navigation graph (Mermaid, renders on GitHub) |
 | `architecture.md` | the toolkit and backends seen from the outside, modules (screens grouped by the tables they share) and an honest "seen vs inferred" count |
+| `logic.md` | what a trainee would know after sitting next to the users: per screen, how you get there, what people type, what the program fills in by itself ("typing Customer code fills Customer name"), the calculations it does on screen ("Line total = Quantity × Unit price × (1 − Discount % / 100)"), what each button leads to, the hover tips, the rules, what nobody used yet, and the questions to ask an experienced user. `logic.json` holds the same for a program or an AI |
 | `health.md` | events per day, presses seen, pictures and OCR pages, how many saves produced a data diff, how many fields are mapped, what the collector could not do, and what would improve accuracy |
 
 Every line carries a confidence: `seen 12×` means it was observed twelve times; `candidate` means fewer
@@ -144,6 +145,32 @@ collected** opens it.
   what to do next.
 - It never presses anything in the watched app: it only listens to events and reads. It cannot cause a
   "save changes?" prompt or any other dialog in the app.
+
+## Learning the logic like a trainee
+
+A new person learns a program by sitting next to someone who knows it: they watch which screen leads where,
+notice that a name appears by itself after a code is typed, work out how a total is calculated, read the
+messages, and write down what they still need to ask. App Watcher does the same, from the screen alone, so it
+works even when it cannot read the program's database:
+
+- **What fills what.** When the program changes a field by itself right after the user typed, chose, ticked or
+  pressed something, that is a connection. It is reported once it has happened at least twice and after at least
+  half of the times the cause happened, so a coincidence does not become a rule.
+- **Calculations on screen.** For every number the program fills in, it tries sums, differences, products,
+  ratios, percentages and the usual discount and tax forms over the other numbers on that screen, and counts which
+  formula keeps giving the number shown. A formula that fits most times but not always is listed with its
+  exceptions, and becomes a question.
+- **What each button leads to**: the window or message that appears right after it.
+- **Hover tips**: the help text the program shows when the pointer rests on a button, menu item or field (read once
+  when the tip appears, no mouse hook; never the tips of grid cells or lists, which show data).
+- **What nobody used**: buttons, tabs, fields and menu items it saw but nobody touched while it watched.
+- **Questions I would ask an experienced user**: calculations it could not explain, formulas with exceptions,
+  messages seen once, buttons and menu items nobody used.
+
+`memory\logic.md` is for people; `memory\logic.json` is the same for a program or an AI. **Use it to fill gaps in
+a system you already have**: compare each screen's connections, calculations and rules with what your system does,
+without building anything new. Like a trainee, it only learns what people show it: watch users in different roles
+(and merge their folders), or let the App Twin Kit explore the screens nobody opened.
 
 ## Profiles
 
@@ -368,6 +395,9 @@ Something like this can go on the notice board or in an e-mail:
   now and then; health.md shows how many came which way.
 - The learner finds simple formulas and plain rules. Anything cleverer is for the analyze skill and for people.
 - A rule is only as sure as its count. One observation is a hint, not a fact.
+- The logic it learns comes from what people do on screen: it finds connections and simple formulas (sums,
+  products, percentages, discounts), not every rule in the program's code. Like a trainee, it only learns the screens
+  it is shown; `logic.md` lists what it has not seen yet and the questions to ask.
 
 ## For developers
 

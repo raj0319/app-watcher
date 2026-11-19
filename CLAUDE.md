@@ -48,7 +48,7 @@ snapshots/before.json       the latest read-only snapshot of the app's data (tab
 collector-status.json       what the collector managed: dumps ok/failed, presses by path, dialogs, tab screens
 expectations.md             what can be learned from this app, in plain words
 memory/                     the living architecture written by the learner:
-  data-model.md  screens.md  rules.md  flows.md  architecture.md  health.md  changelog.md
+  data-model.md  screens.md  rules.md  flows.md  architecture.md  health.md  logic.md  logic.json  changelog.md
   learn-state.json          the learner's accumulated counters and watermark (incremental learning)
   architecture-reviewed.md  written by the analyze skill or by the optional API/local analysis
 export/<date>/              bundles in the App Twin Kit format plus events.xes, zipped
@@ -85,8 +85,9 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   `probes/*.md`, `data-model.md`, `memory/*.md`. The screen table columns are
   `| Depth | Type | Name | AutomationId | Position |`, same as the kit's `scripts/ui_tree.py`.
   The diff text format is the one printed by the kit's `scripts/snapshot_diff.py diff`.
-- The collector never installs a keyboard hook, never records while another program is in front, and never
-  invokes a control of the watched app. Keep it that way. Pictures: one per distinct screen, of the app's
+- The collector never installs a keyboard or mouse hook, never records while another program is in front, and never
+  invokes a control of the watched app. Hover tips are read once when the program shows one (the control under the
+  pointer at that moment), and only for buttons, menu items and fields, never grid or list tips, which show data. Keep it that way. Pictures: one per distinct screen, of the app's
   window only (PrintWindow), never the desktop, never a login or excluded window; the setting is in Settings, Simple.
 - The app never shows a file dialog or a message box on its own: the three-step first-run wizard, the tray
   menu, the password-protected settings window (whose program picker and data-source pickers the user opens
