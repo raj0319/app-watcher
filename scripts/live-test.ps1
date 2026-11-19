@@ -11,17 +11,23 @@
 param(
     [string]$Watcher = "",
     [string]$Sample = "",
-    [int]$SettleMs = 900
+    [int]$SettleMs = 900,
+    [switch]$InvokeButtons
 )
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-if ($Watcher -eq "") { $Watcher = Join-Path $root "src\AppWatcher\bin\Debug\net8.0-windows\win-x64\AppWatcher.exe" }
+if ($Watcher -eq "") {
+    # the newest debug build (the folder name follows the target framework, which changed for the OCR API)
+    $w = Get-ChildItem (Join-Path $root "src\AppWatcher\bin\Debug") -Recurse -Filter AppWatcher.exe -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($null -ne $w) { $Watcher = $w.FullName }
+}
 if ($Sample -eq "") { $Sample = Join-Path $root "tests\SampleApp\bin\Debug\net8.0-windows\SampleApp.exe" }
 if (-not (Test-Path $Watcher)) { throw "watcher not built: $Watcher" }
 if (-not (Test-Path $Sample)) { throw "sample app not built: $Sample (dotnet build tests\SampleApp)" }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName Microsoft.VisualBasic
+Add-Type -Namespace LiveTest -Name Msg -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint msg, System.IntPtr w, System.IntPtr l);'
 
 # the sample app is framework-dependent; when the SDK lives in the user profile the apphost needs DOTNET_ROOT
 if (-not $env:DOTNET_ROOT -and (Test-Path (Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"))) { $env:DOTNET_ROOT = Join-Path $env:USERPROFILE ".dotnet" }
@@ -43,6 +49,10 @@ Write-Host ("   toolkit: {0}, profile: {1}" -f $cfg.toolkit, $cfg.profile)
 # the sample app's JSON file is its database: add it as a data source so effects are captured
 $cfg.dataSources = @(@{ kind = "file"; path = (Join-Path (Split-Path $Sample) "sample-data.json"); label = "sample-data.json"; enabled = $true })
 $cfg.snapshot.afterDelayMs = 800
+# the automatic file-access detection asks Windows for administrator permission; an unattended test must not raise that prompt
+$cfg.autoDetectPending = $false
+Write-Host ("   recommended defaults: shots {0}, OCR {1}, mask titles {2}, tabs {3}, MSAA {4}, press inference {5}, keep {6} days, learn at {7}" -f `
+    $cfg.privacy.screenshotMode, $cfg.privacy.readTextFromPictures, $cfg.privacy.maskTitles, $cfg.collector.tabDocuments, $cfg.collector.msaaFallback, $cfg.collector.pressInference, $cfg.retentionDays, $cfg.learnAt)
 $cfg | ConvertTo-Json -Depth 10 | Set-Content $cfgPath -Encoding utf8
 
 Write-Host "2. start watcher (tray) and sample app"
@@ -77,9 +87,17 @@ function Find($parent, [string]$automationId) {
     throw "control not found: $automationId in [$($parent.Current.Name)] (ids: $($ids -join ', '))"
 }
 function Act($parent, [string]$automationId) {
+    # a press through the button's own window: a posted BM_CLICK (no global input, nothing waits on the click).
+    # A posted mouse down/up does not work: a WinForms button only completes a click while it holds the mouse capture.
+    # $InvokeButtons uses the UI Automation Invoke call instead, which skips the pressed state real clicks have.
     $e = Find $parent $automationId
-    $e.SetFocus(); Start-Sleep -Milliseconds 150
-    try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { if ($_.Exception.Message -notlike "*timed out*") { throw } }
+    $h = [System.IntPtr]$e.Current.NativeWindowHandle
+    if ($InvokeButtons -or $h -eq [System.IntPtr]::Zero) {
+        $e.SetFocus(); Start-Sleep -Milliseconds 150
+        try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { if ($_.Exception.Message -notlike "*timed out*") { throw } }
+    } else {
+        [LiveTest.Msg]::PostMessage($h, 0x00F5, [System.IntPtr]::Zero, [System.IntPtr]::Zero) | Out-Null   # BM_CLICK
+    }
     Start-Sleep -Milliseconds $SettleMs
 }
 function SetVal($parent, [string]$automationId, [string]$value) {
@@ -132,12 +150,23 @@ function MenuDetached($parent, [string]$top, [string]$itemName) {
     Start-Process -FilePath "powershell" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSScriptRoot\live-test-invoke.ps1`"", "-ProcessId", $app.Id, "-Name", "`"$itemName`"") -WindowStyle Hidden | Out-Null
     Start-Sleep -Milliseconds ($SettleMs * 2)
 }
+function PostClick($parent, [string]$automationId) {
+    # a button that opens a blocking window: a UIA Invoke would stay pending until that window closes, and while it is
+    # pending neither this script nor the watcher can read the new window. A posted BM_CLICK to that one button does not wait.
+    $e = Find $parent $automationId
+    $h = [System.IntPtr]$e.Current.NativeWindowHandle
+    if ($h -eq [System.IntPtr]::Zero) { throw "no window handle for $automationId" }
+    [LiveTest.Msg]::PostMessage($h, 0x00F5, [System.IntPtr]::Zero, [System.IntPtr]::Zero) | Out-Null
+    Start-Sleep -Milliseconds ($SettleMs * 2)
+}
 function Front() {
     # the watcher records only while the app is in front; bring it there the way a user would (activate its window)
     try { [Microsoft.VisualBasic.Interaction]::AppActivate($app.Id) } catch { }
     Start-Sleep -Milliseconds 400
 }
 
+$finished = $false
+try {
 Write-Host "3. drive the sample app"
 Front
 $login = $null
@@ -159,7 +188,8 @@ try { SetVal $main "txtCustomerCode" "ZZTEST-CUS-001" } catch { Write-Host "   s
 try { SetVal $main "txtCustomerName" "ZZTEST Customer One" } catch { Write-Host "   step failed: SetVal $main 'txtCustomerName' 'ZZTEST Customer One' -> $($_.Exception.Message)" }
 try { Act $main "btnSaveCustomer" } catch { Write-Host "   step failed: Act $main 'btnSaveCustomer' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 2000
-try { MenuDetached $main "File" "New Customer..." } catch { Write-Host "   step failed: Menu $main 'File' 'New Customer...' -> $($_.Exception.Message)" }
+Front
+try { PostClick $main "btnNewCustomer" } catch { Write-Host "   step failed: PostClick $main 'btnNewCustomer' -> $($_.Exception.Message)" }
 try { $dlg = Top "New Customer" } catch { Write-Host "   step failed: $_"; $dlg = $main }
 Front
 try { SetVal $dlg "txtNewCode" "ZZTEST-CUS-002" } catch { Write-Host "   step failed: SetVal $dlg 'txtNewCode' 'ZZTEST-CUS-002' -> $($_.Exception.Message)" }
@@ -188,14 +218,21 @@ Start-Sleep -Milliseconds 1500
 
 Write-Host "4. stop the sample app (killed: it is ours), learn, stop the watcher"
 Stop-Process -Id $app.Id -Force
-Start-Sleep -Milliseconds 1500
+Start-Sleep -Milliseconds 5000   # the watcher checks the process every 3 s and saves its status when it sees it exit
 $code = Run-Watcher @("--learn")
 Write-Host "   learn exit code $code"
 Run-Watcher @("--expect") | Out-Null
 Stop-Process -Id $watch.Id -Force
 
+$finished = $true
+} finally {
+    # a failed step must not leave the two programs this test started running
+    if (-not $finished) { foreach ($p in @($app, $watch)) { try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { } } }
+}
+
 Write-Host "5. results"
-$data = Join-Path $dataRoot "data\SampleApp"
+# the folder is named after the program's friendly name (the sample's product name)
+$data = (Get-ChildItem (Join-Path $dataRoot "data") -Directory | Select-Object -First 1).FullName
 $events = Get-ChildItem (Join-Path $data "events") -Filter *.jsonl | ForEach-Object { Get-Content $_.FullName } | ForEach-Object { $_ | ConvertFrom-Json }
 Write-Host ("   events: {0}" -f $events.Count)
 $events | Group-Object act | Sort-Object Count -Descending | ForEach-Object { Write-Host ("     {0,-11} {1}" -f $_.Name, $_.Count) }
@@ -210,4 +247,7 @@ Write-Host "   collector-status.json:"
 Get-Content (Join-Path $data "collector-status.json") | Write-Host
 Write-Host "   memory files:"
 Get-ChildItem (Join-Path $data "memory") -Filter *.md | ForEach-Object { Write-Host ("     {0} ({1} lines)" -f $_.Name, (Get-Content $_.FullName).Count) }
+Write-Host "   first part of health.md:"
+Get-Content (Join-Path $data "memory\health.md") -TotalCount 14 | ForEach-Object { Write-Host ("     " + $_) }
+Write-Host ("   pictures: {0}, OCR text files: {1}" -f (Get-ChildItem (Join-Path $data "screens\shots") -Recurse -Filter *.png -ErrorAction SilentlyContinue).Count, (Get-ChildItem (Join-Path $data "screens\shots") -Recurse -Filter *.png.txt -ErrorAction SilentlyContinue).Count)
 Write-Host ("   data folder: {0}" -f $data)

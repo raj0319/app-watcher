@@ -91,7 +91,25 @@ safe and local" choice.
   `memory/health.md` is written even if no learn ran, and the same words appear in Settings and in one notice
   ("First hour done: 12 screens and 140 actions recorded. ...").
 - `--setup <exe> <password> [profile]` uses the same defaults as the wizard.
-- Tests: `EasySetupTests` (defaults, dialog structure, the first-hour text, redirected output). 69 tests in all.
+- Tests: `EasySetupTests` (defaults, dialog structure, the first-hour text, redirected output). 70 tests in all.
+
+Live test on the sample program (19 November), and what it changed:
+
+- A window whose reading timed out once was never read again (no screen, picture or events while it stayed open).
+  Registration now retries twice while the window is still open.
+- The plain summary could say "0 pictures": a learn read the status file before the watcher had saved it. The tray
+  now saves the status before every learn, and reading the file retries when it meets a save.
+- The setup check said "Tables and rules: yes" for a plain data file it can only fingerprint. It now says "partly"
+  and names what would give the tables.
+- The .NET start-up files next to a program (`*.deps.json`, `*.runtimeconfig.json`) are no longer taken for data.
+- The Windows permission prompt for file-access detection no longer blocks the tray menu while it is open.
+- Press inference now measures from the moment a window appeared, and a data file written within 3 seconds of a
+  button getting focus counts as a press of that button.
+- Not proven: button presses in WinForms programs. WinForms raises no UI Automation Invoke event, and a click's
+  pressed state is often over before it can be read. A test cannot make a real mouse click on this PC (no global
+  input), and a posted click does not move focus, so the fallbacks can only be checked with a real user.
+- The test now opens the blocking New Customer window with a posted click (a UI Automation Invoke stays pending
+  until that window closes, and nothing can read the window meanwhile) and stops its own programs if a step fails.
 
 ## Version 0.5: OCR text layer and shortcut learning
 

@@ -56,6 +56,7 @@ internal sealed class WatchService : IDisposable
         _effects = new EffectCapture(_snapshots, config.Snapshot, config.EffectTriggers, _paths.Effects, _ => { Interlocked.Increment(ref _effectsWritten); _status.EffectsWritten++; },
             () => _uia.InFront ? _uia.CurrentTitle : "");
         _uia.InFrontChanged += inFront => { if (inFront) _effects.EnsureBeforeExists(); };
+        _effects.DataChanged += () => _uia.InferPressFromData();
         _processTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         _processTimer.Tick += (_, _) => CheckProcess();
         _idleTimer = new System.Windows.Forms.Timer { Interval = Math.Max(5, config.Snapshot.IdleSecondsBeforeSnapshot) * 1000 };

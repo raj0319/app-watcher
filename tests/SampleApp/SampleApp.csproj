@@ -7,5 +7,7 @@
     <RootNamespace>SampleApp</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+      <!-- its own name, not the repo-wide "App Watcher" -->
+    <Product>Sample ERP</Product>
   </PropertyGroup>
 </Project>

@@ -287,20 +287,32 @@ internal sealed class UiaCollector : IDisposable
     /// closed, and no press was recorded since: count it as a press of that button. The window check keeps the default
     /// button of a dialog that just opened, or a button that got focus back when a dialog closed, from counting.
     /// </summary>
-    private void InferPress(string why, string from)
+    private void InferPress(string why, string from, DateTime? at = null, int maxAgeMs = 600)
     {
         if (!_settings.PressInference) return;
         (string name, string aid, string ct, string win, DateTime t) a; (string name, DateTime t) p;
         lock (_gate) { a = _lastActionable; p = _lastPress; }
         if (a.name.Length == 0) return;
-        var age = (DateTime.Now - a.t).TotalMilliseconds;
-        if (age > 600) return;
+        // measured from when the window appeared (at), not from when its tree and picture were read, which takes longer
+        var age = ((at ?? DateTime.Now) - a.t).TotalMilliseconds;
+        if (age < -50 || age > maxAgeMs) return;
         if (from.Length > 0 && a.win.Length > 0 && Core.Learning.Titles.Key(a.win) != Core.Learning.Titles.Key(from)) return;
         if (p.t >= a.t.AddMilliseconds(-50)) return; // a real press was already recorded for this click
         lock (_gate) _lastActionable = ("", "", "", "", DateTime.MinValue);
         _status.PressesInferred++;
         Emit(new RawEvent { Act = Acts.Invoke, Ct = a.ct, Name = a.name, Aid = a.aid, How = PressHow.Inferred, WindowTitle = a.win.Length > 0 ? a.win : CurrentTitle });
         lock (_gate) _lastPress = (a.name, DateTime.Now);
+    }
+
+    /// <summary>
+    /// The watched program's data changed (a data file was written) shortly after a button got focus, and no press was
+    /// seen: a Save, Post or Delete-type click in a toolkit whose buttons announce nothing (WinForms raises no Invoke
+    /// event, and its pressed state is often over before it can be read).
+    /// </summary>
+    public void InferPressFromData()
+    {
+        if (!_inFront) return;
+        InferPress("data changed", from: "", maxAgeMs: 3000);
     }
 
     /// <summary>All press paths go through here so one click is one event whichever path saw it first.</summary>
@@ -356,6 +368,7 @@ internal sealed class UiaCollector : IDisposable
         if (cls == "#32768" || cls.Contains("ToolTip", StringComparison.OrdinalIgnoreCase)) { if (cls == "#32768") { lock (_gate) _menuPopups.Add(hwnd); _menuOpenedAt = DateTime.Now; } return; }
         if (Ignored(title)) return;
         var excluded = Excluded(title);
+        var appeared = DateTime.Now;
         _knownWindows[hwnd] = title;
         var handlers = new List<IDisposable>();
         _perWindow[hwnd] = handlers;
@@ -368,98 +381,111 @@ internal sealed class UiaCollector : IDisposable
         // UIA subscriptions scoped to this window's subtree only
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try
+            for (var attempt = 1; ; attempt++)
             {
-                var el = _automation.FromHandle(hwnd);
-                var lib = _automation.EventLibrary;
-                if (!excluded)
+                try
                 {
-                    var invoke = el.RegisterAutomationEvent(lib.Invoke.InvokedEvent, TreeScope.Subtree, (e, _) => OnElementEvent(e, Acts.Invoke, hwnd));
-                    var select = el.RegisterAutomationEvent(lib.SelectionItem.ElementSelectedEvent, TreeScope.Subtree, (e, _) => OnElementEvent(e, Acts.Select, hwnd));
-                    var value = el.RegisterPropertyChangedEvent(TreeScope.Subtree, OnValueChanged, _automation.PropertyLibrary.Value.Value);
-                    lock (handlers) { handlers.Add(invoke); handlers.Add(select); handlers.Add(value); }
-                    try
+                    var el = _automation.FromHandle(hwnd);
+                    var lib = _automation.EventLibrary;
+                    if (!excluded)
                     {
-                        var toggle = el.RegisterPropertyChangedEvent(TreeScope.Subtree, OnToggleChanged, _automation.PropertyLibrary.Toggle.ToggleState);
-                        lock (handlers) handlers.Add(toggle);
-                    }
-                    catch { }
-                    try
-                    {
-                        var menuOpened = el.RegisterAutomationEvent(lib.Element.MenuOpenedEvent, TreeScope.Subtree, (e, _) => _menuOpenedAt = DateTime.Now);
-                        var menuClosed = el.RegisterAutomationEvent(lib.Element.MenuClosedEvent, TreeScope.Subtree, (e, _) => MenuClosed());
-                        lock (handlers) { handlers.Add(menuOpened); handlers.Add(menuClosed); }
-                    }
-                    catch { }
-                    // Document controls (rich text, editors) report edits through the Text pattern instead of the Value property
-                    try
-                    {
-                        var text = el.RegisterAutomationEvent(lib.Text.TextChangedEvent, TreeScope.Subtree, (e, _) => OnTextChanged(e));
-                        lock (handlers) handlers.Add(text);
-                    }
-                    catch { /* not every provider supports it */ }
-                }
-
-                // dump the control tree once per window title (after a short delay so the window is populated)
-                Thread.Sleep(initial ? 50 : 400);
-                var rec = DumpTree(el, hwnd, title.Length > 0 ? title : Win32.WindowText(hwnd));
-                lock (_gate) { _rows[hwnd] = rec.Controls; _lastDump[hwnd] = DateTime.Now; }
-                // a popup menu that is an ordinary window (toolkit menus, WinForms drop-downs): no screen, just a menu-open marker
-                var menuish = rec.Controls.Any(c => c.Type is "Menu" or "MenuItem") && !rec.Controls.Any(c => c.Type is "Edit" or "DataGrid" or "Tab" or "Document");
-                if (title.Length == 0 && rec.Controls.Count > 0 && rec.Controls.Count <= 120 && menuish)
-                {
-                    lock (_gate) _menuPopups.Add(hwnd);
-                    _menuOpenedAt = DateTime.Now;
-                    _knownWindows.Remove(hwnd);
-                    return;
-                }
-                // a suggestion list (autocomplete, lookup) that opened while the user was typing: its items are the evidence
-                if (title.Length == 0 && _inFront)
-                {
-                    var items = rec.Controls.Where(c => c.Type is "ListItem" or "DataItem" or "TreeItem" && c.Name.Length > 0).Select(c => c.Name).ToList();
-                    (string name, string aid, string ct, DateTime t) field; string typed;
-                    lock (_gate) { field = _lastField; typed = _lastTyped.GetValueOrDefault(field.aid.Length > 0 ? field.aid : field.name, ""); }
-                    if (items.Count > 0 && field.name.Length + field.aid.Length > 0 && (DateTime.Now - field.t).TotalSeconds <= 8 && !rec.Controls.Any(c => c.Type is "MenuItem" or "Edit" or "Button"))
-                    {
-                        _status.Dropdowns++;
-                        var pwd = Masking.IsSensitiveName(field.name) || Masking.IsSensitiveName(field.aid);
-                        Emit(new RawEvent
+                        var invoke = el.RegisterAutomationEvent(lib.Invoke.InvokedEvent, TreeScope.Subtree, (e, _) => OnElementEvent(e, Acts.Invoke, hwnd));
+                        var select = el.RegisterAutomationEvent(lib.SelectionItem.ElementSelectedEvent, TreeScope.Subtree, (e, _) => OnElementEvent(e, Acts.Select, hwnd));
+                        var value = el.RegisterPropertyChangedEvent(TreeScope.Subtree, OnValueChanged, _automation.PropertyLibrary.Value.Value);
+                        lock (handlers) { handlers.Add(invoke); handlers.Add(select); handlers.Add(value); }
+                        try
                         {
-                            Act = Acts.Dropdown, Ct = field.ct, Name = field.name, Aid = field.aid, Val = pwd ? Masking.Masked : typed, Hwnd = hwnd, WindowTitle = CurrentTitle,
-                            Items = items.Take(30).Select(i => pwd ? Masking.Masked : (i.Length > 120 ? i[..120] : i)).ToList(),
-                        });
+                            var toggle = el.RegisterPropertyChangedEvent(TreeScope.Subtree, OnToggleChanged, _automation.PropertyLibrary.Toggle.ToggleState);
+                            lock (handlers) handlers.Add(toggle);
+                        }
+                        catch { }
+                        try
+                        {
+                            var menuOpened = el.RegisterAutomationEvent(lib.Element.MenuOpenedEvent, TreeScope.Subtree, (e, _) => _menuOpenedAt = DateTime.Now);
+                            var menuClosed = el.RegisterAutomationEvent(lib.Element.MenuClosedEvent, TreeScope.Subtree, (e, _) => MenuClosed());
+                            lock (handlers) { handlers.Add(menuOpened); handlers.Add(menuClosed); }
+                        }
+                        catch { }
+                        // Document controls (rich text, editors) report edits through the Text pattern instead of the Value property
+                        try
+                        {
+                            var text = el.RegisterAutomationEvent(lib.Text.TextChangedEvent, TreeScope.Subtree, (e, _) => OnTextChanged(e));
+                            lock (handlers) handlers.Add(text);
+                        }
+                        catch { /* not every provider supports it */ }
+                    }
+
+                    // dump the control tree once per window title (after a short delay so the window is populated)
+                    Thread.Sleep(initial ? 50 : 400);
+                    var rec = DumpTree(el, hwnd, title.Length > 0 ? title : Win32.WindowText(hwnd));
+                    lock (_gate) { _rows[hwnd] = rec.Controls; _lastDump[hwnd] = DateTime.Now; }
+                    // a popup menu that is an ordinary window (toolkit menus, WinForms drop-downs): no screen, just a menu-open marker
+                    var menuish = rec.Controls.Any(c => c.Type is "Menu" or "MenuItem") && !rec.Controls.Any(c => c.Type is "Edit" or "DataGrid" or "Tab" or "Document");
+                    if (title.Length == 0 && rec.Controls.Count > 0 && rec.Controls.Count <= 120 && menuish)
+                    {
+                        lock (_gate) _menuPopups.Add(hwnd);
+                        _menuOpenedAt = DateTime.Now;
                         _knownWindows.Remove(hwnd);
                         return;
                     }
+                    // a suggestion list (autocomplete, lookup) that opened while the user was typing: its items are the evidence
+                    if (title.Length == 0 && _inFront)
+                    {
+                        var items = rec.Controls.Where(c => c.Type is "ListItem" or "DataItem" or "TreeItem" && c.Name.Length > 0).Select(c => c.Name).ToList();
+                        (string name, string aid, string ct, DateTime t) field; string typed;
+                        lock (_gate) { field = _lastField; typed = _lastTyped.GetValueOrDefault(field.aid.Length > 0 ? field.aid : field.name, ""); }
+                        if (items.Count > 0 && field.name.Length + field.aid.Length > 0 && (DateTime.Now - field.t).TotalSeconds <= 8 && !rec.Controls.Any(c => c.Type is "MenuItem" or "Edit" or "Button"))
+                        {
+                            _status.Dropdowns++;
+                            var pwd = Masking.IsSensitiveName(field.name) || Masking.IsSensitiveName(field.aid);
+                            Emit(new RawEvent
+                            {
+                                Act = Acts.Dropdown, Ct = field.ct, Name = field.name, Aid = field.aid, Val = pwd ? Masking.Masked : typed, Hwnd = hwnd, WindowTitle = CurrentTitle,
+                                Items = items.Take(30).Select(i => pwd ? Masking.Masked : (i.Length > 120 ? i[..120] : i)).ToList(),
+                            });
+                            _knownWindows.Remove(hwnd);
+                            return;
+                        }
+                    }
+                    // untitled helper windows (parking windows, drop-downs, tooltips) are not screens either
+                    if (title.Length == 0 && (rec.Controls.Count < 15 || !rec.Controls.Any(c => c.Type is "Edit" or "DataGrid" or "ComboBox" or "Button"))) { _knownWindows.Remove(hwnd); return; }
+                    _status.WindowsSeen++;
+                    if (rec.Source == "msaa") _status.DumpsMsaa++;
+                    if (excluded) { _status.ExcludedEvents++; return; }
+                    var (dialogLike, dialogText) = DialogDetector.Detect(cls, rec.Controls);
+                    if (!dialogLike && _settings.DialogWindows.Any(p => DialogDetector.Wildcard(rec.Title, p)) && DialogDetector.CouldBeDialog(rec.Controls)) dialogLike = true;
+                    if (dialogLike && (dialogText is null || dialogText.Length < 8)) dialogText = ReadDialogBody(el, rec.Controls) ?? dialogText;
+                    if (dialogLike && initial) dialogLike = false; // a window that was already there is a screen, not a reaction to anything
+                    var session = !dialogLike && DialogDetector.IsSessionWindow(rec.Title, rec.Controls, firstWindow, _settings.SessionWindows);
+                    _firstWindow = false;
+                    rec.Kind = dialogLike ? ScreenKinds.Dialog : session ? ScreenKinds.Session : ScreenKinds.Screen;
+                    rec.ReachedFrom = reachedFrom.Length > 0 && reachedFrom != rec.Title ? reachedFrom : null;
+                    rec.MenuPath = menuPath;
+                    if (dialogLike) _status.Dialogs++;
+                    bool firstTime;
+                    lock (_dumpedTitles) firstTime = _dumpedTitles.Add(Core.Learning.Titles.Key(rec.Title));
+                    if (!initial || _knownWindows.Count == 1) { if (MainWindowControlCount < 0 || rec.Controls.Count > MainWindowControlCount) MainWindowControlCount = Math.Max(MainWindowControlCount, rec.Controls.Count); }
+                    Emit(new RawEvent
+                    {
+                        Act = dialogLike ? Acts.Dialog : Acts.Open, Hwnd = hwnd, WindowTitle = rec.Title, Ct = "Window", Name = rec.Title,
+                        Val = dialogLike ? dialogText : null, Screen = firstTime && !dialogLike ? rec : null, IsDialog = dialogLike,
+                    });
+                    if (!initial) InferPress("window opened", from: reachedFrom, at: appeared);
+                    return;
                 }
-                // untitled helper windows (parking windows, drop-downs, tooltips) are not screens either
-                if (title.Length == 0 && (rec.Controls.Count < 15 || !rec.Controls.Any(c => c.Type is "Edit" or "DataGrid" or "ComboBox" or "Button"))) { _knownWindows.Remove(hwnd); return; }
-                _status.WindowsSeen++;
-                if (rec.Source == "msaa") _status.DumpsMsaa++;
-                if (excluded) { _status.ExcludedEvents++; return; }
-                var (dialogLike, dialogText) = DialogDetector.Detect(cls, rec.Controls);
-                if (!dialogLike && _settings.DialogWindows.Any(p => DialogDetector.Wildcard(rec.Title, p)) && DialogDetector.CouldBeDialog(rec.Controls)) dialogLike = true;
-                if (dialogLike && (dialogText is null || dialogText.Length < 8)) dialogText = ReadDialogBody(el, rec.Controls) ?? dialogText;
-                if (dialogLike && initial) dialogLike = false; // a window that was already there is a screen, not a reaction to anything
-                var session = !dialogLike && DialogDetector.IsSessionWindow(rec.Title, rec.Controls, firstWindow, _settings.SessionWindows);
-                _firstWindow = false;
-                rec.Kind = dialogLike ? ScreenKinds.Dialog : session ? ScreenKinds.Session : ScreenKinds.Screen;
-                rec.ReachedFrom = reachedFrom.Length > 0 && reachedFrom != rec.Title ? reachedFrom : null;
-                rec.MenuPath = menuPath;
-                if (dialogLike) _status.Dialogs++;
-                bool firstTime;
-                lock (_dumpedTitles) firstTime = _dumpedTitles.Add(Core.Learning.Titles.Key(rec.Title));
-                if (!initial || _knownWindows.Count == 1) { if (MainWindowControlCount < 0 || rec.Controls.Count > MainWindowControlCount) MainWindowControlCount = Math.Max(MainWindowControlCount, rec.Controls.Count); }
-                Emit(new RawEvent
+                catch (Exception ex)
                 {
-                    Act = dialogLike ? Acts.Dialog : Acts.Open, Hwnd = hwnd, WindowTitle = rec.Title, Ct = "Window", Name = rec.Title,
-                    Val = dialogLike ? dialogText : null, Screen = firstTime && !dialogLike ? rec : null, IsDialog = dialogLike,
-                });
-                if (!initial) InferPress("window opened", from: reachedFrom);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn($"window registration failed for '{title}': {ex.Message}");
+                    // a slow or busy program can miss the UI Automation timeout once; without a retry the window would stay
+                    // unread (no screen, no picture, no events) for as long as it is open
+                    lock (handlers) { foreach (var d in handlers) { try { d.Dispose(); } catch { } } handlers.Clear(); }
+                    if (attempt >= 3 || !Win32.IsWindowVisible(hwnd))
+                    {
+                        Log.Warn($"window registration failed for '{title}': {ex.Message} (attempt {attempt}, giving up)");
+                        return;
+                    }
+                    Log.Info($"window registration of '{title}' failed: {ex.Message}; trying again (attempt {attempt + 1} of 3)");
+                    Thread.Sleep(attempt == 1 ? 2000 : 6000);
+                }
             }
         });
     }

@@ -16,6 +16,14 @@ public static class DataSourceScanner
     public static readonly string[] DataExtensions =
         { ".db", ".sqlite", ".sqlite3", ".db3", ".s3db", ".mdb", ".accdb", ".fdb", ".gdb", ".mdf", ".dbf", ".xml", ".json", ".csv", ".ini", ".dat" };
 
+    /// <summary>Files that describe how a program starts (.NET deps and runtimeconfig, app manifests), not its business data.</summary>
+    public static bool IsProgramFile(string path)
+    {
+        var n = Path.GetFileName(path).ToLowerInvariant();
+        return n.EndsWith(".deps.json") || n.EndsWith(".runtimeconfig.json") || n.EndsWith(".runtimeconfig.dev.json")
+            || n.EndsWith(".exe.manifest") || n.EndsWith(".dll.manifest") || n == "web.config";
+    }
+
     public static List<DataCandidate> Scan(string? exePath, string processName, string? displayName, int maxEntries = 30_000)
     {
         var found = new List<DataCandidate>();
@@ -77,6 +85,7 @@ public static class DataSourceScanner
                 }
                 var ext = Path.GetExtension(e);
                 if (!DataExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
+                if (IsProgramFile(e)) continue;
                 if (!seen.Add(e)) continue;
                 var fi = new FileInfo(e);
                 if (fi.Length == 0) continue;

@@ -146,6 +146,9 @@ internal sealed class EffectCapture : IDisposable
         }
     }
 
+    /// <summary>A watched data file changed (raised outside the lock, on the file watcher's thread).</summary>
+    public event Action? DataChanged;
+
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
         lock (_gate)
@@ -154,6 +157,7 @@ internal sealed class EffectCapture : IDisposable
             var recent = _lastTrigger is not null && (DateTime.Now - _lastTrigger.T).TotalSeconds < 15 ? _lastTrigger : null;
             Schedule("file-change", recent, _settings.AfterDelayMs);
         }
+        try { DataChanged?.Invoke(); } catch (Exception ex) { Log.Warn("data change handler failed: " + ex.Message); }
     }
 
     public void Dispose()

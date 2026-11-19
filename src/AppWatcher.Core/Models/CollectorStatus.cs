@@ -56,12 +56,21 @@ public sealed class CollectorStatus
 
     public static CollectorStatus? Load(string appRoot)
     {
-        try
+        var p = Path.Combine(appRoot, FileName);
+        // the running watcher replaces this file every few seconds; a read that meets the swap is tried again
+        for (var attempt = 1; attempt <= 5; attempt++)
         {
-            var p = Path.Combine(appRoot, FileName);
-            return File.Exists(p) ? JsonSerializer.Deserialize<CollectorStatus>(File.ReadAllText(p), Opts) : null;
+            try
+            {
+                return File.Exists(p) ? JsonSerializer.Deserialize<CollectorStatus>(File.ReadAllText(p), Opts) : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                if (attempt == 5) { Log.Warn("collector status not read: " + ex.Message); return null; }
+                Thread.Sleep(200);
+            }
         }
-        catch { return null; }
+        return null;
     }
 
     /// <summary>Plain-words problems a reader should know about.</summary>

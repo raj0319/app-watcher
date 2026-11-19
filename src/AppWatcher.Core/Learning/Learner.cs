@@ -438,7 +438,13 @@ public static class Learner
             : "Fields and buttons: no, this app does not expose its screens to UI Automation; the MSAA fallback gives names only.");
         var readable = input.HasDataSources;
         var server = input.Backends.FirstOrDefault(b => b.Kind is "sqlserver" or "mysql" or "postgresql" or "oracle" or "pervasive" or "universe" or "odbc" or "rest");
-        if (readable) list.Add("Tables and rules: yes, a data source is configured and read before and after each save.");
+        // a source counts as readable for tables only once rows were actually read; a plain file (not a database) is only fingerprinted
+        var tablesRead = input.Latest is { } snap && snap.Databases.Values.Any(t => t.Count > 0);
+        var filesOnly = input.Latest is { } snap2 && !snap2.Databases.Values.Any(t => t.Count > 0) && snap2.Files.Count > 0;
+        if (readable && filesOnly) list.Add("Tables and rules: partly. I see when its data files change, but they are not a database I can read row by row, so I cannot tell which fields fill which columns. A read-only database login or an export drop folder (CSV or Excel) would give the tables.");
+        else if (readable) list.Add(tablesRead
+            ? "Tables and rules: yes, a data source is configured and read before and after each save."
+            : "Tables and rules: yes once its data has been read; a data source is configured and is read before and after each save.");
         else if (server is not null) list.Add($"Tables and rules: not yet. The data is on a {server.Kind} server{(server.Host is null ? "" : $" ({server.Host}{(server.Port is null ? "" : ":" + server.Port)})")} this PC cannot read. Options: a read-only login (ODBC or SQL Server), a nightly export drop folder, or SQL statement capture by the DBA.");
         else list.Add("Tables and rules: not yet, no data source was found. Options: Detect by watching file access, add the database or folder by hand, or an export drop folder.");
         if (input.Profile is not null) list.Add($"Profile: {input.Profile}.");

@@ -322,4 +322,24 @@ public class EasySetupTests
         }
         finally { try { File.Delete(outFile); } catch { } }
     }
+
+    [Fact]
+    public void Scan_skips_the_files_that_only_describe_how_a_dotnet_program_starts()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "aw-scan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var exe = Path.Combine(dir, "Shop.exe");
+            File.WriteAllText(exe, "x");
+            File.WriteAllText(Path.Combine(dir, "Shop.deps.json"), "{\"runtimeTarget\":{}}");
+            File.WriteAllText(Path.Combine(dir, "Shop.runtimeconfig.json"), "{\"runtimeOptions\":{}}");
+            File.WriteAllText(Path.Combine(dir, "orders.json"), "[{\"id\":1}]");
+            var found = DataSourceScanner.Scan(exe, "Shop", "Shop").Select(c => Path.GetFileName(c.Path)).ToList();
+            Assert.Contains("orders.json", found);
+            Assert.DoesNotContain("Shop.deps.json", found);
+            Assert.DoesNotContain("Shop.runtimeconfig.json", found);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
 }

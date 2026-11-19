@@ -202,15 +202,28 @@ internal sealed class TrayContext : ApplicationContext
         try { File.Delete(_traceFile); } catch { }
         var exe = Environment.ProcessPath ?? Application.ExecutablePath;
         var args = $"--trace-files {pid} 120 \"{_traceFile}\"" + (Paths.RootOverride is not null ? " --portable" : "");
-        try
+        // the permission prompt can stay open for a while: start the process off the tray's thread so the menu keeps working
+        var ui = SynchronizationContext.Current;
+        Task.Run(() =>
         {
-            _trace = kind == Elevation.Kind.Elevated
-                ? Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true })
-                : Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden });
-        }
-        catch (Win32Exception) { Log.Info("automatic file-access detection: permission not given; skipped"); return; }
-        catch (Exception ex) { Log.Warn("automatic file-access detection could not start: " + ex.Message); return; }
-        if (_trace is null) return;
+            Process? started = null;
+            try
+            {
+                started = kind == Elevation.Kind.Elevated
+                    ? Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true })
+                    : Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden });
+            }
+            catch (Win32Exception) { Log.Info("automatic file-access detection: permission not given; skipped"); return; }
+            catch (Exception ex) { Log.Warn("automatic file-access detection could not start: " + ex.Message); return; }
+            if (started is null) return;
+            if (ui is null) { Log.Warn("automatic file-access detection: no tray thread to report back to"); return; }
+            ui.Post(_ => WaitForTrace(started), null);
+        });
+    }
+
+    private void WaitForTrace(Process started)
+    {
+        _trace = started;
         var poll = new System.Windows.Forms.Timer { Interval = 3000 };
         poll.Tick += (_, _) =>
         {
@@ -244,6 +257,7 @@ internal sealed class TrayContext : ApplicationContext
         if (_config.App is null || Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { if (manual) Balloon("I am still busy with the last request. Try again in a minute.", ToolTipIcon.Info); return; }
         var app = _config.App.DisplayName;
         var paths = Paths.ForApp(app);
+        _watch?.SaveStatus(); // the status file is otherwise saved every two minutes: learn from today's counts
         Task.Run(async () =>
         {
             try

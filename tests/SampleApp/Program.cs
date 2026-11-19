@@ -68,7 +68,7 @@ internal sealed class MainForm : Form
         var menu = new MenuStrip();
         var file = new ToolStripMenuItem("File");
         var newCustomer = new ToolStripMenuItem("New Customer...") { Name = "mnuNewCustomer", ShortcutKeys = Keys.Control | Keys.N };
-        newCustomer.Click += (_, _) => { using var d = new NewCustomerForm(this); if (d.ShowDialog(this) == DialogResult.OK) { _custCode.Text = d.Code; _custName.Text = d.CustomerName; } };
+        newCustomer.Click += (_, _) => NewCustomer();
         var exit = new ToolStripMenuItem("Exit") { Name = "mnuExit" };
         exit.Click += (_, _) => Close();
         file.DropDownItems.AddRange(new ToolStripItem[] { newCustomer, new ToolStripSeparator(), exit });
@@ -98,7 +98,10 @@ internal sealed class MainForm : Form
         saveCustomer.Click += (_, _) => SaveCustomer();
         var clear = new Button { Text = "Clear", Name = "btnClear", Left = 230, Top = y, Width = 90 };
         clear.Click += (_, _) => { _custCode.Text = ""; _custName.Text = ""; };
-        customers.Controls.AddRange(new Control[] { saveCustomer, clear });
+        // a toolbar-style button that opens the same blocking window as File > New Customer (the live test clicks it with a posted message)
+        var newButton = new Button { Text = "New...", Name = "btnNewCustomer", Left = 328, Top = y, Width = 90 };
+        newButton.Click += (_, _) => NewCustomer();
+        customers.Controls.AddRange(new Control[] { saveCustomer, clear, newButton });
 
         var orders = new TabPage("Orders") { Name = "tabOrders" };
         y = 16;
@@ -119,6 +122,12 @@ internal sealed class MainForm : Form
         _status.Items.Add(_statusText);
         Controls.Add(_tabs); Controls.Add(_status); Controls.Add(menu);
         _tabs.Top = menu.Height;
+    }
+
+    private void NewCustomer()
+    {
+        using var d = new NewCustomerForm(this);
+        if (d.ShowDialog(this) == DialogResult.OK) { _custCode.Text = d.Code; _custName.Text = d.CustomerName; }
     }
 
     private void SaveCustomer()
