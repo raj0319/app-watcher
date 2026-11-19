@@ -26,6 +26,10 @@ public sealed class PlainFacts
     public int DumpFailPct { get; set; }
     /// <summary>A tab document was selected more often than tab screens were recorded.</summary>
     public bool TabsUnrecorded { get; set; }
+    /// <summary>Documents the user opened that were never recorded as a screen, by title.</summary>
+    public List<string> DocumentsNeverRecorded { get; set; } = new();
+    /// <summary>Screens the user typed on (the focus moved between fields) where no typed value was recorded.</summary>
+    public List<string> TypedButUnrecorded { get; set; } = new();
     public bool Recording => Screens > 0 || Actions > 0;
 }
 
@@ -65,7 +69,8 @@ public static class PlainReport
             f.Actions = s.PressesTotal + s.ValuesTyped + s.Toggles;
             Apply(f, s);
             if (s.Dialogs == 0) f.PromptScreens = records.Count(r => r.Kind == ScreenKinds.Screen && (DialogDetector.LooksLikePromptTitle(r.Title) || DialogDetector.Detect("", r.Controls).isDialog));
-            f.TabsUnrecorded = s.TabSelections > s.TabScreens;
+            f.TabsUnrecorded = s.TabSelections > s.TabScreens && s.DocumentsNeverRecorded.Count == 0;
+            f.DocumentsNeverRecorded = s.DocumentsNeverRecorded.ToList();
         }
         f.NoData = !cfg.DataSources.Any(d => d.Enabled);
         f.PicturesOff = cfg.Privacy.EffectiveShotMode == "off";
@@ -82,12 +87,14 @@ public static class PlainReport
             f.Pictures = c.Pictures;
             Apply(f, c);
             if (c.Dialogs == 0) f.PromptScreens = r.Health.PromptScreens;
-            f.TabsUnrecorded = Math.Max(c.TabSelections, r.Health.TabSelections) > c.TabScreens;
+            f.TabsUnrecorded = Math.Max(c.TabSelections, r.Health.TabSelections) > c.TabScreens && r.Health.DocumentsNeverRecorded.Count == 0;
         }
         else
         {
             f.Actions = r.Health.PressesSeen + r.Health.PressesInferred + r.Screens.Sum(sc => sc.FieldTyped.Values.Sum());
         }
+        f.DocumentsNeverRecorded = r.Health.DocumentsNeverRecorded.ToList();
+        f.TypedButUnrecorded = r.Health.TypedButUnrecorded.ToList();
         return f;
     }
 
@@ -113,6 +120,18 @@ public static class PlainReport
         if (f.PromptScreens > 0) list.Add((f.PromptScreens == 1 ? "1 window that looks like a message box was recorded as a screen." : $"{f.PromptScreens} windows that look like message boxes were recorded as screens.", "Their text is still in the pictures; this version tells message boxes apart by their shape, so the next learn files them as messages."));
         if (f.DumpFailPct > 0) list.Add(($"{f.DumpFailPct}% of screen reads failed.", "The program is slow to answer when a screen opens; I try again, and the pictures with their text fill the gap."));
         if (f.TabsUnrecorded) list.Add(("A tab was selected but never recorded as a screen.", "This version reads the selected tab itself instead of waiting for the program to say so."));
+        if (f.DocumentsNeverRecorded.Count > 0)
+        {
+            var names = string.Join(", ", f.DocumentsNeverRecorded.Take(6).Select(d => d.Contains(" › ") ? d[(d.IndexOf(" › ", StringComparison.Ordinal) + 3)..] : d));
+            list.Add((f.DocumentsNeverRecorded.Count == 1 ? $"1 document was opened but never recorded as a screen: {names}." : $"{f.DocumentsNeverRecorded.Count} documents were opened but never recorded as screens: {names}.",
+                "Their fields and buttons are unknown; the program did not answer when their screens were read. The pictures still show them."));
+        }
+        if (f.TypedButUnrecorded.Count > 0)
+        {
+            var names = string.Join(", ", f.TypedButUnrecorded.Take(6).Select(d => d.Contains(" › ") ? d[(d.IndexOf(" › ", StringComparison.Ordinal) + 3)..] : d));
+            list.Add((f.TypedButUnrecorded.Count == 1 ? $"On 1 screen people typed but no typed value was recorded: {names}." : $"On {f.TypedButUnrecorded.Count} screens people typed but no typed value was recorded: {names}.",
+                "Its fields do not report what is typed; this version re-reads the screen when the cursor moves on, so the next run should catch them."));
+        }
         if (f.NoData) list.Add(("I cannot see this program's data.", "That is fine for documenting how it is used; to learn its tables too, someone from IT can add a read-only connection in Settings, Advanced."));
         if (f.PicturesOff) list.Add(("Pictures of the screens are switched off.", "Switch on \"Keep pictures\" in Settings if you want them for comparing screens later."));
         return list;

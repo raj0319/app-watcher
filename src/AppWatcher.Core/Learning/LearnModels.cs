@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Screens;
 using CollectorStatus = AppWatcher.Core.Models.CollectorStatus;
@@ -31,6 +31,23 @@ public sealed class LearnInput
     public Dictionary<string, long> DiskUse { get; set; } = new();
     /// <summary>The text layers of the state pictures (OcrLogic.Load), evidence for calculations the tree did not show.</summary>
     public List<OcrState> OcrStates { get; set; } = new();
+    /// <summary>The profile's data server kind ("universe"): the backend of that kind is the primary one, whatever else discovery found.</summary>
+    public string? BackendKind { get; set; }
+
+    /// <summary>
+    /// The server that holds the program's data: the backend of the profile's kind first, then any database server, never a
+    /// web service from the log files. Null when only services (or nothing) were found.
+    /// </summary>
+    public BackendInfo? PrimaryBackend()
+    {
+        if (BackendKind is { Length: > 0 } k)
+        {
+            var match = Backends.FirstOrDefault(b => string.Equals(b.Kind, k, StringComparison.OrdinalIgnoreCase));
+            if (match is not null) return match;
+        }
+        return Backends.FirstOrDefault(b => b.Kind is "sqlserver" or "mysql" or "postgresql" or "oracle" or "pervasive" or "universe" or "odbc")
+            ?? Backends.FirstOrDefault(b => b.Kind is "sqlite" or "access");
+    }
 }
 
 /// <summary>How sure we are, and where to look. Every line in memory/*.md carries one of these.</summary>
@@ -299,6 +316,10 @@ public sealed class HealthMetrics
     public int TabSelections { get; set; }
     /// <summary>Windows that look like message boxes (by title or by shape) but were recorded as screens and visited 5+ times.</summary>
     public int PromptScreens { get; set; }
+    /// <summary>Documents (tab or MDI) the user opened that have no screen record: from the collector's list and from the events.</summary>
+    public List<string> DocumentsNeverRecorded { get; set; } = new();
+    /// <summary>Screens where the focus moved between fields (the user typed there) but no typed value was recorded.</summary>
+    public List<string> TypedButUnrecorded { get; set; } = new();
     public Dictionary<string, long> DiskUse { get; set; } = new();
     /// <summary>Problems the collector reported (tree dumps failed, no presses, no data).</summary>
     public List<string> CollectorProblems { get; set; } = new();
@@ -352,10 +373,28 @@ public static class Titles
     /// <summary>When true (default), quoted parts of a title ("EVERFLOW SUPPLIES INC") become "…" so record names stay out of memory files.</summary>
     public static bool MaskQuoted { get; set; } = true;
 
+    /// <summary>
+    /// Title patterns with one * ("DDI System Inform - *"): the part the star matches (the company name in the main
+    /// window's title) becomes "…" in every key, so it never reaches the memory files. Set from the profile.
+    /// </summary>
+    public static List<string> MaskPatterns { get; set; } = new();
+
     public static string Key(string? title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
         var t = title.Replace("*", "").Replace("•", "").Trim();
+        foreach (var p in MaskPatterns)
+        {
+            var star = p.IndexOf('*');
+            if (star < 0) continue;
+            var head = p[..star]; var tail = p[(star + 1)..];
+            if (head.Length == 0 || !t.StartsWith(head, StringComparison.OrdinalIgnoreCase)) continue;
+            var rest = t[head.Length..];
+            var end = tail.Length == 0 ? rest.IndexOf(" › ", StringComparison.Ordinal) : rest.IndexOf(tail, StringComparison.OrdinalIgnoreCase);
+            if (end < 0) { if (tail.Length > 0) continue; end = rest.Length; }
+            if (rest[..end].Trim().Length > 0) t = head + "…" + rest[end..];
+            break;
+        }
         var sb = new System.Text.StringBuilder();
         var inDigits = false; var inQuote = false;
         foreach (var ch in t)
@@ -389,6 +428,8 @@ public sealed class BackendInfo
     /// <summary>Where it was found: a config file path, "odbc dsn", "tcp connection".</summary>
     public string Where { get; set; } = "";
     public bool Readable { get; set; }
+    /// <summary>A web service the program talks to (found in its log files), not the server that holds its data.</summary>
+    [JsonIgnore] public bool IsService => Kind == "rest";
     public string Describe()
     {
         var parts = new List<string> { Kind };

@@ -1,4 +1,4 @@
-# The data folder, file by file
+﻿# The data folder, file by file
 
 Everything App Watcher learns lives in `C:\ProgramData\AppWatcher\data\<app-name>\` (or in
 `AppWatcherData\data\<app-name>\` next to the exe when started with `--portable`). This page is for a
@@ -17,12 +17,12 @@ another program is in front. After a merge from another PC the file is `<yyyy-MM
 | `name` | the control's label: its own Name, else the text left of or above it, else its cleaned AutomationId |
 | `aid` | the control's AutomationId, when the app sets one (raw) |
 | `act` | `focus`, `open`, `close`, `invoke` (button or menu pressed), `select`, `value` (a field changed), `foreground`, `dialog` (a message window appeared; `val` holds its text), `dropdown` (a suggestion list opened while typing into `name`; `val` is the text typed so far, `items` the suggestions), `result` (what a grid showed right after the action in `name`; `val` is the grid, `items` the header line then the first rows, cells joined by " \| "), `menu` (a menu opened: `name` is the menu, `items` what it offers), `hint` (a hover tip: `name` is the control under the pointer, `val` the tip's text), `start`, `stop` |
-| `how` | for `invoke`: how the press was seen: `uia` (Invoke event), `msaa` (older accessibility event or pressed state), `menu` (a menu closed after the item was highlighted), `inferred` (the control under the pointer when the click began, or the button with focus, and a window, tab or message changed within 1.5 s), `toggle` (check box). For `select` on a TabItem: `read` when the tab strip was read rather than announced |
+| `how` | for `invoke`: how the press was seen: `uia` (Invoke event), `msaa` (older accessibility event or pressed state), `menu` (a menu closed after the item was highlighted), `inferred` (the control under the pointer when the left button went down, or the button with focus, and a window, document, tab or message changed or the program filled a value within 1.5 s), `toggle` (check box). For `select` on a TabItem: `read` when the document or the inner tab page was read rather than announced. For `value` events typed by the user: `read` when the value was found by re-reading the document (a grid cell that reports nothing) |
 | `val` | the new value for `value` events (`***` for password-like fields, text cut at 500 characters), the message text for `dialog` events, `on`/`off` for toggles |
 | `dt` | milliseconds since the previous event |
 | `fx` | the effects file written for this event, when there is one |
 | `items` | for `dropdown`, `result` and `menu` events: the suggestions, the grid's header and first rows, or the menu's items |
-| `by` | for `value` events: `app` when the program filled the value in itself (the field did not have keyboard focus: a total recalculated, a name looked up), including values found by re-reading the document's fields after a typed value or press (grid cells come with `ct` DataItem and `name` the column header); absent when the user typed it |
+| `by` | for `value` events: `app` when the program filled the value in itself (the field did not have keyboard focus: a total recalculated, a name looked up, a tick box flipped when a record loaded), including values found by re-reading the document's fields after a typed value, press, Enter, Tab or focus move (grid cells come with `ct` DataItem and `name` the column header); absent when the user typed it. Values the program fills into phone, fax, e-mail, address, name and attention fields are kept as shapes (`###-###-####`) |
 
 The `start` event's `val` holds hashes of the Windows user and machine names (`user:… machine:… version:…`),
 never the names, so a merged memory can count users and PCs. Typing is coalesced: only the final value of
@@ -30,7 +30,9 @@ a field is written, when the user moves on.
 
 A popup menu that is an ordinary window (toolkit menus) is recorded once with kind `menu` for its items and access
 keys; it is never a screen. Untitled helper windows (lookups, tips, drop-downs) are never screens: a lookup becomes
-a `dropdown` event, a tip a `hint` event.
+a `dropdown` event, a tip a `hint` event. In an MDI workspace each document is a child window of the main window:
+its events carry `win` "Main › Document", its screen record (kind `tab`) is read from the document's own window, and
+its `close` event is written when the document window is destroyed.
 
 ## screens/<title>.md
 
@@ -82,8 +84,10 @@ tables changed in the last diffs, so very large databases are only partly read.
 `collector-status.json` is the collector's own account, rewritten every two minutes: windows seen, tree
 dumps that worked, failed or came back empty, how many screens came through MSAA, presses by path (UIA,
 MSAA, menu, inferred, and how many of the inferred ones came from the control under the pointer), toggles,
-dialogs, tab selections and tab screens, values typed, values the program filled (and how many of those came from
-re-reading the document), dropdowns, hints, excluded events. The learner copies its problems
+dialogs, tab selections and tab screens, MDI documents seen and the titles of those never recorded as a screen
+(`DocumentsNeverRecorded`), inner tab pages selected, values typed (one per typed value, after the keystrokes
+settled; `ValuesTypedReread` for the ones found by re-reading the document), values the program filled (and how many
+of those came from re-reading the document), dropdowns, hints, excluded events. The learner copies its problems
 into `memory/health.md` ("What the collector could not do"). `expectations.md` says in plain words what
 can be learned from this app (toolkit, backends, data sources), the same text as the green box in step 1 of the first run.
 

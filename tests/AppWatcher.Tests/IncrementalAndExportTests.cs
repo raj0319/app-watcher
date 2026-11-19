@@ -1,4 +1,4 @@
-using System.Xml.Linq;
+﻿using System.Xml.Linq;
 using AppWatcher.Core.Events;
 using AppWatcher.Core.Export;
 using AppWatcher.Core.Learning;
@@ -28,6 +28,7 @@ public class IncrementalAndExportTests
                 var name = $"Customer {d}-{k}";
                 var amount = (50 + d * 10 + k).ToString();
                 input.Events.Add(Synthetic.Ev(s, Acts.Foreground, "Main", "Main", ct: "Window", src: $"events/{day:yyyy-MM-dd}.jsonl#L{k * 6 + 1}"));
+                input.Events.Add(Synthetic.Ev(s.AddSeconds(4), Acts.Invoke, "Main", "New Order", ct: "Button", src: $"events/{day:yyyy-MM-dd}.jsonl#L{k * 6 + 1}")); // the click that opens it
                 input.Events.Add(Synthetic.Ev(s.AddSeconds(5), Acts.Foreground, "New Order", "New Order", ct: "Window", src: $"events/{day:yyyy-MM-dd}.jsonl#L{k * 6 + 2}"));
                 input.Events.Add(Synthetic.Ev(s.AddSeconds(10), Acts.Value, "New Order", "Customer", name, src: $"events/{day:yyyy-MM-dd}.jsonl#L{k * 6 + 3}"));
                 input.Events.Add(Synthetic.Ev(s.AddSeconds(15), Acts.Value, "New Order", "Amount", amount, src: $"events/{day:yyyy-MM-dd}.jsonl#L{k * 6 + 4}"));

@@ -219,6 +219,7 @@ internal sealed class WatchService : IDisposable
         foreach (var e in _debounce.Flush(DateTime.Now, all))
         {
             Write(e);
+            if (e.By != ValueBy.App) _status.ValuesTyped++; // one typed value, after the keystrokes settled
             // a value the program filled in follows the user's own action, whose picture already shows it
             if (e.By != ValueBy.App) ScheduleState("after-type-" + e.FieldKey, $"type {e.FieldKey}", readGrids: true);
         }

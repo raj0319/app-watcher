@@ -26,6 +26,14 @@ public sealed class CollectorStatus
     /// <summary>Values the program filled in that were found by re-reading the document (grid cells, bound editors).</summary>
     public int ValuesReread { get; set; }
     public int Hints { get; set; }
+    /// <summary>Distinct documents seen as MDI child windows of the workspace.</summary>
+    public int MdiDocuments { get; set; }
+    /// <summary>Titles of documents that were shown as MDI children but never recorded as a screen (their tree could not be read).</summary>
+    public List<string> DocumentsNeverRecorded { get; set; } = new();
+    /// <summary>Inner tab pages (Main, General, Credit) selected inside documents, read after clicks and focus moves.</summary>
+    public int InnerTabSelections { get; set; }
+    /// <summary>Typed values found by re-reading the document (grid cells that report no change) rather than from the field's own event.</summary>
+    public int ValuesTypedReread { get; set; }
     public int PressesUia { get; set; }
     public int PressesMsaa { get; set; }
     public int PressesMenu { get; set; }
@@ -94,6 +102,7 @@ public sealed class CollectorStatus
         var dumps = DumpsOk + DumpsFailed;
         if (dumps > 0 && DumpsFailed * 100 > dumps * 25 && DumpsOk > 0) list.Add($"{(int)(100.0 * DumpsFailed / dumps)}% of control tree reads failed (the program did not answer in time); screens read later or from the pictures fill the gap");
         if (TabSelections > TabScreens) list.Add($"{TabSelections - TabScreens} tab selection(s) left no tab screen record");
+        if (DocumentsNeverRecorded.Count > 0) list.Add($"{DocumentsNeverRecorded.Count} document(s) were opened but never recorded as a screen: {string.Join(", ", DocumentsNeverRecorded.Take(12))}");
         if (!HasDataSources) list.Add("no data source is configured, so tables and rules cannot be learned");
         list.AddRange(Notes);
         return list;

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Checks that no string from a list kept OUTSIDE the repository (real names, ids, addresses of a client) appears
   anywhere under tests\. Run before committing fixtures copied from a real session.
@@ -14,7 +14,10 @@ foreach ($f in Get-ChildItem $Folder -Recurse -File | Where-Object { $_.FullName
     $text = (Get-Content $f.FullName -Raw -ErrorAction SilentlyContinue)
     if ($null -eq $text) { continue }
     foreach ($w in $words) {
-        if ($text.ToLowerInvariant().Contains($w.Trim().ToLowerInvariant())) { Write-Host ("FOUND '{0}' in {1}" -f $w.Trim(), $f.FullName); $hits++ }
+        $word = $w.Trim().ToLowerInvariant()
+        # short words must stand alone ("nate" is also the tail of "Indeterminate"); longer ones are found anywhere
+        $pattern = if ($word.Length -lt 6) { "(?<![a-z0-9])" + [regex]::Escape($word) + "(?![a-z0-9])" } else { [regex]::Escape($word) }
+        if ([regex]::IsMatch($text.ToLowerInvariant(), $pattern)) { Write-Host ("FOUND '{0}' in {1}" -f $word, $f.FullName); $hits++ }
     }
 }
 if ($hits -gt 0) { Write-Host "$hits hit(s): do not commit."; exit 1 }

@@ -10,3 +10,7 @@ AppWatcherData/
 sample-data.json
 app-watcher-v0.7-inform-evidence-*/
 evidence/
+
+# evidence copied from a client PC (never committed)
+app-watcher-v*-inform-evidence-*/
+/test-v*-inform.md

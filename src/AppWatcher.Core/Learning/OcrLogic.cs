@@ -1,7 +1,8 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AppWatcher.Core.Models;
+using AppWatcher.Core.Screens;
 
 namespace AppWatcher.Core.Learning;
 
@@ -106,7 +107,52 @@ public static partial class OcrLogic
         return list;
     }
 
-    /// <summary>A number as shown on screen: money, percentages and thousands separators allowed; dates, times, codes with leading zeros and long ids are not numbers.</summary>
+    /// <summary>
+    /// The field and column names each screen record knows (its fields' labels, its grid headers, its plain labels), by screen
+    /// key: a label on a picture must be one of them before it names a formula's field (the picture of an order shows the
+    /// customer's address too, and "<City>, NY" is not a field).
+    /// </summary>
+    public static Dictionary<string, HashSet<string>> KnownFields(IEnumerable<ScreenRecord> screens)
+    {
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var rec in screens)
+        {
+            var key = Titles.Key(rec.Title);
+            if (key.Length == 0) continue;
+            if (!result.TryGetValue(key, out var set)) result[key] = set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (row, label) in rec.LogicalFields()) { if (label.Length > 0) set.Add(Norm(label)); if (row.Name.Length > 0) set.Add(Norm(row.Name)); }
+            foreach (var r in rec.Controls)
+            {
+                if (r.Type is "HeaderItem" or "Header" or "Text" or "CheckBox" or "RadioButton" or "ComboBox" or "Edit" or "Spinner" or "DataItem" && LooksLikeFieldName(r.Name)) set.Add(Norm(r.Name));
+                if (r.LabeledBy.Length > 0) set.Add(Norm(r.LabeledBy));
+            }
+            // the parent window's labels count for its documents too (older records hold the whole window)
+        }
+        foreach (var key in result.Keys.Where(k => k.Contains(" › ", StringComparison.Ordinal)).ToList())
+        {
+            var parent = key[..key.IndexOf(" › ", StringComparison.Ordinal)];
+            if (result.TryGetValue(parent, out var pset)) foreach (var f in pset) result[key].Add(f);
+        }
+        return result;
+    }
+
+    private static string Norm(string s) => s.Replace("\r", " ").Replace("\n", " ").Trim().TrimEnd(':', ' ').Trim();
+
+    /// <summary>A label a field could carry: letters, short, no comma after letters (an address line), no digits run (a value).</summary>
+    public static bool LooksLikeFieldName(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        var t = Norm(s);
+        if (t.Length < 2 || t.Length > 40) return false;
+        if (!t.Any(char.IsLetter)) return false;
+        if (t.Contains(',')) return false; // "<City>, NY"
+        if (char.IsDigit(t[0])) return false; // "12 Some Street": a street line
+        if (t.Count(char.IsDigit) > 2) return false; // "###-###-####"
+        if (t.Contains('@') || t.Contains("http", StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
+
+    /// <summary>A number as shown on screen: money, percentages and thousands separators allowed; dates, times, codes with leading zeros, long ids and more than four decimals are not numbers.</summary>
     public static bool TryNumber(string token, out decimal value)
     {
         value = 0;
@@ -114,6 +160,8 @@ public static partial class OcrLogic
         if (t.Length == 0 || t.Length > 16 || !NumberToken().IsMatch(t)) return false;
         var digits = t.Count(char.IsDigit);
         if (digits == 0 || digits > 9) return false;
+        var dot = t.IndexOf('.');
+        if (dot >= 0 && t[(dot + 1)..].TakeWhile(char.IsDigit).Count() > 4) return false;
         var neg = t.Contains('(') || t.Contains('-');
         var clean = t.Replace("$", "").Replace("€", "").Replace("£", "").Replace("(", "").Replace(")", "").Replace("%", "").Replace(",", "").Replace("-", "");
         if (clean.Length > 1 && clean[0] == '0' && clean[1] != '.') return false; // a code (0002776), not an amount
@@ -183,7 +231,14 @@ public static partial class OcrLogic
     /// that screen, is tested against the other numbers on the picture (same row first, then nearest). Every picture is
     /// processed once; the state keeps the last values per screen.
     /// </summary>
-    public static void Accumulate(LearnState s, List<UiEvent> session, List<OcrState> states)
+    public static void Accumulate(LearnState s, List<UiEvent> session, List<OcrState> states) => Accumulate(s, session, states, null);
+
+    /// <summary>
+    /// Same, with the fields each screen record knows: on a screen that has a record, only labels that match one of its field
+    /// or column names take part (as the number tested or as an input); on a screen without a record, labels must at least look
+    /// like field names. Text from a picture never reaches the memory files except as such a field name.
+    /// </summary>
+    public static void Accumulate(LearnState s, List<UiEvent> session, List<OcrState> states, Dictionary<string, HashSet<string>>? knownFields)
     {
         var userTimes = session.Where(e => (e.Act == Acts.Value && e.By != ValueBy.App) || e.Act is Acts.Invoke or Acts.Select)
             .Select(e => (win: Titles.Key(e.Win), t: e.T)).ToList();
@@ -197,6 +252,9 @@ public static partial class OcrLogic
             var screen = Titles.Key(st.Screen);
             if (screen.Length == 0) continue;
             var pairs = Pairs(st.Lines);
+            HashSet<string>? known = null;
+            if (knownFields is not null) { knownFields.TryGetValue(screen, out known); known ??= knownFields.GetValueOrDefault(st.Screen); }
+            pairs = pairs.Where(p => LooksLikeFieldName(p.label) && (known is null || known.Contains(Norm(p.label)))).ToList();
             if (pairs.Count == 0) continue;
             s.OcrLast.TryGetValue(screen, out var prev);
             var afterUser = userTimes.Any(u => u.win == screen && st.T >= u.t && (st.T - u.t).TotalSeconds <= AfterUserSeconds);

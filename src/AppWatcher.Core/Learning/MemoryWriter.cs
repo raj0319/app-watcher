@@ -87,7 +87,8 @@ public static class MemoryWriter
             sb.AppendLine("## Backends found by discovery");
             sb.AppendLine();
             sb.AppendLine("Where the app's data lives according to its config files, ODBC data sources and open connections (no credentials recorded).");
-            foreach (var b in r.Backends) sb.AppendLine($"- {b.Describe()} — {(b.Readable ? "readable by App Watcher" : "not readable from this PC yet")}; inferred");
+            foreach (var b in r.Backends.Where(b => !b.IsService)) sb.AppendLine($"- {b.Describe()} — {(b.Readable ? "readable by App Watcher" : "not readable from this PC yet")}; inferred");
+            foreach (var b in r.Backends.Where(b => b.IsService)) sb.AppendLine($"- Service the program talks to: {b.Describe()} (a web service, not the data server); inferred");
             sb.AppendLine();
         }
         sb.AppendLine("## Tables");
@@ -321,7 +322,8 @@ public static class MemoryWriter
             sb.AppendLine("## Technology seen from the outside");
             sb.AppendLine();
             if (r.Toolkit is not null) sb.AppendLine($"- UI toolkit: {r.Toolkit} (from the program file's imports; inferred)");
-            foreach (var b in r.Backends) sb.AppendLine($"- Backend: {b.Describe()}; inferred");
+            foreach (var b in r.Backends.Where(b => !b.IsService)) sb.AppendLine($"- Backend: {b.Describe()}; inferred");
+            foreach (var b in r.Backends.Where(b => b.IsService)) sb.AppendLine($"- Service the program talks to: {b.Describe()} (a web service, not the data server); inferred");
             if (r.Profile is not null) sb.AppendLine($"- Collector profile: {r.Profile}");
             sb.AppendLine();
         }
@@ -383,7 +385,8 @@ public static class MemoryWriter
         sb.AppendLine($"| Button and menu presses seen | {h.PressesSeen} (+ {h.PressesInferred} inferred from focus and a window change) |");
         sb.AppendLine($"| Save-type presses seen | {h.TriggerInvokes} |");
         sb.AppendLine($"| Message windows seen | {h.DialogsSeen}{(h.PromptScreens > 0 ? $" (+ {h.PromptScreens} recorded as screens by the collector, filed as messages by their shape)" : "")} |");
-        sb.AppendLine($"| Tab documents selected | {h.TabSelections} |");
+        sb.AppendLine($"| Tab documents selected | {h.TabSelections}{(h.DocumentsNeverRecorded.Count > 0 ? $" ({h.DocumentsNeverRecorded.Count} opened but never recorded as a screen: {string.Join(", ", h.DocumentsNeverRecorded.Take(12))})" : "")} |");
+        if (h.TypedButUnrecorded.Count > 0) sb.AppendLine($"| Screens typed on without a typed value recorded | {string.Join(", ", h.TypedButUnrecorded.Take(12))} |");
         sb.AppendLine($"| Data checks (effects) | {h.EffectsTotal}, {h.EffectsWithDiff} with a change |");
         sb.AppendLine($"| Saves with a data diff | {h.SavesWithDiffPct:0}% |");
         sb.AppendLine($"| Fields typed into | {h.FieldsSeen} |");

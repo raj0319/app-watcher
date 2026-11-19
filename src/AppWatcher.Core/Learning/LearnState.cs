@@ -40,8 +40,8 @@ public sealed class SeqAcc
 public sealed class LearnState
 {
     public const string Sep = "\u0001";
-    /// <summary>3: flows cut at document closes, OCR-based calculations, tab selections (an older state is relearned from the events).</summary>
-    public const int CurrentVersion = 3;
+    /// <summary>4: program-shown windows are not flow visits, OCR formulas only between known fields, typed-but-unrecorded screens (an older state is relearned from the events).</summary>
+    public const int CurrentVersion = 4;
     public int Version { get; set; } = CurrentVersion;
     public DateTime? Watermark { get; set; }
     public HashSet<string> EffectFiles { get; set; } = new();
@@ -87,6 +87,12 @@ public sealed class LearnState
     public int DialogsSeen { get; set; }
     /// <summary>Tab documents selected (select events on a TabItem), to compare with the tab screens the collector recorded.</summary>
     public int TabSelections { get; set; }
+    /// <summary>Document titles ("Window › Document") that events named, so the health page can list the ones never recorded as a screen.</summary>
+    public HashSet<string> DocumentsSeen { get; set; } = new();
+    /// <summary>screen → focus moves between its fields (the user worked there); compared with the typed values recorded on it.</summary>
+    public Dictionary<string, int> FieldFocuses { get; set; } = new();
+    /// <summary>screen → typed values recorded (by the user) on it.</summary>
+    public Dictionary<string, int> TypedValues { get; set; } = new();
     /// <summary>Picture text layers already fed to the calculation learner (screens/shots/.../*.ocr.json).</summary>
     public HashSet<string> OcrFiles { get; set; } = new();
     /// <summary>screen → label → the number last shown on a picture of it (so the next picture can tell what changed).</summary>

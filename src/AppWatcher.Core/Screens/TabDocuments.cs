@@ -33,13 +33,59 @@ public static class TabDocuments
     /// <summary>"Window › Tab": the screen title of a tab document.</summary>
     public static string Title(string windowTitle, string tab) => $"{windowTitle} › {tab}";
 
-    /// <summary>Names of the tab items in a control tree (the tab strip's direct TabItem children), in order.</summary>
+    /// <summary>
+    /// A Tab control that lies inside a document (below a named Window or Pane that is not the top) is the document's own
+    /// inner tab control (Main | General | Credit), never the workspace's document strip.
+    /// </summary>
+    public static bool IsInnerTab(IList<ControlRow> rows, int tabIndex)
+    {
+        var depth = rows[tabIndex].Depth;
+        for (var i = tabIndex - 1; i >= 1 && depth > 1; i--)
+        {
+            if (rows[i].Depth >= depth) continue;
+            depth = rows[i].Depth;
+            if (rows[i].Type is "Window" && rows[i].Name.Trim().Length > 0) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The inner tab controls of a document and the tab item each one shows as selected (the collector marks the selected
+    /// item's Value "selected": from a cached read of the selection, or from the page that is on screen). Keyed by the tab
+    /// control's automation id, else its position.
+    /// </summary>
+    public static Dictionary<string, string> InnerTabSelections(IList<ControlRow> rows)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Type != "Tab") continue;
+            var key = rows[i].AutomationId.Length > 0 ? rows[i].AutomationId : "tab@" + rows[i].Position;
+            var depth = rows[i].Depth;
+            string? selected = null;
+            for (var j = i + 1; j < rows.Count && rows[j].Depth > depth; j++)
+                if (rows[j].Type == "TabItem" && rows[j].Depth == depth + 1 && rows[j].Name.Trim().Length > 0 && rows[j].Value == "selected") { selected = rows[j].Name.Trim(); break; }
+            if (selected is not null) result[key] = selected;
+        }
+        return result;
+    }
+
+    /// <summary>The tab items newly selected since the previous read: a user clicked them (or the program switched the page).</summary>
+    public static List<string> InnerTabChanges(IReadOnlyDictionary<string, string>? previous, IReadOnlyDictionary<string, string> now)
+    {
+        var list = new List<string>();
+        foreach (var (key, name) in now)
+            if (previous is null || !previous.TryGetValue(key, out var old) || old != name) list.Add(name);
+        return list;
+    }
+
+    /// <summary>Names of the tab items in a control tree (the workspace tab strip's direct TabItem children), in order; inner tab controls of documents are skipped.</summary>
     public static List<string> TabNames(IList<ControlRow> rows)
     {
         var names = new List<string>();
         for (var i = 0; i < rows.Count; i++)
         {
-            if (rows[i].Type != "Tab") continue;
+            if (rows[i].Type != "Tab" || IsInnerTab(rows, i)) continue;
             var depth = rows[i].Depth;
             for (var j = i + 1; j < rows.Count && rows[j].Depth > depth; j++)
                 if (rows[j].Type == "TabItem" && rows[j].Depth == depth + 1 && rows[j].Name.Trim().Length > 0) names.Add(rows[j].Name.Trim());
@@ -67,7 +113,7 @@ public static class TabDocuments
         }
         // 2. the siblings of the tab strip: the document is the on-screen one with the most controls that is not window chrome
         var tabIndex = -1;
-        for (var i = 1; i < rows.Count; i++) if (rows[i].Type == "Tab") { tabIndex = i; break; }
+        for (var i = 1; i < rows.Count; i++) if (rows[i].Type == "Tab" && !IsInnerTab(rows, i)) { tabIndex = i; break; }
         if (tabIndex < 0) return new List<ControlRow>();
         var parentDepth = rows[tabIndex].Depth - 1;
         var parentIndex = -1;

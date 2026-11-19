@@ -193,9 +193,13 @@ public static class LogicLearner
         return ordered;
     }
 
+    /// <summary>On, Off, Indeterminate: the state of a tick box, never a value another field could be copied from.</summary>
+    public static bool IsToggleText(string? text) => text is not null && text.Trim() is "On" or "Off" or "Indeterminate" or "on" or "off" or "True" or "False";
+
     private static void LearnCalc(LearnState s, string win, string field, string value, Dictionary<string, string> cur, string src)
     {
         var text = value.Trim();
+        if (IsToggleText(text)) return; // a tick box is never "copied from" another
         if (Values.TryDecimal(text, out var t))
         {
             var xs = new List<(string n, decimal v)>();
@@ -207,7 +211,7 @@ public static class LogicLearner
         if (text.Length < 2) return;
         var fits = new List<string>();
         foreach (var kv in cur.OrderBy(k => k.Key, StringComparer.Ordinal))
-            if (kv.Key != field && string.Equals(kv.Value.Trim(), text, StringComparison.OrdinalIgnoreCase)) fits.Add("= " + kv.Key);
+            if (kv.Key != field && !IsToggleText(kv.Value) && string.Equals(kv.Value.Trim(), text, StringComparison.OrdinalIgnoreCase)) fits.Add("= " + kv.Key);
         if (fits.Count == 0) return; // a text the program looked up (a name for a code) is a link, not a calculation
         Count(s.CalcTests, LearnState.Key(win, field));
         foreach (var f in fits.Distinct()) Add(s.CalcFits, LearnState.Key(win, field, f), src);
@@ -225,11 +229,12 @@ public static class LogicLearner
         var fits = Formulas(t, xs);
         if (fits.Count == 0)
         {
-            // a constant factor (a tax or unit rate): only counts when the same factor keeps coming back
+            // a constant factor (a tax or unit rate): only counts when the same factor keeps coming back; between 0.001 and 1000,
+            // and never negative (a sign that is not on the screen is not a formula)
             foreach (var x in xs)
             {
                 var k = Calc(() => t / x.v);
-                if (k is not { } kk || kk == 1 || Math.Abs(kk) < 0.0001m || Math.Abs(kk) > 10000m) continue;
+                if (k is not { } kk || kk == 1 || kk < 0.001m || kk > 1000m) continue;
                 var kr = Math.Round(kk, 4);
                 if (Close(t, x.v * kr)) fits.Add($"{x.n} × {kr.ToString("0.####", CultureInfo.InvariantCulture)}");
             }

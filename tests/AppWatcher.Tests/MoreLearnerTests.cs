@@ -1,4 +1,4 @@
-using AppWatcher.Core;
+﻿using AppWatcher.Core;
 using AppWatcher.Core.Learning;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Snapshots;
@@ -71,8 +71,12 @@ public class MoreLearnerTests
     {
         var t = new DateTime(2026, 1, 1, 8, 0, 0);
         var events = new List<UiEvent>();
+        var last = "";
         void Visit(string win, int seconds, string? control = null)
         {
+            // a window a person opens follows a click (a window that appears with no click is shown by the program and is no visit)
+            if (last.Length > 0 && win != "Main") events.Add(Synthetic.Ev(t.AddSeconds(-1), Acts.Invoke, last, "Open " + win, ct: "Button"));
+            last = win;
             events.Add(Synthetic.Ev(t, Acts.Foreground, win, win, ct: "Window"));
             if (control is not null) events.Add(Synthetic.Ev(t.AddSeconds(1), Acts.Invoke, win, control, ct: "Button"));
             t = t.AddSeconds(seconds);

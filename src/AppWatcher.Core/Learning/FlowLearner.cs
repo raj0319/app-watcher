@@ -1,8 +1,8 @@
-using AppWatcher.Core.Models;
+﻿using AppWatcher.Core.Models;
 
 namespace AppWatcher.Core.Learning;
 
-internal sealed class Visit
+public sealed class Visit
 {
     public string Win = "";
     public DateTime Start, End;
@@ -10,6 +10,8 @@ internal sealed class Visit
     public string Source = "";
     /// <summary>A close event of a tab document ("Window › Tab") happened during this visit: the document is gone.</summary>
     public bool ClosedDocument;
+    /// <summary>The window appeared with no click, menu pick or selection in the two seconds before it: the program showed it on its own.</summary>
+    public bool ShownByProgram;
 }
 
 /// <summary>
@@ -23,6 +25,8 @@ public static class FlowLearner
 {
     public static readonly TimeSpan SessionGap = TimeSpan.FromMinutes(30);
     public static readonly TimeSpan LongFlow = TimeSpan.FromMinutes(20);
+    /// <summary>A window that opens later than this after the user's last click, menu pick or selection was shown by the program (a notes popup when a record loads).</summary>
+    public static readonly TimeSpan ProgramShown = TimeSpan.FromSeconds(2);
     public const int LongFlowSteps = 40;
     private const int MaxDurations = 2000;
     private static readonly HashSet<string> LeaveButtons = new(StringComparer.OrdinalIgnoreCase) { "exit", "cancel", "close", "quit", "abandon", "discard" };
@@ -75,6 +79,11 @@ public static class FlowLearner
             w.Seconds += (v.End - v.Start).TotalSeconds;
             w.Visits++;
         }
+        // a window the program showed on its own (no click before it) is neither a visit nor the start of a flow: the visits around it
+        // join. The main window, prompts and the session windows are never that (returning to the main window needs no click).
+        bool IsDialogWin(string win) => dialogWindows is not null && dialogWindows.Contains(win);
+        var mainOfAll = MainWindow(all.Where(v => !IsDialogWin(v.Win) && (sessionWindows is null || !sessionWindows.Contains(v.Win))).GroupBy(v => v.Win).Select(g => (g.Key, g.Sum(v => (v.End - v.Start).TotalSeconds), g.Count())));
+        all = WithoutProgramShown(all, win => IsDialogWin(win) || win == mainOfAll || (sessionWindows is not null && sessionWindows.Contains(win)));
         for (var i = 1; i < all.Count; i++)
         {
             var k = LearnState.Key(all[i - 1].Win, all[i].Win);
@@ -91,7 +100,7 @@ public static class FlowLearner
     }
 
     /// <summary>Cuts the visits into runs at the points where a flow ends; a long run is split at its prompts.</summary>
-    internal static List<List<Visit>> Runs(List<Visit> visits, string? main, Func<Visit, bool> isDialog)
+    public static List<List<Visit>> Runs(List<Visit> visits, string? main, Func<Visit, bool> isDialog)
     {
         var runs = new List<List<Visit>>();
         var cur = new List<Visit>();
@@ -168,24 +177,57 @@ public static class FlowLearner
         _ => e.FieldKey,
     };
 
-    internal static List<Visit> Visits(List<UiEvent> session)
+    public static List<Visit> Visits(List<UiEvent> session)
     {
         var visits = new List<Visit>();
         Visit? cur = null;
+        var lastClick = DateTime.MinValue;
         foreach (var e in session)
         {
             var key = Titles.Key(e.Win);
-            if (key.Length == 0) continue;
+            var click = e.Act is Acts.Invoke or Acts.Select or Acts.Menu or Acts.Dropdown;
+            if (key.Length == 0) { if (click) lastClick = e.T; continue; }
             if (cur is null || cur.Win != key)
             {
                 cur = new Visit { Win = key, Start = e.T, End = e.T, Source = e.Source };
+                // a window that appears (open, foreground) with no click, menu pick or selection in the two seconds before it was shown by the program
+                cur.ShownByProgram = visits.Count > 0 && !click && e.T - lastClick > ProgramShown && !key.Contains(" › ", StringComparison.Ordinal);
                 visits.Add(cur);
             }
+            if (click) lastClick = e.T;
             cur.End = e.T;
-            if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0) cur.Controls.Add(Verb(e));
+            // what the program filled in is not a step a person took
+            if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0 && !(e.Act == Acts.Value && e.By == ValueBy.App)) cur.Controls.Add(Verb(e));
             if (e.Act == Acts.Close && e.Ct == "Window" && Titles.Key(e.Name) == key && key.Contains(" › ", StringComparison.Ordinal)) cur.ClosedDocument = true;
         }
+        // a window the program showed once on its own is its popup every time it appears in the session (a flicker of focus
+        // between it and the window behind it starts no visit either)
+        var programWindows = new HashSet<string>(visits.Where(v => v.ShownByProgram).Select(v => v.Win), StringComparer.Ordinal);
+        foreach (var v in visits.Skip(1)) if (programWindows.Contains(v.Win)) v.ShownByProgram = true;
         return visits;
+    }
+
+    /// <summary>
+    /// Drops the visits of windows the program showed on its own (except prompts, which the flow rules handle) and joins the
+    /// visits around them when they are the same window, so "Main → Notes → Main" is one stay on Main.
+    /// </summary>
+    public static List<Visit> WithoutProgramShown(List<Visit> visits, Func<string, bool> isDialog)
+    {
+        var result = new List<Visit>();
+        foreach (var v in visits)
+        {
+            if (v.ShownByProgram && !isDialog(v.Win)) continue;
+            if (result.Count > 0 && result[^1].Win == v.Win && !isDialog(v.Win))
+            {
+                var prev = result[^1];
+                prev.End = v.End;
+                prev.Controls.AddRange(v.Controls);
+                prev.ClosedDocument |= v.ClosedDocument;
+                continue;
+            }
+            result.Add(v);
+        }
+        return result;
     }
 
     private static void Record(LearnState state, List<Visit> steps)

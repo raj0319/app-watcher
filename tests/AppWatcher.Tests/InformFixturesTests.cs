@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using AppWatcher.Core;
@@ -272,7 +272,7 @@ public class InformFixturesTests
         var input = Input();
         var r = Learner.Learn(input);
         Assert.True(r.Flows.Sum(f => f.Count) >= 8, $"{r.Flows.Sum(f => f.Count)} flow runs; one 25-minute flow is useless");
-        Assert.True(r.Flows.Count >= 5, $"{r.Flows.Count} distinct flows");
+        Assert.True(r.Flows.Count >= 4, $"{r.Flows.Count} distinct flows"); // 4 since 0.9: the vendor notes window the program pops up starts no flow
         Assert.Equal("DDI System Inform - Sample Co", r.MainWindow);
         Assert.True(r.Flows.All(f => f.MedianMs < 20 * 60_000), "a flow longer than 20 minutes survived: " + string.Join("; ", r.Flows.Select(f => $"{f.Key} {f.MedianMs / 60000:0.0} min")));
         Assert.DoesNotContain(r.Screens, s => s.Title is "Close?" or "No Selection Specified" or "Advanced Demand Forecasting and Purchasing");

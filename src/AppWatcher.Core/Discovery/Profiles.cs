@@ -26,6 +26,10 @@ public sealed class AppProfile
     public int? DumpRowCap { get; set; }
     public int? GridRowCap { get; set; }
     public bool? MaskTitles { get; set; }
+    /// <summary>Title patterns with one * whose starred part (the company name in the main title) is masked in memory.</summary>
+    public List<string> TitleMasks { get; set; } = new();
+    /// <summary>Read inner tab selection through the selection property (safe on Infragistics and DevExpress, never on plain WinForms).</summary>
+    public bool? SelectionReads { get; set; }
     /// <summary>The kind of data server this program uses ("universe", "sqlserver", ...), for backends found by host name only.</summary>
     public string? BackendKind { get; set; }
     /// <summary>Plain-words note shown at setup.</summary>
@@ -49,6 +53,8 @@ public sealed class AppProfile
         if (DumpRowCap is not null) cfg.Collector.DumpRowCap = DumpRowCap.Value;
         if (GridRowCap is not null) cfg.Collector.GridRowCap = GridRowCap.Value;
         if (MaskTitles is not null) cfg.Privacy.MaskTitles = MaskTitles.Value;
+        foreach (var m in TitleMasks) if (!cfg.Privacy.TitleMasks.Contains(m)) cfg.Privacy.TitleMasks.Add(m);
+        if (SelectionReads is not null) cfg.Collector.SelectionReads = SelectionReads.Value;
     }
 
     /// <summary>The current settings as a profile the user can share.</summary>
@@ -62,6 +68,7 @@ public sealed class AppProfile
             ExcludeWindows = cfg.Privacy.ExcludeWindows.ToList(),
             TabDocuments = cfg.Collector.TabDocuments, MsaaFallback = cfg.Collector.MsaaFallback, PressInference = cfg.Collector.PressInference,
             DumpDepth = cfg.Collector.DumpDepth, DumpRowCap = cfg.Collector.DumpRowCap, GridRowCap = cfg.Collector.GridRowCap, MaskTitles = cfg.Privacy.MaskTitles,
+            TitleMasks = cfg.Privacy.TitleMasks.ToList(), SelectionReads = cfg.Collector.SelectionReads,
         };
         if (cfg.App is not null) p.Match.Exe.Add(cfg.App.ProcessName.ToLowerInvariant());
         if (toolkit is not null) p.Match.Toolkit.Add(toolkit);

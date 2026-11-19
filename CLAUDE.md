@@ -1,4 +1,4 @@
-# App Watcher - instructions for Claude Code
+﻿# App Watcher - instructions for Claude Code
 
 This repository holds App Watcher, a small Windows tray program that watches ONE chosen desktop
 app and learns the logic behind it (fields, tables, rules, flows). Read this file once, then follow it.
@@ -12,14 +12,14 @@ src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, da
 src/AppWatcher/          the tray app: WinForms tray icon, three-step first-run wizard, settings window (Simple/Advanced), UI Automation collector (with MSAA, menu and press-inference fallbacks),
                          window capture (one picture per screen), ETW file-access trace
 profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
-tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform holds anonymised copies of a real session (see its README)
+tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform and Fixtures/inform-v0.8 hold anonymised copies of two real sessions (see their READMEs)
 tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
 scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
 openclaw/                how to use the skills from OpenClaw
 prompts/analyst-prompt.md  the architect prompt shared by the analyze skill and the optional API/local analysis
 .claude/commands/analyze.md  thin wrapper that invokes skills/app-watcher-analyze
-docs/                    notes for people (data-folder.md: file formats; demo-test.md: 30-minute test; improvements.md: what changed after the first real run and why)
+docs/                    notes for people (data-folder.md: file formats; demo-test.md: 30-minute test; improvements.md: what changed after each real run and why; test-v0.8-inform.md: the anonymised scorecard of the second measured run)
 ```
 
 Build: `dotnet build` (needs the .NET 8 SDK). Tests: `dotnet test`. One-file exe: `scripts\publish.ps1`.
@@ -97,11 +97,21 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   Validation messages go to the settings window's status line. Export writes to a fixed path.
 - Dialogs are decided by structure (`DialogDetector`), never by a title pattern alone; a profile's `dialogWindows`
   pattern only helps when the structure allows it (`CouldBeNamedDialog`).
-- Presses on toolkits whose buttons announce nothing come from the control under the pointer (read with
-  ElementFromPoint when the mouse is captured or a state changes, never a hook) or the focused button, counted when a
-  window, tab or message changes within 1.5 s. Tab documents come from reading the tab strip after events (every 2 s
-  at most), never from a selection event alone. Values the program fills in come from the field's own change event
-  or from one re-read of the document 300 ms after a typed value or press (`FieldReads`). Keep all of that read-only.
+- Presses on toolkits whose buttons announce nothing come from the control under the pointer, read with
+  ElementFromPoint at once when the left button went down (`GetAsyncKeyState` sampled at each event the collector
+  already receives: a read, never a hook) or when a PRESSED state or mouse capture says so (a state change on hover
+  remembers nothing), or from the focused button; counted when a window, document, tab or message changes or the
+  program fills a value within 1.5 s (`PressDecider`, pure and tested). Documents of an MDI workspace are the child
+  windows of the MDICLIENT pane (`MdiWorkspace`): the one in front by z-order is the screen, read from its own window;
+  a `Tab` control inside a document is never the workspace strip; where a strip is exposed it is read after events
+  (every 2 s at most), never through the selection pattern on WinForms. Inner tab pages are read with the document after
+  clicks and focus moves. Values the program fills in come from the field's own change event or from one re-read of the
+  document 300 ms after a typed value, press, Enter, Tab or focus move (`FieldReads.Diff`: the cell that had the focus
+  is the typed value). Keep all of that read-only.
+- Text read from pictures reaches memory only as a field or column name the screen record knows (`OcrLogic.KnownFields`);
+  personal fields the program fills (phone, e-mail, address, name) are shapes in the events; the profile's `titleMasks`
+  hide the company name in the main title. A window the program opens by itself (no click in the 2 s before) is not a
+  flow visit.
 - Evidence folders copied from a client PC (`app-watcher-v*-evidence-*/`, `evidence/`) are ignored by git and must
   stay out of it; anything that goes into `tests/` is anonymised first (`scripts\check-fixtures.ps1 -Forbidden <list kept outside the repo>`).
 - When testing the collector against any app: start your own instance (tests/SampleApp is there for that),

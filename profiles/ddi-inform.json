@@ -1,6 +1,6 @@
 {
   "name": "ddi-inform",
-  "description": "DDI inForm ERP (Infragistics on WinForms, UniVerse backend). Tabbed MDI workspace in the main window: Customer Master, Sales Order Entry, Purchase Order Entry, Price Change, ... Written after the first real run (2026-11-18), revised after the measured run of 2026-11-19.",
+  "description": "DDI inForm ERP (Infragistics on WinForms, UniVerse backend). MDI workspace in the main window: each document (Customer Master, Sales Order Entry, Purchase Order Entry, Price Change, ...) is an MDI child window. Written after the first real run (2026-11-18), revised after the measured runs of 2026-11-19 (v0.7 and v0.8).",
   "match": {
     "exe": [
       "inform",
@@ -50,5 +50,9 @@
   "gridRowCap": 5,
   "maskTitles": true,
   "backendKind": "universe",
-  "note": "On this toolkit button presses come from inference (the control under the pointer or the focus when a window, tab or message changes; the buttons report nothing themselves) and the values the program fills in come from re-reads of the document after each typed value or press (its grid cells and bound editors report no change). The data lives on a UniVerse server: ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names the host (HostName) and account (AccountPath). Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server."
+  "note": "Documents are MDI child windows of the main window (the tab strip is not exposed to UI Automation): each is recorded as 'DDI System Inform - … › Document' from its own window, and its inner tab pages (Main, General, Credit) are read after clicks. Button presses come from inference: the control under the pointer when the left button goes down (a read of the key state, no hook) and are counted when a window, document, message or tab changes; the buttons report nothing themselves. What the user types into grid cells and what the program fills in come from re-reads of the document after each typed value, press, Enter, Tab or focus move (its grid cells and bound editors report no change). The company name in the main title is masked in memory. The data lives on a UniVerse server: ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names the host (HostName) and account (AccountPath); the hosts in the program's log files are web services it talks to, not the data server. Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server.",
+  "selectionReads": true,
+  "titleMasks": [
+    "DDI System Inform - *"
+  ]
 }

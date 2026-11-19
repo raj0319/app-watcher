@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   End-to-end test of the collector against real windows: starts App Watcher in portable mode on the
   SampleApp (tests\SampleApp), drives the sample app by UI Automation patterns (no global key presses,
@@ -193,7 +193,20 @@ function Front() {
 }
 # ---- real mouse input: only on the window this script started, found by its handle; the pointer is put back afterwards ----
 $script:Inconclusive = @()
-function AppWindowRect() { $app.Refresh(); $h = $app.MainWindowHandle; $r = New-Object System.Drawing.Rectangle; [LiveTest.Mouse]::GetWindowRect($h, [ref]$r) | Out-Null; return @{ Handle = $h; Rect = $r } }
+function AppWindowRect($window = $null) {
+    # the window the click must stay inside: the sample app's main window, or the given window of the same process (the workspace)
+    if ($null -ne $window) { $h = [System.IntPtr]$window.Current.NativeWindowHandle } else { $app.Refresh(); $h = $app.MainWindowHandle }
+    $r = New-Object System.Drawing.Rectangle; [LiveTest.Mouse]::GetWindowRect($h, [ref]$r) | Out-Null; return @{ Handle = $h; Rect = $r }
+}
+function FindByName($parent, [string]$name, [string]$controlType) {
+    foreach ($i in 1..10) {
+        foreach ($d in $parent.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+            if ($d.Current.Name -eq $name -and $d.Current.ControlType.ProgrammaticName -eq "ControlType.$controlType") { return $d }
+        }
+        Start-Sleep -Milliseconds 300
+    }
+    throw "control not found: $controlType '$name' in [$($parent.Current.Name)]"
+}
 function MoveTo([int]$x, [int]$y) {
     # absolute moves in a few steps (a WinForms tip only shows after real mouse movement; SetCursorPos alone is not enough)
     $p = New-Object System.Drawing.Point; [LiveTest.Mouse]::GetCursorPos([ref]$p) | Out-Null
@@ -204,11 +217,26 @@ function MoveTo([int]$x, [int]$y) {
         Start-Sleep -Milliseconds 60
     }
 }
-function RealClick($parent, [string]$automationId, [string]$what) {
+function RealClick($parent, [string]$automationId, [string]$what, $window = $null, $element = $null) {
+    $e = if ($null -ne $element) { $element } else { Find $parent $automationId }
+    $r = $e.Current.BoundingRectangle
+    $w = AppWindowRect $window
+    $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
+    $inside = $x -ge $w.Rect.X -and $x -le $w.Rect.Right -and $y -ge $w.Rect.Y -and $y -le $w.Rect.Bottom
+    if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle -or -not $inside) { $script:Inconclusive += $what; Write-Host "   (skipped the real click on $what - the sample app is not the window in front, or the control is outside it)"; return $false }
+    MoveTo $x $y
+    Start-Sleep -Milliseconds 120
+    if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle) { $script:Inconclusive += $what; Write-Host "   (skipped the real click on $what - another window came in front)"; return $false }
+    [LiveTest.Mouse]::mouse_event(0x0002, 0, 0, 0, [System.UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [LiveTest.Mouse]::mouse_event(0x0004, 0, 0, 0, [System.UIntPtr]::Zero)
+    Start-Sleep -Milliseconds $SettleMs
+    return $true
+}
+function RealClickAt($parent, [string]$automationId, [int]$dx, [int]$dy, [string]$what, $window = $null) {
+    # a real click at an offset inside a control (a tab page of a tab control), with the same window checks as RealClick
     $e = Find $parent $automationId
     $r = $e.Current.BoundingRectangle
-    $w = AppWindowRect
-    $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
+    $w = AppWindowRect $window
+    $x = [int]($r.X + $dx); $y = [int]($r.Y + $dy)
     $inside = $x -ge $w.Rect.X -and $x -le $w.Rect.Right -and $y -ge $w.Rect.Y -and $y -le $w.Rect.Bottom
     if ([LiveTest.Mouse]::GetForegroundWindow() -ne $w.Handle -or -not $inside) { $script:Inconclusive += $what; Write-Host "   (skipped the real click on $what - the sample app is not the window in front, or the control is outside it)"; return $false }
     MoveTo $x $y
@@ -297,6 +325,31 @@ try { RealHover $main "btnRefresh" "Refresh tip" | Out-Null } catch { Write-Host
 Start-Sleep -Milliseconds 1000
 try { Tab $main "Customer Master" } catch { Write-Host "   step failed: Tab $main 'Customer Master' -> $($_.Exception.Message)" }
 Start-Sleep -Milliseconds 1500
+# an MDI workspace (documents are child windows of the MDI client, like a tabbed-MDI ERP): the document in front is the screen,
+# a real click on its inner tab is a page selection, a real click on Exit closes it and the next document becomes the screen
+$ws = $null
+try { Menu $main "View" "Workspace" } catch { Write-Host "   step failed: Menu View Workspace -> $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 2500
+try { $ws = Top "Sample ERP - Workspace" 20 } catch { Write-Host "   (workspace window not found: $($_.Exception.Message))" }
+if ($null -ne $ws) {
+    try { [Microsoft.VisualBasic.Interaction]::AppActivate($app.Id) } catch { }
+    Start-Sleep -Milliseconds 800
+    $soe = $null
+    try { $soe = FindByName $ws "Sales Order Entry" "Window" } catch { Write-Host "   (document window not found: $($_.Exception.Message))" }
+    if ($null -ne $soe) {
+        # the tab pages have a fixed size of 80 px: "Main" is the first, "Notes" the second (WinForms hides tab items from a second UIA client)
+        try { RealClickAt $soe "tabsDoc" 120 11 "Notes tab" $ws | Out-Null } catch { Write-Host "   step failed: RealClick Notes tab -> $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 1500
+        try { RealClickAt $soe "tabsDoc" 40 11 "Main tab" $ws | Out-Null } catch { Write-Host "   step failed: RealClick Main tab -> $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 1200
+        foreach ($q in @("4", "6")) { try { SetVal $soe "txtDocQty" $q; Start-Sleep -Milliseconds 900 } catch { Write-Host "   step failed: SetVal txtDocQty $q -> $($_.Exception.Message)" } }
+        try { RealClick $soe "btnDocExit" "Exit (document)" $ws | Out-Null } catch { Write-Host "   step failed: RealClick document Exit -> $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 2500
+    }
+    try { Act $ws "btnCloseWorkspace" } catch { Write-Host "   step failed: Act btnCloseWorkspace -> $($_.Exception.Message)" }
+    Start-Sleep -Milliseconds 1500
+}
+Front
 
 [LiveTest.Mouse]::SetCursorPos($cursorBefore.X, $cursorBefore.Y) | Out-Null   # the pointer goes back where it was
 Write-Host "4. stop the sample app (killed: it is ours), learn, stop the watcher"
@@ -337,6 +390,27 @@ elseif ($hints.Count -ge 1) { Write-Host ("   HINT CHECK: ok - {0}" -f (($hints 
 else { Write-Host "   HINT CHECK: MISSING - no hover tip was recorded" }
 $statusJson = Get-Content (Join-Path $data "collector-status.json") -Raw | ConvertFrom-Json
 Write-Host ("   values filled by the program: {0} events ({1} found by re-reading the document, {2} by the field's own event)" -f $filled.Count, $statusJson.ValuesReread, ($statusJson.ValuesFilled - $statusJson.ValuesReread))
+# the MDI workspace checks: the document in front was the screen, its inner tab click a selection, its Exit a press, the next document the screen after it
+$wsTitle = "Sample ERP - Workspace"
+$soeWin = "$wsTitle " + [char]0x203A + " Sales Order Entry"; $pcWin = "$wsTitle " + [char]0x203A + " Price Change"
+$soeOpen = @($events | Where-Object { $_.act -eq "open" -and $_.win -eq $soeWin })
+$soeClose = @($events | Where-Object { $_.act -eq "close" -and $_.name -eq $soeWin })
+$pcAfter = @($events | Where-Object { $_.win -eq $pcWin -and $soeClose.Count -gt 0 -and $_.t -ge $soeClose[0].t })
+$innerSel = @($events | Where-Object { $_.act -eq "select" -and $_.ct -eq "TabItem" -and $_.name -eq "Notes" -and $_.win -eq $soeWin })
+$docExit = @($events | Where-Object { $_.act -eq "invoke" -and $_.name -eq "Exit" -and $_.win -eq $soeWin })
+$docTotals = @($events | Where-Object { $_.act -eq "value" -and $_.by -eq "app" -and $_.name -eq "Total" -and $_.win -eq $soeWin })
+if ($null -eq $ws) { Write-Host "   MDI CHECK: inconclusive (the workspace did not open)" }
+elseif ($soeOpen.Count -ge 1 -and $soeClose.Count -ge 1 -and $pcAfter.Count -ge 1) { Write-Host ("   MDI CHECK: ok - the document in front was the screen ({0}), its close ended it and {1} became the screen" -f $soeWin, $pcWin) }
+else { Write-Host ("   MDI CHECK: MISSING - open {0}, close {1}, next document after it {2}" -f $soeOpen.Count, $soeClose.Count, $pcAfter.Count) }
+if ($null -eq $ws) { Write-Host "   INNER TAB CHECK: inconclusive" }
+elseif ($script:Inconclusive -contains "Notes tab") { Write-Host "   INNER TAB CHECK: inconclusive (the real click was skipped)" }
+elseif ($innerSel.Count -ge 1) { Write-Host ("   INNER TAB CHECK: ok - the Notes page was recorded as selected ({0} event(s), how={1})" -f $innerSel.Count, $innerSel[0].how) }
+else { Write-Host "   INNER TAB CHECK: MISSING - the inner tab click left no select event" }
+if ($null -eq $ws) { Write-Host "   DOCUMENT EXIT CHECK: inconclusive" }
+elseif ($script:Inconclusive -contains "Exit (document)") { Write-Host "   DOCUMENT EXIT CHECK: inconclusive (the real click was skipped)" }
+elseif ($docExit.Count -ge 1) { Write-Host ("   DOCUMENT EXIT CHECK: ok - Exit on the document was counted ({0}, {1} total fill(s) seen on it)" -f $docExit[0].how, $docTotals.Count) }
+else { Write-Host "   DOCUMENT EXIT CHECK: MISSING - the Exit click that closed the document was not counted" }
+Write-Host ("   MDI documents seen: {0}, never recorded: {1}; inner tab selections: {2}; typed values found by re-reading: {3}" -f $statusJson.MdiDocuments, (@($statusJson.DocumentsNeverRecorded) -join ", "), $statusJson.InnerTabSelections, $statusJson.ValuesTypedReread)
 Write-Host ("   tab selections: {0}" -f $tabScreens)
 Write-Host "   windows seen:"
 $events | Group-Object win | Sort-Object Count -Descending | ForEach-Object { Write-Host ("     {0,3}  {1}" -f $_.Count, $_.Name) }

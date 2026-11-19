@@ -18,7 +18,25 @@ public static partial class Masking
     [GeneratedRegex(@"\d{9,}")]
     private static partial Regex LongDigits();
 
+    [GeneratedRegex(@"^(phone|fax|e-?mail|address|address line ?\d?|line ?\d|name|attention|attn|contact|city|street|zip|zip code|postal code|mobile|cell|website|web site|url)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex PersonalField();
+
     public static bool IsSensitiveName(string? name) => !string.IsNullOrEmpty(name) && SensitiveName().IsMatch(name);
+
+    /// <summary>A field whose content is personal (a phone, an e-mail, an address, a name): what the program fills in there is kept as a shape, not a value.</summary>
+    public static bool IsPersonalField(string? label) => !string.IsNullOrEmpty(label) && PersonalField().IsMatch(label.Trim());
+
+    /// <summary>A value the program filled in, for the event log: personal fields keep only the shape; everything else as <see cref="ForEvent"/>.</summary>
+    public static string? ForAppValue(string? value, string? label, string? automationId, bool isPasswordControl)
+    {
+        if (value is null) return null;
+        if (isPasswordControl || IsSensitiveName(label) || IsSensitiveName(automationId)) return Masked;
+        if (IsPersonalField(label) || IsPersonalField(Clean(automationId))) return Shape(value);
+        if (Email().IsMatch(value.Trim()) || value.Contains("mailto:", StringComparison.OrdinalIgnoreCase) || value.Contains('@') && value.Contains("href=", StringComparison.OrdinalIgnoreCase)) return Shape(value);
+        return value.Length > 500 ? value[..500] + "..." : value;
+    }
+
+    private static string Clean(string? aid) => Screens.Labels.Clean(aid);
 
     /// <summary>Value recorded in the event log. Only password-like controls are masked here.</summary>
     public static string? ForEvent(string? value, string? controlName, string? automationId, bool isPasswordControl)

@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using AppWatcher.Core.Events;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Screens;
@@ -19,7 +19,9 @@ public static class Learner
 
     public static LearnInput LoadInput(AppPaths paths, string appName, WatcherConfig? config = null, DateTime? since = null)
     {
-        if (config is not null) Titles.MaskQuoted = config.Privacy.MaskTitles;
+        if (config is not null) { Titles.MaskQuoted = config.Privacy.MaskTitles; Titles.MaskPatterns = config.Privacy.TitleMasks.ToList(); }
+        var profile = config?.Profile is { Length: > 0 } pn ? Discovery.ProfileStore.ByName(pn) : null;
+        if (profile is not null) foreach (var m in profile.TitleMasks) if (!Titles.MaskPatterns.Contains(m)) Titles.MaskPatterns.Add(m);
         var input = new LearnInput
         {
             AppName = appName,
@@ -38,6 +40,7 @@ public static class Learner
             SessionWindowPatterns = config?.Collector.SessionWindows ?? new(),
             DiskUse = DiskUse(paths),
             OcrStates = OcrLogic.Load(paths.Screens),
+            BackendKind = profile?.BackendKind,
         };
         // fold titles that share a structure but differ in record ids or names
         var normalizer = TitleNormalizer.FromGroups(ScreenWriter.TitleGroups(paths.Screens));
@@ -90,6 +93,7 @@ public static class Learner
 
         var events = input.Events.Where(e => state.Watermark is null || e.T > state.Watermark.Value).OrderBy(e => e.T).ToList();
         AsDialogEvents(events, input.Screens, dialogWindows);
+        var knownFields = OcrLogic.KnownFields(input.Screens);
         var ocr = input.OcrStates.Where(o => !state.OcrFiles.Contains(o.File)).OrderBy(o => o.T).ToList();
         var usedOcr = new HashSet<OcrState>();
         var effects = input.Effects.Where(f => !state.EffectFiles.Contains(f.File)).OrderBy(f => f.T).ToList();
@@ -113,7 +117,7 @@ public static class Learner
             foreach (var s in sq) usedSql.Add(s);
             var oc = ocr.Where(o => !usedOcr.Contains(o) && o.T >= start.AddSeconds(-1) && o.T <= end.AddSeconds(5)).ToList();
             foreach (var o in oc) usedOcr.Add(o);
-            ProcessSession(working, session, fx, sq, keyIndex, triggers, sessionWindows, flowCuts, oc);
+            ProcessSession(working, session, fx, sq, keyIndex, triggers, sessionWindows, flowCuts, oc, knownFields: knownFields);
             if (closed && !openSeen) state.Watermark = end;
         }
         // pictures outside any session (the collector pictured a state while no event was written)
@@ -121,7 +125,7 @@ public static class Learner
         if (loose.Count > 0)
         {
             if (loose.Any(o => o.T > cutoff)) Open();
-            OcrLogic.Accumulate(working, new List<UiEvent>(), loose);
+            OcrLogic.Accumulate(working, new List<UiEvent>(), loose, knownFields);
         }
         // effects and statements outside any session (idle file changes, logs without timestamps)
         foreach (var f in effects.Where(f => !usedEffects.Contains(f)))
@@ -218,7 +222,8 @@ public static class Learner
         new(input.Screens.Where(r => r.Kind == ScreenKinds.Menu || DialogDetector.IsMenuWindow(r.Controls)).Select(r => Titles.Key(r.Title)).Where(k => k.Length > 0));
 
     private static void ProcessSession(LearnState s, List<UiEvent> session, List<EffectRecord> effects, List<SqlStatement> sqls,
-        Dictionary<string, HashSet<(string table, string col)>> keyIndex, Regex triggers, HashSet<string> sessionWindows, HashSet<string>? dialogWindows = null, List<OcrState>? ocr = null, bool countSession = true)
+        Dictionary<string, HashSet<(string table, string col)>> keyIndex, Regex triggers, HashSet<string> sessionWindows, HashSet<string>? dialogWindows = null, List<OcrState>? ocr = null, bool countSession = true,
+        Dictionary<string, HashSet<string>>? knownFields = null)
     {
         if (session.Count > 0)
         {
@@ -232,7 +237,16 @@ public static class Learner
             s.PressesSeen += session.Count(e => e.Act == Acts.Invoke && e.How != PressHow.Inferred);
             s.PressesInferred += session.Count(e => e.Act == Acts.Invoke && e.How == PressHow.Inferred);
             s.DialogsSeen += session.Count(e => e.Act == Acts.Dialog);
-            s.TabSelections += session.Count(e => e.Act == Acts.Select && e.Ct == "TabItem");
+            s.TabSelections += session.Count(e => e.Act == Acts.Select && e.Ct == "TabItem" && Titles.Key(e.Win).Contains(" › ", StringComparison.Ordinal));
+            foreach (var e in session)
+            {
+                var key = Titles.Key(e.Win);
+                if (key.Length == 0) continue;
+                if (key.Contains(" › ", StringComparison.Ordinal)) s.DocumentsSeen.Add(key);
+                // the user worked in a field (focus moved to it) versus a typed value recorded there: a screen with many of the first and none of the second lost its typing
+                if (e.Act == Acts.Focus && e.Ct is "Edit" or "ComboBox" or "DataItem" or "Spinner" or "Document") s.FieldFocuses[key] = s.FieldFocuses.GetValueOrDefault(key) + 1;
+                if (e.Act == Acts.Value && e.By != ValueBy.App) s.TypedValues[key] = s.TypedValues.GetValueOrDefault(key) + 1;
+            }
             foreach (var st in session.Where(e => e.Act == Acts.Start && !string.IsNullOrEmpty(e.Val)))
             {
                 var um = Regex.Match(st.Val!, @"user:(\w+)"); if (um.Success) s.Users.Add(um.Groups[1].Value);
@@ -243,7 +257,7 @@ public static class Learner
             AccumulateScreens(s, session);
             LogicLearner.Accumulate(s, session);
         }
-        if (ocr is { Count: > 0 }) OcrLogic.Accumulate(s, session, ocr);
+        if (ocr is { Count: > 0 }) OcrLogic.Accumulate(s, session, ocr, knownFields);
         foreach (var fx in effects)
         {
             s.EffectFiles.Add(fx.File);
@@ -476,6 +490,22 @@ public static class Learner
         // message boxes the collector recorded as screens (an older collector, or a shape it did not know): by title or by shape, visited 5+ times
         h.PromptScreens = input.Screens.Where(rec => rec.Kind == ScreenKinds.Screen && (DialogDetector.LooksLikePromptTitle(rec.Title) || DialogDetector.Detect("", rec.Controls).isDialog))
                 .Select(rec => Titles.Key(rec.Title)).Distinct().Count(k => s.Screens.TryGetValue(k, out var si) && si.Visits >= 5);
+        // documents the user opened (named by the events or by the collector) that have no screen record of their own
+        var recorded = new HashSet<string>(input.Screens.Select(rec => Titles.Key(rec.Title)), StringComparer.Ordinal);
+        var never = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var d in s.DocumentsSeen) if (!recorded.Contains(d)) never.Add(d);
+        if (input.Collector is not null)
+            foreach (var d in input.Collector.DocumentsNeverRecorded)
+            {
+                var key = Titles.Key(d);
+                if (key.Length == 0) continue;
+                // the collector names the document alone ("Sales Order Entry"); the screens are named "Main › Sales Order Entry"
+                if (!key.Contains(" › ", StringComparison.Ordinal) && r.MainWindow is { Length: > 0 } mw) key = TabDocuments.Title(mw, key);
+                if (!recorded.Contains(key) && !recorded.Any(k => k.EndsWith(" › " + key, StringComparison.Ordinal))) never.Add(key);
+            }
+        h.DocumentsNeverRecorded = never.ToList();
+        // the user moved between fields of a screen (five focus moves or more) and not one typed value was recorded there
+        h.TypedButUnrecorded = s.FieldFocuses.Where(f => f.Value >= 5 && s.TypedValues.GetValueOrDefault(f.Key) == 0).Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
         h.EventsPerDay = h.Days == 0 ? 0 : (double)s.EventCount / h.Days;
         var saves = Math.Max(s.TriggerInvokes, s.EffectsTotal);
         h.SavesWithDiffPct = saves == 0 ? 0 : 100.0 * s.EffectsWithDiff / saves;
@@ -489,10 +519,11 @@ public static class Learner
         if (input.Collector is not null) h.CollectorProblems = input.Collector.Problems();
         if (!input.HasDataSources)
         {
-            var server = input.Backends.FirstOrDefault(b => b.Kind is not ("sqlite" or "access" or "unknown"));
+            var server = input.PrimaryBackend();
+            var services = input.Backends.Where(b => b.IsService).Select(b => b.Host).Where(x => x is not null).Distinct().ToList();
             h.Advice.Add(server is null
-                ? "No data source is configured, so nothing the app saves can be learned. Add its database or data folder in Settings > Data."
-                : $"No data source is configured. Discovery found a {server.Kind} backend{(server.Host is null ? "" : $" at {server.Host}")}: ask the vendor or DBA for a read-only login (Settings > Data > Add ODBC or SQL Server connection), or point Settings > Data > Export drop folder at nightly CSV exports of the key tables.");
+                ? "No data source is configured, so nothing the app saves can be learned. Add its database or data folder in Settings > Data." + (services.Count > 0 ? $" (The hosts in its log files, {string.Join(", ", services)}, are web services it talks to, not its data server.)" : "")
+                : $"No data source is configured. Discovery found a {server.Kind} backend{(server.Host is null ? "" : $" at {server.Host}")}{(server.Database is null ? "" : $" (account {server.Database})")}: ask the vendor or DBA for a read-only login (Settings > Data > Add ODBC or SQL Server connection), or point Settings > Data > Export drop folder at nightly CSV exports of the key tables.");
         }
         else if (s.EffectsTotal == 0 && s.TriggerInvokes > 0) h.Advice.Add("Save-type buttons were pressed but no data change was captured: the configured data sources may not be the ones the app writes. Use Settings > Data > Detect by watching file access.");
         if (s.EventCount > 50 && s.PressesSeen + s.PressesInferred == 0) h.Advice.Add("No button or menu press was recorded. The app's controls do not report presses to UI Automation; the MSAA and press-inference fallbacks are on, so check collector-status.json after the next session.");
@@ -500,6 +531,8 @@ public static class Learner
         if (h.FieldsCandidate > 0) h.Advice.Add($"{h.FieldsCandidate} field mapping{(h.FieldsCandidate == 1 ? " is a candidate" : "s are candidates")} (fewer than 3 distinct values seen); more days of normal use will confirm or drop them.");
         if (h.Days < 5) h.Advice.Add($"Only {h.Days} day{(h.Days == 1 ? "" : "s")} of evidence; flows and rules get reliable after a week of normal work.");
         if (h.UsersSeen <= 1 && h.Days >= 5) h.Advice.Add("Only one user has been watched; install App Watcher on another PC and merge its folder (AppWatcher.exe --merge) to see flows per role.");
+        foreach (var d in h.DocumentsNeverRecorded.Take(12)) h.CollectorProblems.Add($"the document {d} was opened but never recorded as a screen (its control tree could not be read)");
+        foreach (var scr in h.TypedButUnrecorded.Take(12)) h.CollectorProblems.Add($"on {scr} the user moved between fields (typed there) but no typed value was recorded: its fields report no change");
         if (h.Advice.Count == 0) h.Advice.Add("Nothing obvious would improve accuracy right now; keep watching.");
         return h;
     }
@@ -515,7 +548,8 @@ public static class Learner
             ? $"Fields and buttons: yes{(input.Toolkit is null ? "" : $" ({input.Toolkit} controls are exposed to UI Automation)")}."
             : "Fields and buttons: no, this app does not expose its screens to UI Automation; the MSAA fallback gives names only.");
         var readable = input.HasDataSources;
-        var server = input.Backends.FirstOrDefault(b => b.Kind is "sqlserver" or "mysql" or "postgresql" or "oracle" or "pervasive" or "universe" or "odbc" or "rest");
+        var server = input.PrimaryBackend();
+        var services = input.Backends.Where(b => b.IsService).Select(b => b.Host).Where(x => x is not null).Distinct().ToList();
         // a source counts as readable for tables only once rows were actually read; a plain file (not a database) is only fingerprinted
         var tablesRead = input.Latest is { } snap && snap.Databases.Values.Any(t => t.Count > 0);
         var filesOnly = input.Latest is { } snap2 && !snap2.Databases.Values.Any(t => t.Count > 0) && snap2.Files.Count > 0;
@@ -523,8 +557,8 @@ public static class Learner
         else if (readable) list.Add(tablesRead
             ? "Tables and rules: yes, a data source is configured and read before and after each save."
             : "Tables and rules: yes once its data has been read; a data source is configured and is read before and after each save.");
-        else if (server is not null) list.Add($"Tables and rules: not yet. The data is on a {server.Kind} server{(server.Host is null ? "" : $" ({server.Host}{(server.Port is null ? "" : ":" + server.Port)})")} this PC cannot read. Options: a read-only login (ODBC or SQL Server), a nightly export drop folder, or SQL statement capture by the DBA.");
-        else list.Add("Tables and rules: not yet, no data source was found. Options: Detect by watching file access, add the database or folder by hand, or an export drop folder.");
+        else if (server is not null) list.Add($"Tables and rules: not yet. The data is on a {server.Kind} server{(server.Host is null ? "" : $" ({server.Host}{(server.Port is null ? "" : ":" + server.Port)}{(server.Database is null ? "" : ", account " + server.Database)})")} this PC cannot read. Options: a read-only login (ODBC or SQL Server), a nightly export drop folder, or SQL statement capture by the DBA.");
+        else list.Add("Tables and rules: not yet, no data source was found. Options: Detect by watching file access, add the database or folder by hand, or an export drop folder." + (services.Count > 0 ? $" (The program talks to web services at {string.Join(", ", services)}; those are not its data server.)" : ""));
         if (input.Profile is not null) list.Add($"Profile: {input.Profile}.");
         return list;
     }

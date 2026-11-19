@@ -6,7 +6,7 @@ namespace AppWatcher.Core;
 
 public sealed class WatcherConfig
 {
-    public const string AppVersion = "0.8";
+    public const string AppVersion = "0.9";
 
     /// <summary>Words on a button or menu item that mean "this writes data", in the languages we meet most. Profiles add their own.</summary>
     public static readonly string[] DefaultTriggers =
@@ -136,6 +136,8 @@ public sealed class PrivacySettings
 {
     /// <summary>Replace quoted parts of window titles and tab labels ("ACME INC") with "…" in memory and export files.</summary>
     public bool MaskTitles { get; set; } = true;
+    /// <summary>Title patterns with one * ("DDI System Inform - *"): the part the star matches (the company name) becomes "…" in memory and export files.</summary>
+    public List<string> TitleMasks { get; set; } = new();
     /// <summary>Pictures of the app's window under screens/shots/. Kept for older configs; ScreenshotMode decides.</summary>
     public bool Screenshots { get; set; } = true;
     /// <summary>off | first (one picture per screen, first time seen) | actions (one per distinct state: after each press, tab, typed value, dialog, dropdown; deduped and capped). Never the desktop.</summary>
@@ -160,6 +162,11 @@ public sealed class CollectorSettings
     public bool PressInference { get; set; } = true;
     /// <summary>Dump the selected tab's content as a screen of its own ("Window › Tab") and attribute events to it.</summary>
     public bool TabDocuments { get; set; } = true;
+    /// <summary>
+    /// Read which inner tab item is selected through the selection property (one cached read). Off for plain WinForms, where
+    /// asking a tab item whether it is selected selects it; the page on screen says which tab is open instead.
+    /// </summary>
+    public bool SelectionReads { get; set; }
     public int DumpDepth { get; set; } = 14;
     public int DumpRowCap { get; set; } = 3000;
     /// <summary>Rows kept per grid or list in a tree dump; the rest becomes one note row with the count and column names.</summary>

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace SampleApp;
 
@@ -89,7 +89,10 @@ internal sealed class MainForm : Form
         viewQuote.Click += (_, _) => _tabs.SelectedIndex = 2;
         var viewReports = new ToolStripMenuItem("Reports") { Name = "mnuViewReports" }; // never chosen by the live test: shows up as "not seen yet"
         viewReports.Click += (_, _) => Message("Reports", "Reports are not part of this sample.");
-        view.DropDownItems.AddRange(new ToolStripItem[] { viewCustomers, viewOrders, viewQuote, viewReports });
+        // an MDI workspace like a tabbed-MDI ERP: documents are child windows of the MDI client, the one in front is the screen
+        var viewWorkspace = new ToolStripMenuItem("Workspace") { Name = "mnuViewWorkspace" };
+        viewWorkspace.Click += (_, _) => new WorkspaceForm(this).Show(this);
+        view.DropDownItems.AddRange(new ToolStripItem[] { viewCustomers, viewOrders, viewQuote, viewReports, viewWorkspace });
         var help = new ToolStripMenuItem("Help");
         var about = new ToolStripMenuItem("About") { Name = "mnuAbout" };
         about.Click += (_, _) => Message("About", "Sample ERP 1.0 - test application for App Watcher.");
@@ -205,6 +208,62 @@ internal sealed class MainForm : Form
         timer.Tick += (_, _) => { timer.Stop(); if (!f.IsDisposed) f.Close(); };
         timer.Start();
         f.Show(this);
+    }
+}
+
+/// <summary>
+/// An MDI workspace (IsMdiContainer): two documents, "Price Change" and "Sales Order Entry", opened as MDI child windows
+/// (children of the MDICLIENT pane, like Infragistics UltraTabbedMdi documents). Each has an inner tab control, a few
+/// fields and an Exit button that closes the document; the second one opened is in front.
+/// </summary>
+internal sealed class WorkspaceForm : Form
+{
+    public WorkspaceForm(Form owner)
+    {
+        Text = "Sample ERP - Workspace";
+        IsMdiContainer = true;
+        ClientSize = new Size(720, 460);
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(Math.Max(0, owner.Location.X - 200), Math.Max(0, owner.Location.Y - 140));
+        var close = new Button { Text = "Close workspace", Name = "btnCloseWorkspace", Dock = DockStyle.Top, Height = 28 };
+        close.Click += (_, _) => Close();
+        Controls.Add(close);
+        Shown += (_, _) =>
+        {
+            new DocumentForm(this, "Price Change", 12.5m).Show();
+            new DocumentForm(this, "Sales Order Entry", 45.34m).Show();
+        };
+    }
+}
+
+/// <summary>One MDI document: an inner tab control (Main | Notes), Product and Qty fields, a Total the program calculates (Qty × unit price), and Exit.</summary>
+internal sealed class DocumentForm : Form
+{
+    private readonly TextBox _qty = new() { Name = "txtDocQty", Width = 100 };
+    private readonly TextBox _total = new() { Name = "txtDocTotal", Width = 120, ReadOnly = true };
+
+    public DocumentForm(Form mdiParent, string title, decimal unitPrice)
+    {
+        MdiParent = mdiParent;
+        Text = title;
+        Name = title.Replace(" ", "") + "View";
+        ClientSize = new Size(520, 320);
+        // fixed tab sizes, so the live test can click the second page at a known spot (WinForms hides tab items from a second UIA client)
+        var tabs = new TabControl { Name = "tabsDoc", Left = 8, Top = 8, Width = 500, Height = 260, SizeMode = TabSizeMode.Fixed, ItemSize = new Size(80, 22) };
+        var main = new TabPage("Main") { Name = "tabDocMain" };
+        main.Controls.Add(new Label { Text = "Product:", Left = 12, Top = 16, Width = 80 });
+        main.Controls.Add(new TextBox { Name = "txtDocProduct", Left = 100, Top = 12, Width = 160 });
+        main.Controls.Add(new Label { Text = "Qty:", Left = 12, Top = 48, Width = 80 });
+        _qty.Location = new Point(100, 44); main.Controls.Add(_qty);
+        main.Controls.Add(new Label { Text = "Total:", Left = 12, Top = 80, Width = 80 });
+        _total.Location = new Point(100, 76); main.Controls.Add(_total);
+        _qty.TextChanged += (_, _) => _total.Text = decimal.TryParse(_qty.Text, out var q) ? (q * unitPrice).ToString("0.00") : "";
+        var notes = new TabPage("Notes") { Name = "tabDocNotes" };
+        notes.Controls.Add(new TextBox { Name = "txtDocNotes", Multiline = true, Left = 12, Top = 12, Width = 460, Height = 180 });
+        tabs.TabPages.AddRange(new[] { main, notes });
+        var exit = new Button { Text = "Exit", Name = "btnDocExit", Left = 420, Top = 280, Width = 88, Height = 28 };
+        exit.Click += (_, _) => Close();
+        Controls.AddRange(new Control[] { tabs, exit });
     }
 }
 

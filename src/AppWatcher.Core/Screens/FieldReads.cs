@@ -121,18 +121,44 @@ public static class FieldReads
     }
 
     /// <summary>
+    /// The difference between two reads split by who did it: the changed fields the user had the focus in
+    /// (<paramref name="typedKeys"/>: labels or automation ids of the field that has, or just had, the focus) are typed values;
+    /// every other changed field is one the program filled in. Grid cells that report no change to UI Automation are caught
+    /// this way: the cell that had the focus when the user moved on is the typed one.
+    /// </summary>
+    public static (List<FieldRead> typed, List<FieldRead> filled) Diff(IReadOnlyList<FieldRead> before, IReadOnlyList<FieldRead> after, ISet<string> typedKeys)
+    {
+        var prev = before.ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
+        var typed = new List<FieldRead>(); var filled = new List<FieldRead>();
+        if (before.Count == 0) return (typed, filled); // the first read is the baseline
+        foreach (var f in after)
+        {
+            if (prev.TryGetValue(f.Key, out var old) && old == f.Value) continue;
+            var mine = f.AutomationId.Length > 0 && !Labels.IsWrapperId(f.AutomationId) && (typedKeys.Contains(f.AutomationId) || typedKeys.Contains(Labels.Clean(f.AutomationId)))
+                       || typedKeys.Contains(f.Label);
+            if (mine) { if (f.Value.Trim().Length > 0 || old is { Length: > 0 }) typed.Add(f); }
+            else if (f.Value.Trim().Length > 0) filled.Add(f); // clearing is not filling
+        }
+        return (typed, filled);
+    }
+
+    /// <summary>
     /// A lookup list that opened inside the window under the field the user is typing in: a grid or list that is on screen now,
-    /// was not before, and sits below the editor and overlaps its columns. Returns its name and first rows (header first).
+    /// was not before (by identity, not by size: a grid that grew a row is the same grid), sits below the editor and overlaps
+    /// its columns, and does not hold the editor itself (a grid cell's own grid is never its lookup). Returns its name and first rows (header first).
     /// </summary>
     public static (string grid, List<string> lines)? NewLookup(IList<ControlRow> before, IList<ControlRow> after, string editorPosition, int maxRows = 10)
     {
         if (!Labels.TryRect(editorPosition, out var ex, out var ey, out var ew, out var eh) || ew <= 0) return null;
-        var old = new HashSet<string>(before.Where(r => GridTypes.Contains(r.Type)).Select(r => r.Type + r.AutomationId + r.Name + r.Position), StringComparer.Ordinal);
+        static string Identity(ControlRow r) => r.Type + "\u0001" + r.AutomationId + "\u0001" + r.Name + (r.AutomationId.Length == 0 && r.Name.Length == 0 ? "\u0001" + r.Position : "");
+        var old = new HashSet<string>(before.Where(r => GridTypes.Contains(r.Type)).Select(Identity), StringComparer.Ordinal);
         for (var i = 0; i < after.Count; i++)
         {
             var g = after[i];
-            if (!GridTypes.Contains(g.Type) || old.Contains(g.Type + g.AutomationId + g.Name + g.Position)) continue;
+            if (!GridTypes.Contains(g.Type) || old.Contains(Identity(g))) continue;
             if (!Labels.TryRect(g.Position, out var gx, out var gy, out var gw, out var gh) || gw <= 0 || gh <= 0) continue;
+            var holdsEditor = ex >= gx && ey >= gy && ex + ew <= gx + gw && ey + eh <= gy + gh;
+            if (holdsEditor) continue;
             var overlapsX = gx < ex + ew && gx + gw > ex;
             var below = gy >= ey + eh - 4 && gy - (ey + eh) <= 400;
             if (!overlapsX || !below) continue;

@@ -28,6 +28,53 @@ internal static class Win32
     public const int OBJID_CLIENT = -4;
     public const int OBJID_MENU = -3;
     public const uint GA_ROOT = 2;
+    public const uint GW_HWNDNEXT = 2;
+    public const int VK_LBUTTON = 0x01, VK_TAB = 0x09, VK_RETURN = 0x0D;
+
+    /// <summary>A read of the key state (no hook): bit 0 says the key went down since the previous call, bit 15 that it is down now.</summary>
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetParent(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetTopWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+    /// <summary>True when the key went down since the last time anyone asked (one read, consumed).</summary>
+    public static bool WentDown(int vKey) { try { return (GetAsyncKeyState(vKey) & 1) != 0; } catch { return false; } }
+
+    /// <summary>The MDI client pane a window is a direct child of (its parent's class contains MDICLIENT), or zero.</summary>
+    public static IntPtr MdiClientOf(IntPtr hwnd)
+    {
+        try
+        {
+            var parent = GetParent(hwnd);
+            return parent != IntPtr.Zero && AppWatcher.Core.Screens.MdiWorkspace.IsMdiClientClass(ClassName(parent)) ? parent : IntPtr.Zero;
+        }
+        catch { return IntPtr.Zero; }
+    }
+
+    /// <summary>The visible children of an MDI client pane in z-order, front first (GetTopWindow, then the next siblings).</summary>
+    public static List<(IntPtr hwnd, string title)> MdiChildrenFrontFirst(IntPtr mdiClient)
+    {
+        var list = new List<(IntPtr, string)>();
+        try
+        {
+            var h = GetTopWindow(mdiClient);
+            var guard = 0;
+            while (h != IntPtr.Zero && guard++ < 200)
+            {
+                if (IsWindowVisible(h)) list.Add((h, WindowText(h)));
+                h = GetWindow(h, GW_HWNDNEXT);
+            }
+        }
+        catch { }
+        return list;
+    }
 
     public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
