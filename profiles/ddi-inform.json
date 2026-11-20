@@ -50,9 +50,12 @@
   "gridRowCap": 5,
   "maskTitles": true,
   "backendKind": "universe",
-  "note": "Documents are MDI child windows of the main window (the tab strip is not exposed to UI Automation): each is recorded as 'DDI System Inform - … › Document' from its own window, and its inner tab pages (Main, General, Credit) are read after clicks. Button presses come from inference: the control under the pointer when the left button goes down (a read of the key state, no hook) and are counted when a window, document, message or tab changes; the buttons report nothing themselves. What the user types into grid cells and what the program fills in come from re-reads of the document after each typed value, press, Enter, Tab or focus move (its grid cells and bound editors report no change). The company name in the main title is masked in memory. The data lives on a UniVerse server: ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names the host (HostName) and account (AccountPath); the hosts in the program's log files are web services it talks to, not the data server. Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server.",
+  "note": "Documents are MDI child windows of the main window (the tab strip is not exposed to UI Automation): each is recorded as 'DDI System Inform - … › Document' from its own window, and its inner tab pages (Main, General, Credit) are read with the document after clicks. Button presses come from inference: the left button is sampled from the key state at every event (a read, no hook); the target is the control under the pointer when it still exists, else the button or tab at that point in the document's or message box's last recorded tree (the buttons report nothing themselves, and Exit, OK and Cancel are gone by the time the click is heard of). A tab item hit is a page selection. What the user types into grid cells comes from re-reads of the document after each typed value, Enter, Tab or focus move (the cell that had the focus is the typed value, found by its place; the other changed cells are the program's), read again at 1.5 s because the line is priced late; one typed event per value. The company name in the main title and the record names in document titles are masked in memory. The data lives on a UniVerse server: ProgramData\\DDISYSTEM\\Inform\\installedapplication.config names the host (HostName) and account (AccountPath); the hosts in the program's log files are web services it talks to, not the data server. Tables and rules need a read-only UniVerse ODBC login from the vendor, a nightly export drop folder, or UVSQL logging on the server.",
   "selectionReads": true,
   "titleMasks": [
-    "DDI System Inform - *"
+    "DDI System Inform - *",
+    "Vendor - * \"*\"",
+    "Customer - * \"*\"",
+    "Product - * \"*\""
   ]
 }

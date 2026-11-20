@@ -1,4 +1,4 @@
-namespace AppWatcher.Core.Screens;
+﻿namespace AppWatcher.Core.Screens;
 
 /// <summary>A button-like control as the collector read it (never invoked, only read).</summary>
 public sealed record PressCandidate(string Name, string Aid, string Ct, string Win);
@@ -54,6 +54,17 @@ public sealed class PressDecider
 
     /// <summary>True when a click began within the last <see cref="ClickAgeMs"/> (a toggle needs one, or focus on the tick box).</summary>
     public bool ClickedRecently(DateTime now) => _click.t != DateTime.MinValue && (now - _click.t).TotalMilliseconds <= ClickAgeMs;
+
+    /// <summary>The click's target still waiting for something to confirm it, or null.</summary>
+    public PressCandidate? Pending => _click.c;
+
+    /// <summary>A better read of the same click arrived (the live element under the pointer): replaces the target unless the click was confirmed meanwhile.</summary>
+    public void Refine(PressCandidate c, DateTime clickedAt)
+    {
+        if (_click.c is null || _click.t != clickedAt) return;
+        if (!IsActionable(c.Ct) || c.Name.Length == 0) return;
+        _click = (c, clickedAt);
+    }
 
     /// <summary>
     /// Something that a click explains just happened: the control the click went to, if one is pending and fresh, else null.

@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace AppWatcher.Core.Models;
 
@@ -30,14 +30,22 @@ public sealed class UiEvent
     /// <summary>"events/2026-01-01.jsonl#L12" - set by the reader, never serialized.</summary>
     [JsonIgnore] public string Source { get; set; } = "";
 
-    /// <summary>The name a person would use for the control: its Name, else its cleaned AutomationId, else the control type.</summary>
+    /// <summary>
+    /// The name a person would use for the control: its Name, else its cleaned AutomationId, else the control type. A Name
+    /// that is itself data (digits, a phone, "City, ST #####", an address) is replaced by the cleaned automation id or its
+    /// shape; a tab item named after a document ("Vendor - 00283 "ACME" ...") goes through the title masks.
+    /// </summary>
     [JsonIgnore] public string FieldKey
     {
         get
         {
-            if (!string.IsNullOrEmpty(Name)) return Name;
-            var cleaned = Screens.Labels.Clean(Aid);
-            return cleaned.Length > 0 ? cleaned : (string.IsNullOrEmpty(Aid) ? Ct : Aid);
+            var name = Name ?? "";
+            if (name.Length > 0 && Ct == "TabItem") return Learning.Titles.Key(name);
+            if (name.Length > 0 && !Masking.LooksLikeData(name)) return name;
+            var cleaned = Masking.LooksLikeData(Aid) ? "" : Screens.Labels.Clean(Aid);
+            if (cleaned.Length > 0) return cleaned;
+            if (name.Length > 0) return Masking.Shape(name);
+            return string.IsNullOrEmpty(Aid) || Masking.LooksLikeData(Aid) ? Ct : Aid;
         }
     }
 }

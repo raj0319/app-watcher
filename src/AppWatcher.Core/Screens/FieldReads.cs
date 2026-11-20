@@ -1,4 +1,4 @@
-namespace AppWatcher.Core.Screens;
+﻿namespace AppWatcher.Core.Screens;
 
 /// <summary>One on-screen field with its value at one moment: an editor, a tick box or a grid cell.</summary>
 public sealed class FieldRead
@@ -12,6 +12,8 @@ public sealed class FieldRead
     public string Value { get; set; } = "";
     public bool IsPassword { get; set; }
     public bool IsCell { get; set; }
+    /// <summary>The control's screen rectangle ("x,y wxh"), so the focused cell can be matched by place when it has no name.</summary>
+    public string Position { get; set; } = "";
 }
 
 /// <summary>
@@ -37,11 +39,25 @@ public static class FieldReads
         var ancestors = new ControlRow?[64];
         var gridDepth = -1; string gridName = ""; var rowIndex = -1; var rowDepth = -1;
         List<(string name, int x, int w)> headers = new();
+        // the cells of the grid row being read: keyed once the row is complete, by its line number when it has one (rows shift when a line is added)
+        var rowCells = new List<FieldRead>();
+        void FlushRow()
+        {
+            if (rowCells.Count == 0) return;
+            var line = rowCells.FirstOrDefault(c => LineHeaders.Contains(c.Label) && c.Value.Trim().Length > 0 && c.Value.Trim().All(char.IsDigit))?.Value.Trim();
+            var rowKey = line is not null ? "line " + line : "row " + Math.Max(0, rowIndex);
+            foreach (var c in rowCells)
+            {
+                c.Key = $"{gridName}\u0001{c.Label}\u0001{rowKey}";
+                if (seenKeys.Add(c.Key) && result.Count < MaxControls) result.Add(c);
+            }
+            rowCells.Clear();
+        }
         for (var i = 0; i < rows.Count && result.Count < MaxControls; i++)
         {
             var r = rows[i];
             if (r.Depth < ancestors.Length) ancestors[r.Depth] = r;
-            if (gridDepth >= 0 && r.Depth <= gridDepth) { gridDepth = -1; headers.Clear(); rowIndex = -1; }
+            if (gridDepth >= 0 && r.Depth <= gridDepth) { FlushRow(); gridDepth = -1; headers.Clear(); rowIndex = -1; }
             if (GridTypes.Contains(r.Type) || r.Type == "Custom" && r.AutomationId.StartsWith("grid", StringComparison.OrdinalIgnoreCase))
             {
                 gridDepth = r.Depth; gridName = r.Name.Length > 0 ? r.Name : Labels.Clean(r.AutomationId); rowIndex = -1; headers.Clear();
@@ -50,14 +66,13 @@ public static class FieldReads
             if (gridDepth >= 0)
             {
                 if (r.Type is "HeaderItem" or "Header" && r.Name.Length > 0 && Labels.TryRect(r.Position, out var hx, out _, out var hw, out _)) { headers.Add((r.Name.Trim(), hx, hw)); continue; }
-                if (r.Type is "DataItem" or "ListItem" or "TreeItem" or "Custom" && r.Depth == gridDepth + 1 || r.Type is "DataItem" && rowIndex < 0) { rowIndex++; rowDepth = r.Depth; }
+                if (r.Type is "DataItem" or "ListItem" or "TreeItem" or "Custom" && r.Depth == gridDepth + 1 || r.Type is "DataItem" && rowIndex < 0) { FlushRow(); rowIndex++; rowDepth = r.Depth; }
                 if (r.Value is null || !(r.Type is "Edit" or "Text" or "ComboBox" or "CheckBox" or "DataItem" or "Custom")) continue;
                 if (r.Type is "Custom" or "DataItem" && r.Value.Length == 0) continue;
                 var header = CellHeader(r, headers);
                 if (header.Length == 0) continue;
-                var key = $"{gridName}\u0001{header}\u0001row {Math.Max(0, rowIndex)}";
-                if (!seenKeys.Add(key)) continue;
-                result.Add(new FieldRead { Key = key, Label = header, AutomationId = Labels.IsWrapperId(r.AutomationId) ? "" : r.AutomationId, Type = r.Type, Value = r.Value, IsPassword = r.IsPassword, IsCell = true });
+                if (rowCells.Any(c => c.Label == header)) continue;
+                rowCells.Add(new FieldRead { Label = header, AutomationId = Labels.IsWrapperId(r.AutomationId) ? "" : r.AutomationId, Type = r.Type, Value = r.Value, IsPassword = r.IsPassword, IsCell = true, Position = r.Position });
                 continue;
             }
             if (r.Value is null || !FieldTypes.Contains(r.Type)) continue;
@@ -80,9 +95,29 @@ public static class FieldReads
                 if (existing.Value.Length == 0 && r.Value.Length > 0) existing.Value = r.Value;
                 continue;
             }
-            result.Add(new FieldRead { Key = fkey, Label = label, AutomationId = id, Type = labelRow.Type, Value = r.Value, IsPassword = r.IsPassword || labelRow.IsPassword });
+            result.Add(new FieldRead { Key = fkey, Label = label, AutomationId = id, Type = labelRow.Type, Value = r.Value, IsPassword = r.IsPassword || labelRow.IsPassword, Position = labelRow.Position });
         }
+        FlushRow();
         return result;
+    }
+
+    /// <summary>Column headers that number the lines of an order grid: a row keyed by its line number keeps its identity when a line is added above it.</summary>
+    private static readonly HashSet<string> LineHeaders = new(StringComparer.OrdinalIgnoreCase) { "Ln", "Line", "Line #", "Seq", "#", "No", "No.", "Item" };
+
+    /// <summary>The cell of a document that lies under the given rectangle (the editor that had the focus), by place: its key, or null.</summary>
+    public static FieldRead? AtRect(IReadOnlyList<FieldRead> reads, string position)
+    {
+        if (!Labels.TryRect(position, out var x, out var y, out var w, out var h) || w <= 0 || h <= 0) return null;
+        var cx = x + w / 2; var cy = y + h / 2;
+        FieldRead? best = null; long bestArea = long.MaxValue;
+        foreach (var f in reads)
+        {
+            if (!Labels.TryRect(f.Position, out var fx, out var fy, out var fw, out var fh) || fw <= 0 || fh <= 0) continue;
+            if (cx < fx || cx > fx + fw || cy < fy || cy > fy + fh) continue;
+            var area = (long)fw * fh;
+            if (area < bestArea) { best = f; bestArea = area; }
+        }
+        return best;
     }
 
     /// <summary>A cell's column: its own Name when it is a header-like word, else the header whose x-range holds the cell's centre.</summary>
@@ -151,11 +186,14 @@ public static class FieldReads
     {
         if (!Labels.TryRect(editorPosition, out var ex, out var ey, out var ew, out var eh) || ew <= 0) return null;
         static string Identity(ControlRow r) => r.Type + "\u0001" + r.AutomationId + "\u0001" + r.Name + (r.AutomationId.Length == 0 && r.Name.Length == 0 ? "\u0001" + r.Position : "");
-        var old = new HashSet<string>(before.Where(r => GridTypes.Contains(r.Type)).Select(Identity), StringComparer.Ordinal);
+        // a grid that was there before with the same rows is not a lookup that opened (the product lookup stays on screen after the first search)
+        var old = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        for (var i = 0; i < before.Count; i++) if (GridTypes.Contains(before[i].Type)) old[Identity(before[i])] = GridLines(before, i, maxRows);
         for (var i = 0; i < after.Count; i++)
         {
             var g = after[i];
-            if (!GridTypes.Contains(g.Type) || old.Contains(Identity(g))) continue;
+            if (!GridTypes.Contains(g.Type)) continue;
+            if (old.TryGetValue(Identity(g), out var oldLines) && oldLines.SequenceEqual(GridLines(after, i, maxRows))) continue;
             if (!Labels.TryRect(g.Position, out var gx, out var gy, out var gw, out var gh) || gw <= 0 || gh <= 0) continue;
             var holdsEditor = ex >= gx && ey >= gy && ex + ew <= gx + gw && ey + eh <= gy + gh;
             if (holdsEditor) continue;

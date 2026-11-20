@@ -365,6 +365,17 @@ if ($null -ne $ws) {
     Start-Sleep -Milliseconds 1500
 }
 Front
+# a modal message box whose OK closes it: the click on OK is heard of when the box is destroyed, so it is resolved on the box's recorded tree
+$box = $null
+try { PostClick $main "btnConfirm" } catch { Write-Host "   step failed: PostClick btnConfirm -> $($_.Exception.Message)" }
+try { $box = Top "Confirm?" 20 } catch { Write-Host "   (the Confirm? box did not open: $($_.Exception.Message))" }
+if ($null -ne $box) {
+    try { [LiveTest.Mouse]::SetForegroundWindow([System.IntPtr]$box.Current.NativeWindowHandle) | Out-Null } catch { }
+    Start-Sleep -Milliseconds 1200   # the watcher records the box's tree before the click
+    try { RealClick $box "btnConfirmOk" "OK (message box)" $box | Out-Null } catch { Write-Host "   step failed: RealClick OK -> $($_.Exception.Message)" }
+    Start-Sleep -Milliseconds 1500
+}
+Front
 
 [LiveTest.Mouse]::SetCursorPos($cursorBefore.X, $cursorBefore.Y) | Out-Null   # the pointer goes back where it was
 Write-Host "4. stop the sample app (killed: it is ours), learn, stop the watcher"
@@ -421,6 +432,12 @@ if ($null -eq $ws) { Write-Host "   INNER TAB CHECK: inconclusive" }
 elseif ($script:Inconclusive -contains "Notes tab") { Write-Host "   INNER TAB CHECK: inconclusive (the real click was skipped)" }
 elseif ($innerSel.Count -ge 1) { Write-Host ("   INNER TAB CHECK: ok - the Notes page was recorded as selected ({0} event(s), how={1})" -f $innerSel.Count, $innerSel[0].how) }
 else { Write-Host "   INNER TAB CHECK: MISSING - the inner tab click left no select event" }
+$boxOk = @($events | Where-Object { $_.act -eq "invoke" -and $_.name -eq "OK" -and $_.win -eq "Confirm?" })
+$boxDialog = @($events | Where-Object { $_.act -eq "dialog" -and $_.name -eq "Confirm?" })
+if ($null -eq $box) { Write-Host "   MESSAGE BOX OK CHECK: inconclusive (the box did not open)" }
+elseif ($script:Inconclusive -contains "OK (message box)") { Write-Host "   MESSAGE BOX OK CHECK: inconclusive (the real click was skipped)" }
+elseif ($boxOk.Count -ge 1) { Write-Host ("   MESSAGE BOX OK CHECK: ok - OK on the Confirm? box was counted by name ({0}; the box was a dialog: {1})" -f $boxOk[0].how, ($boxDialog.Count -ge 1)) }
+else { Write-Host "   MESSAGE BOX OK CHECK: MISSING - the OK click that closed the box was not counted by name" }
 if ($null -eq $ws) { Write-Host "   DOCUMENT EXIT CHECK: inconclusive" }
 elseif ($script:Inconclusive -contains "Exit (document)") { Write-Host "   DOCUMENT EXIT CHECK: inconclusive (the real click was skipped)" }
 elseif ($docExit.Count -ge 1) { Write-Host ("   DOCUMENT EXIT CHECK: ok - Exit on the document was counted ({0}, {1} total fill(s) seen on it)" -f $docExit[0].how, $docTotals.Count) }

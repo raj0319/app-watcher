@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -40,8 +40,8 @@ public sealed class SeqAcc
 public sealed class LearnState
 {
     public const string Sep = "\u0001";
-    /// <summary>4: program-shown windows are not flow visits, OCR formulas only between known fields, typed-but-unrecorded screens (an older state is relearned from the events).</summary>
-    public const int CurrentVersion = 4;
+    /// <summary>5: calculations from grid cells and pictures need three distinct values, fills follow the typed cell into its document, tab names masked (an older state is relearned from the events).</summary>
+    public const int CurrentVersion = 5;
     public int Version { get; set; } = CurrentVersion;
     public DateTime? Watermark { get; set; }
     public HashSet<string> EffectFiles { get; set; } = new();
@@ -76,6 +76,10 @@ public sealed class LearnState
     public Dictionary<string, int> CalcTests { get; set; } = new();
     /// <summary>win, field, formula: how often the formula gave the value shown.</summary>
     public Dictionary<string, Evidence> CalcFits { get; set; } = new();
+    /// <summary>win, field: hashes (never the values) of the distinct numbers the program showed there, so a formula seen on one value twice is not "seen 2×".</summary>
+    public Dictionary<string, HashSet<string>> CalcValues { get; set; } = new();
+    /// <summary>win, field of calculations whose number came from a grid cell or a picture: those need three distinct values and no alternative before they are written.</summary>
+    public HashSet<string> CalcWeak { get; set; } = new();
     /// <summary>win, button, window or message it led to, "window" | "message".</summary>
     public Dictionary<string, Evidence> Leads { get; set; } = new();
     /// <summary>menu, item: menu items seen when a menu opened.</summary>

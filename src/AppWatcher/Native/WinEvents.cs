@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 
 namespace AppWatcher.Native;
@@ -19,6 +19,8 @@ internal static class Win32
     public const uint EVENT_OBJECT_SHOW = 0x8002;
     public const uint EVENT_OBJECT_HIDE = 0x8003;
     public const uint EVENT_OBJECT_FOCUS = 0x8005;
+    public const uint EVENT_OBJECT_SELECTION = 0x8006;
+    public const uint EVENT_OBJECT_SELECTIONWITHIN = 0x8009;
     public const uint EVENT_OBJECT_STATECHANGE = 0x800A;
     public const uint EVENT_OBJECT_NAMECHANGE = 0x800C;
     public const uint EVENT_OBJECT_INVOKED = 0x8013;

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 
 namespace AppWatcher.Core.Screens;
@@ -76,11 +76,14 @@ public static partial class Labels
     public static string Resolve(ControlRow field, IList<ControlRow> rows)
     {
         var own = field.Name.Trim().TrimEnd(':', '*').Trim();
-        if (own.Length > 0 && !IsWrapperId(own) && !LooksLikeValue(own, field)) return own;
+        // a name that is data (a phone, a city line, a record id) is never a label: the text next to it, its cleaned id or its shape stand in
+        var data = own.Length > 0 && Masking.LooksLikeData(own);
+        if (own.Length > 0 && !IsWrapperId(own) && !LooksLikeValue(own, field) && !data) return own;
         var near = NearestText(field, rows);
         if (near is not null) return near;
-        var cleaned = Clean(field.AutomationId);
+        var cleaned = Masking.LooksLikeData(field.AutomationId) ? "" : Clean(field.AutomationId);
         if (cleaned.Length > 0) return cleaned;
+        if (data) return Masking.Shape(own);
         return own.Length > 0 ? own : field.Type;
     }
 
@@ -99,7 +102,7 @@ public static partial class Labels
         string? best = null; var bestScore = double.MaxValue;
         foreach (var r in rows)
         {
-            if (r.Type != "Text" || r.Name.Trim().Length == 0 || r.Name.Length > 60) continue;
+            if (r.Type != "Text" || r.Name.Trim().Length == 0 || r.Name.Length > 60 || Masking.LooksLikeData(r.Name)) continue; // a text that is data (a city line) labels nothing
             if (!TryRect(r.Position, out var x, out var y, out var w, out var h) || w <= 0 || h <= 0) continue;
             var right = x + w; var bottom = y + h;
             double score;

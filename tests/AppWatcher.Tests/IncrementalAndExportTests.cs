@@ -157,8 +157,8 @@ public class IncrementalAndExportTests
         d.Push(Synthetic.Ev(t0, Acts.Value, "Form", "Name", "a"), t0);
         d.Push(Synthetic.Ev(t0.AddMilliseconds(200), Acts.Value, "Form", "Name", "ab"), t0.AddMilliseconds(200));
         d.Push(Synthetic.Ev(t0.AddMilliseconds(400), Acts.Value, "Form", "Name", "abc"), t0.AddMilliseconds(400));
-        Assert.Empty(d.Flush(t0.AddMilliseconds(900)));          // only 500 ms since the last change
-        var flushed = d.Flush(t0.AddMilliseconds(1300));
+        Assert.Empty(d.Flush(t0.AddMilliseconds(1200)));         // only 800 ms since the last change: a second of quiet commits a value
+        var flushed = d.Flush(t0.AddMilliseconds(1500));
         var e = Assert.Single(flushed);
         Assert.Equal("abc", e.Val);
         Assert.Equal(0, d.PendingCount);

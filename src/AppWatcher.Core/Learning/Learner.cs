@@ -242,7 +242,7 @@ public static class Learner
             {
                 var key = Titles.Key(e.Win);
                 if (key.Length == 0) continue;
-                if (key.Contains(" › ", StringComparison.Ordinal)) s.DocumentsSeen.Add(key);
+                if (key.Contains(" › ", StringComparison.Ordinal) && !MdiWorkspace.IsClassLikeName(key[(key.LastIndexOf(" › ", StringComparison.Ordinal) + 3)..])) s.DocumentsSeen.Add(key);
                 // the user worked in a field (focus moved to it) versus a typed value recorded there: a screen with many of the first and none of the second lost its typing
                 if (e.Act == Acts.Focus && e.Ct is "Edit" or "ComboBox" or "DataItem" or "Spinner" or "Document") s.FieldFocuses[key] = s.FieldFocuses.GetValueOrDefault(key) + 1;
                 if (e.Act == Acts.Value && e.By != ValueBy.App) s.TypedValues[key] = s.TypedValues.GetValueOrDefault(key) + 1;
@@ -498,10 +498,14 @@ public static class Learner
             foreach (var d in input.Collector.DocumentsNeverRecorded)
             {
                 var key = Titles.Key(d);
-                if (key.Length == 0) continue;
+                if (key.Length == 0 || MdiWorkspace.IsClassLikeName(d)) continue;
                 // the collector names the document alone ("Sales Order Entry"); the screens are named "Main › Sales Order Entry"
                 if (!key.Contains(" › ", StringComparison.Ordinal) && r.MainWindow is { Length: > 0 } mw) key = TabDocuments.Title(mw, key);
-                if (!recorded.Contains(key) && !recorded.Any(k => k.EndsWith(" › " + key, StringComparison.Ordinal))) never.Add(key);
+                if (recorded.Contains(key) || recorded.Any(k => k.EndsWith(" › " + key, StringComparison.Ordinal))) continue;
+                // a document renamed when its record loaded ("Vendor Master" became "Vendor - # "…""): the events show the first name as a
+                // tab selection and another document of the same window within 15 s; that one's record is this document's
+                if (RenamedTo(input.Events, key, recorded)) continue;
+                never.Add(key);
             }
         h.DocumentsNeverRecorded = never.ToList();
         // the user moved between fields of a screen (five focus moves or more) and not one typed value was recorded there
@@ -516,7 +520,7 @@ public static class Learner
         h.FieldsCandidate = fieldsSeen.Count(f => mappedKeys.Contains(f)) - h.FieldsMapped;
         h.FieldsMappedPct = h.FieldsSeen == 0 ? 0 : 100.0 * h.FieldsMapped / h.FieldsSeen;
         var unmapped = h.FieldsSeen - h.FieldsMapped;
-        if (input.Collector is not null) h.CollectorProblems = input.Collector.Problems();
+        if (input.Collector is not null) h.CollectorProblems = input.Collector.Problems().Where(p => !p.Contains("never recorded as a screen")).ToList(); // the learner's own list of never-recorded documents (below) replaces the collector's, which can name a document under its first title
         if (!input.HasDataSources)
         {
             var server = input.PrimaryBackend();
@@ -535,6 +539,25 @@ public static class Learner
         foreach (var scr in h.TypedButUnrecorded.Take(12)) h.CollectorProblems.Add($"on {scr} the user moved between fields (typed there) but no typed value was recorded: its fields report no change");
         if (h.Advice.Count == 0) h.Advice.Add("Nothing obvious would improve accuracy right now; keep watching.");
         return h;
+    }
+
+    /// <summary>True when the events show the document <paramref name="key"/> ("Main › Vendor Master") selected and, within 15 s, another document of the same window that has a record.</summary>
+    private static bool RenamedTo(List<UiEvent> events, string key, HashSet<string> recorded)
+    {
+        var sep = key.LastIndexOf(" › ", StringComparison.Ordinal);
+        if (sep < 0) return false;
+        var main = key[..sep]; var doc = key[(sep + 3)..];
+        foreach (var e in events)
+        {
+            if (!(e.Act == Acts.Select && e.Ct == "TabItem" && Titles.Key(e.Name) == doc) && !(e.Act == Acts.Open && Titles.Key(e.Win) == key)) continue;
+            foreach (var later in events)
+            {
+                if (later.T < e.T || (later.T - e.T).TotalSeconds > 15 || later.Act is not (Acts.Open or Acts.Select)) continue;
+                var w = Titles.Key(later.Win);
+                if (w.StartsWith(main + " › ", StringComparison.Ordinal) && w != key && recorded.Contains(w)) return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>Plain-words statement of what can be learned from this app, from the toolkit, the backends and the data sources.</summary>

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using AppWatcher.Core.Learning;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Screens;
@@ -69,7 +69,7 @@ public static class PlainReport
             f.Actions = s.PressesTotal + s.ValuesTyped + s.Toggles;
             Apply(f, s);
             if (s.Dialogs == 0) f.PromptScreens = records.Count(r => r.Kind == ScreenKinds.Screen && (DialogDetector.LooksLikePromptTitle(r.Title) || DialogDetector.Detect("", r.Controls).isDialog));
-            f.TabsUnrecorded = s.TabSelections > s.TabScreens && s.DocumentsNeverRecorded.Count == 0;
+            f.TabsUnrecorded = s.MdiDocuments == 0 && s.TabSelections > s.TabScreens && s.DocumentsNeverRecorded.Count == 0; // in an MDI workspace the document list is the truth
             f.DocumentsNeverRecorded = s.DocumentsNeverRecorded.ToList();
         }
         f.NoData = !cfg.DataSources.Any(d => d.Enabled);
@@ -87,7 +87,7 @@ public static class PlainReport
             f.Pictures = c.Pictures;
             Apply(f, c);
             if (c.Dialogs == 0) f.PromptScreens = r.Health.PromptScreens;
-            f.TabsUnrecorded = Math.Max(c.TabSelections, r.Health.TabSelections) > c.TabScreens && r.Health.DocumentsNeverRecorded.Count == 0;
+            f.TabsUnrecorded = c.MdiDocuments == 0 && Math.Max(c.TabSelections, r.Health.TabSelections) > c.TabScreens && r.Health.DocumentsNeverRecorded.Count == 0;
         }
         else
         {

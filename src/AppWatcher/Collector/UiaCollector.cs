@@ -89,6 +89,11 @@ internal sealed class UiaCollector : IDisposable
     private DateTime _clickReadDone = DateTime.MinValue;
     private (string why, string from, DateTime at)? _pendingConfirm;  // a change that would confirm a press came while that read was in flight
     private (string name, DateTime t) _lastToggleFocus = ("", DateTime.MinValue);
+    // the pointer and the window in front at the previous event: a click heard of late is resolved against the tree recorded for that window
+    private System.Drawing.Point _ptPrev = new(-9999, -9999);
+    private IntPtr _frontPrev;
+    private readonly Dictionary<string, DateTime> _recentPageSelects = new(StringComparer.Ordinal);
+    private System.Threading.Timer? _rereadAgainTimer;
     // MDI workspace: documents are child windows of a pane whose class contains MDICLIENT
     private readonly MdiWorkspace _mdi = new();
     private readonly Dictionary<IntPtr, IntPtr> _mdiChildren = new();   // child -> top-level window
@@ -146,6 +151,7 @@ internal sealed class UiaCollector : IDisposable
         _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_INVOKED, Win32.EVENT_OBJECT_INVOKED, pid, OnMsaaInvoked));
         _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_FOCUS, Win32.EVENT_OBJECT_FOCUS, pid, OnMsaaFocus));
         _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_STATECHANGE, Win32.EVENT_OBJECT_STATECHANGE, pid, OnMsaaState));
+        _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_SELECTION, Win32.EVENT_OBJECT_SELECTIONWITHIN, pid, (_, _, _, _) => { if (_inFront) NoteInput(); }));
         try
         {
             _focus = _automation.RegisterFocusChangedEvent(OnFocus);
@@ -198,51 +204,124 @@ internal sealed class UiaCollector : IDisposable
     /// key state (GetAsyncKeyState), never a hook. A click reads the control under the pointer right now, before the screen
     /// reacts; Enter or Tab while a document is in front re-reads it (a grid cell typed into reports nothing itself).
     /// </summary>
-    private void NoteInput()
+    private void NoteInput() => NoteInput(IntPtr.Zero);
+
+    /// <summary>
+    /// Same, from the destroy or hide of <paramref name="destroyed"/>: a click heard of at that moment went to that window
+    /// (the button that closed it), and its recorded tree is the surface the click is resolved on.
+    /// </summary>
+    private void NoteInput(IntPtr destroyed)
     {
         if (!_inFront || _pid == 0) return;
-        bool click, key;
+        var pt = System.Windows.Forms.Cursor.Position;
+        var front = FrontHwnd();
+        bool click, key; System.Drawing.Point prevPt; IntPtr prevFront;
         lock (_gate)
         {
             click = Win32.WentDown(Win32.VK_LBUTTON);
             key = Win32.WentDown(Win32.VK_RETURN) | Win32.WentDown(Win32.VK_TAB);
+            prevPt = _ptPrev; prevFront = _frontPrev;
+            _ptPrev = pt; _frontPrev = front;
         }
-        if (click) OnClickSeen();
+        if (click) OnClickSeen(pt, prevPt, prevFront, front, destroyed);
         if (key) ScheduleReread("key");
     }
 
-    /// <summary>The left button went down since the last event: read what is under the pointer now and let the decider pick the click's target.</summary>
-    private void OnClickSeen()
+    /// <summary>The window the user works in: the document in front of the workspace, else the window in front (a dialog, the main window).</summary>
+    private IntPtr FrontHwnd()
+    {
+        lock (_gate) return _mdiActiveChild.TryGetValue(_foreground, out var doc) && doc != IntPtr.Zero ? doc : _foreground;
+    }
+
+    /// <summary>The screen title of a window handle: "Main › Document" for a document, the window's title otherwise.</summary>
+    private string ScreenTitleOf(IntPtr hwnd)
+    {
+        lock (_gate)
+        {
+            if (_mdiChildren.TryGetValue(hwnd, out var top)) { var doc = _mdi.TitleOf((long)hwnd) ?? ""; var main = _knownWindows.GetValueOrDefault(top, _currentTitle); return doc.Length > 0 ? TabDocuments.Title(main, doc) : main; }
+            return _knownWindows.TryGetValue(hwnd, out var t) ? ScreenTitle(hwnd, t) : CurrentTitle;
+        }
+    }
+
+    /// <summary>
+    /// The left button went down since the last event. The target is found in this order: the control under the pointer
+    /// now (a live read), when it is a button, tick box, link or tab item of a window that still exists; else the recorded
+    /// tree of the window the click went to, hit-tested at the pointer (the window being destroyed, else the window in
+    /// front now, else the window in front at the previous event under the pointer's position then); else nothing.
+    /// The recorded tree answers at once; the live read, when it finds something, refines the answer unless the click
+    /// was confirmed meanwhile. A tab item is a page selection, not a press.
+    /// </summary>
+    private void OnClickSeen(System.Drawing.Point pt, System.Drawing.Point prevPt, IntPtr prevFront, IntPtr front, IntPtr destroyed)
     {
         if (!_settings.PressInference) return;
-        var pt = System.Windows.Forms.Cursor.Position;
         var now = DateTime.Now;
         var win = CurrentTitle;
         lock (_gate) { _clickSeenAt = now; _pendingConfirm = null; }
+        // (b) the recorded tree, now
+        (ControlRow row, IntPtr hwnd, int index)? hit = null;
+        if (destroyed != IntPtr.Zero) hit = HitRows(destroyed, pt);
+        hit ??= HitRows(front, pt);
+        var moved = prevPt.X > -9999 && (Math.Abs(pt.X - prevPt.X) > PressDecider.MovedPx || Math.Abs(pt.Y - prevPt.Y) > PressDecider.MovedPx);
+        if (hit is null && moved && prevFront != IntPtr.Zero) hit ??= HitRows(prevFront, prevPt);
+        if (hit is { } h && h.row.Type == "TabItem") { OnTabHit(h.row.Name.Trim(), ScreenTitleOf(h.hwnd), now); lock (_gate) { _decider.Clicked(null, pt.X, pt.Y, now); _clickReadDone = DateTime.Now; } return; }
+        var provisional = hit is { } hb ? new PressCandidate(hb.row.Name.Trim(), hb.row.AutomationId, hb.row.Type, ScreenTitleOf(hb.hwnd)) : null;
+        lock (_gate) { _decider.Clicked(provisional, pt.X, pt.Y, now); _clickReadDone = provisional is not null ? DateTime.Now : DateTime.MinValue; }
+        if (destroyed != IntPtr.Zero) { lock (_gate) _clickReadDone = DateTime.Now; return; } // the window is gone: a live read would find the window behind
+        // (a) the live read under the pointer, which refines the answer when it finds a control of a window that still exists
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            PressCandidate? c = null;
+            PressCandidate? c = null; var isTab = false;
             try
             {
                 var el = _automation.FromPoint(pt);
                 if (el is not null && el.Properties.ProcessId.ValueOrDefault == _pid)
                 {
                     var r = Describe(el, Acts.Invoke);
-                    if (PressDecider.IsActionable(r.Ct) && r.Name.Length > 0) c = new PressCandidate(r.Name, r.Aid, r.Ct, win);
+                    if (r.Ct == "TabItem" && r.Name.Length > 0 && provisional is null) { isTab = true; c = new PressCandidate(r.Name, r.Aid, r.Ct, win); }
+                    else if (PressDecider.IsActionable(r.Ct) && r.Name.Length > 0) c = new PressCandidate(r.Name, r.Aid, r.Ct, win);
                 }
             }
             catch { }
+            if (isTab && c is not null) { OnTabHit(c.Name, win, now); lock (_gate) { _decider.Clicked(null, pt.X, pt.Y, now); _clickReadDone = DateTime.Now; } return; }
             (string why, string from, DateTime at)? pending;
             lock (_gate)
             {
-                _decider.Clicked(c, pt.X, pt.Y, now);
+                if (c is not null) { if (provisional is null) _decider.Clicked(c, pt.X, pt.Y, now); else _decider.Refine(c, now); }
                 _clickReadDone = DateTime.Now;
                 pending = _pendingConfirm; _pendingConfirm = null;
             }
             // something confirmed a press while the read was in flight: count it now
             if (pending is { } p) InferPress(p.why, p.from, p.at);
-            else if (c is not null) ScheduleReread("click " + c.Name); // a click on a tick box or button changes the document: read it once
+            else if (c is not null || provisional is not null) ScheduleReread("click " + (c ?? provisional)!.Name); // a click on a tick box or button changes the document: read it once
         });
+    }
+
+    /// <summary>The recorded tree of a window hit-tested at a point: the clickable row there, or null.</summary>
+    private (ControlRow row, IntPtr hwnd, int index)? HitRows(IntPtr hwnd, System.Drawing.Point pt)
+    {
+        if (hwnd == IntPtr.Zero) return null;
+        List<ControlRow>? rows; lock (_gate) _rows.TryGetValue(hwnd, out rows);
+        if (rows is null) return null;
+        var i = TreeHitTest.HitAt(rows, pt.X, pt.Y);
+        return i is { } k ? (rows[k], hwnd, k) : null;
+    }
+
+    /// <summary>A click landed on a page of a document's inner tab control: the page is selected (recorded once), and the document is read again.</summary>
+    private void OnTabHit(string page, string screen, DateTime now)
+    {
+        if (page.Length == 0) return;
+        var key = screen + "\u0001" + page;
+        lock (_gate)
+        {
+            foreach (var stale in _recentPageSelects.Where(k => (now - k.Value).TotalSeconds > 10).Select(k => k.Key).ToList()) _recentPageSelects.Remove(stale);
+            if (_recentPageSelects.TryGetValue(key, out var last) && (now - last).TotalMilliseconds < 1500) return;
+            _recentPageSelects[key] = now;
+            if (_innerTabs.TryGetValue(screen, out var pages)) { var k = pages.FirstOrDefault(x => x.Value == page).Key; if (k is not null) pages[k] = page; }
+        }
+        _status.InnerTabSelections++;
+        Emit(new RawEvent { Act = Acts.Select, Ct = "TabItem", Name = page, Val = page, How = "read", WindowTitle = screen, Hwnd = _foreground });
+        InferPress("tab changed", from: screen);
+        ScheduleReread("tab " + page);
     }
 
     private bool ClickReadInFlight(DateTime now)
@@ -284,7 +363,10 @@ internal sealed class UiaCollector : IDisposable
     private void OnWindowEvent(uint ev, IntPtr hwnd, int idObject, int idChild)
     {
         if (idObject != Win32.OBJID_WINDOW || idChild != 0 || hwnd == IntPtr.Zero) return;
-        if (ev is Win32.EVENT_OBJECT_SHOW or Win32.EVENT_OBJECT_DESTROY or Win32.EVENT_OBJECT_HIDE) NoteInput();
+        bool knownTop, knownChild;
+        lock (_gate) { knownTop = _knownWindows.ContainsKey(hwnd); knownChild = _mdiChildren.ContainsKey(hwnd); }
+        if (ev is Win32.EVENT_OBJECT_DESTROY or Win32.EVENT_OBJECT_HIDE && (knownTop || knownChild)) NoteInput(destroyed: hwnd);
+        else if (ev is Win32.EVENT_OBJECT_SHOW or Win32.EVENT_OBJECT_DESTROY or Win32.EVENT_OBJECT_HIDE) NoteInput();
         switch (ev)
         {
             case Win32.EVENT_OBJECT_CREATE:
@@ -311,8 +393,8 @@ internal sealed class UiaCollector : IDisposable
                 if (_perWindow.Remove(hwnd, out var list)) foreach (var d in list) { try { d.Dispose(); } catch { } }
                 lock (_gate) { _rows.Remove(hwnd); _activeTab.Remove(hwnd); _tabStrips.Remove(hwnd); _lastTabPoll.Remove(hwnd); }
                 if (title.Length == 0 || Excluded(title)) return; // helper windows (lookups, tips, drop-downs) are not screens; their close is noise
+                InferPress("window closed", from: title); // the button that closed it (OK, No, Cancel, Exit) is counted before the close
                 Emit(new RawEvent { Act = Acts.Close, Hwnd = hwnd, WindowTitle = title, Ct = "Window", Name = title });
-                InferPress("window closed", from: title);
                 if (_foreground != IntPtr.Zero && _foreground != hwnd) { PollTabs(_foreground, force: true); PollMdi(_foreground, force: true); }
                 break;
             case Win32.EVENT_OBJECT_NAMECHANGE:
@@ -414,7 +496,7 @@ internal sealed class UiaCollector : IDisposable
         var o = Msaa.FromEvent(hwnd, idObject, idChild);
         if (o is null || o.Name.Length == 0) return;
         if ((o.State & Msaa.StatePressed) == 0) return;
-        ReadPointer("pressed");
+        // no pointer read here: Infragistics raises this state on hover too, and a hovered button must never be credited with the click
         if (o.Role is Msaa.RolePushButton or Msaa.RoleSplitButton or Msaa.RoleButtonDropDown)
             EmitPress(new RawEvent { Act = Acts.Invoke, Ct = "Button", Name = o.Name, How = PressHow.Msaa, WindowTitle = CurrentTitle });
     }
@@ -568,6 +650,7 @@ internal sealed class UiaCollector : IDisposable
             if (!_mdiChildren.Remove(child, out top)) return;
             _mdi.Destroyed((long)child);
             if (_mdiActiveChild.TryGetValue(top, out var active) && active == child) _mdiActiveChild.Remove(top);
+            _rows.Remove(child);
         }
         PollMdi(top, force: true);
     }
@@ -621,7 +704,7 @@ internal sealed class UiaCollector : IDisposable
         lock (_gate)
         {
             _status.MdiDocuments = _mdi.TitlesSeen.Count;
-            var never = _mdi.TitlesSeen.Where(t => !_mdiTitlesDumped.Contains(Core.Learning.Titles.Key(t))).Take(40).ToList();
+            var never = _mdi.NeverRecorded(t => _mdiTitlesDumped.Contains(Core.Learning.Titles.Key(t))).Take(40).ToList();
             if (!never.SequenceEqual(_status.DocumentsNeverRecorded)) _status.DocumentsNeverRecorded = never;
         }
     }
@@ -983,8 +1066,8 @@ internal sealed class UiaCollector : IDisposable
         lock (_gate) { _activeTab.Remove(hwnd); windowTitle = _knownWindows.TryGetValue(hwnd, out var t) ? t : _currentTitle; }
         var screenTitle = TabDocuments.Title(windowTitle, tab);
         lock (_gate) { _fieldReads.Remove(screenTitle); _fieldRows.Remove(screenTitle); _innerTabs.Remove(screenTitle); }
+        InferPress("window closed", from: screenTitle); // Exit on the document is counted before its close
         Emit(new RawEvent { Act = Acts.Close, Ct = "Window", Name = screenTitle, WindowTitle = screenTitle, Hwnd = hwnd });
-        InferPress("window closed", from: screenTitle);
     }
 
     /// <summary>A tab document was selected: events now belong to "Window › Tab", and the tab's content is a screen of its own.</summary>
@@ -1014,6 +1097,7 @@ internal sealed class UiaCollector : IDisposable
                 var rec = DumpDocument(top, tabName, tabElement, screenTitle, documentHwnd);
                 rec.Kind = ScreenKinds.Tab;
                 rec.ReachedFrom = windowTitle;
+                if (documentHwnd != IntPtr.Zero && rec.Controls.Count >= 5) lock (_gate) _rows[documentHwnd] = rec.Controls;
                 lock (_dumpedTitles) _dumpedTitles.Add(Core.Learning.Titles.Key(screenTitle));
                 if (rec.Controls.Count >= 5) { lock (_gate) _mdiTitlesDumped.Add(Core.Learning.Titles.Key(tabName)); UpdateMdiStatus(); }
                 _status.TabScreens++;
@@ -1063,6 +1147,12 @@ internal sealed class UiaCollector : IDisposable
         lock (_gate) _rereadWhy = why;
         _rereadTimer ??= new System.Threading.Timer(_ => Reread(), null, Timeout.Infinite, Timeout.Infinite);
         _rereadTimer.Change(300, Timeout.Infinite);
+        // a typed value or a key in a grid: the program prices the line a second or more later, so the row is read again at 1.5 s
+        if (why.StartsWith("type", StringComparison.Ordinal) || why.StartsWith("key", StringComparison.Ordinal) || why.StartsWith("focus", StringComparison.Ordinal))
+        {
+            _rereadAgainTimer ??= new System.Threading.Timer(_ => Reread(), null, Timeout.Infinite, Timeout.Infinite);
+            _rereadAgainTimer.Change(1500, Timeout.Infinite);
+        }
     }
 
     private void Reread()
@@ -1072,10 +1162,12 @@ internal sealed class UiaCollector : IDisposable
         {
             var hwnd = _foreground;
             if (!_inFront || hwnd == IntPtr.Zero) return;
-            var screen = CurrentTitle;
-            if (screen.Length == 0) return;
             string? tab; IntPtr docHwnd;
             lock (_gate) { tab = _activeTab.GetValueOrDefault(hwnd); docHwnd = _mdiActiveChild.GetValueOrDefault(hwnd); }
+            // the document's own title, from the window it is read from (never the title of the moment, which a popup can flip)
+            var screen = docHwnd != IntPtr.Zero ? ScreenTitleOf(docHwnd) : CurrentTitle;
+            if (screen.Length == 0) return;
+            var batchT = DateTime.Now;
             var rows = new List<ControlRow>();
             using (Cache(withFilter: true, withValues: true).Activate())
             {
@@ -1099,6 +1191,8 @@ internal sealed class UiaCollector : IDisposable
             }
             foreach (var page in innerChanges)
             {
+                bool fromClick; lock (_gate) fromClick = _recentPageSelects.TryGetValue(screen + "\u0001" + page, out var at) && (DateTime.Now - at).TotalSeconds <= 5;
+                if (fromClick) continue;
                 _status.InnerTabSelections++;
                 Emit(new RawEvent { Act = Acts.Select, Ct = "TabItem", Name = page, Val = page, How = "read", WindowTitle = screen, Hwnd = hwnd });
             }
@@ -1122,6 +1216,9 @@ internal sealed class UiaCollector : IDisposable
             }
             AddKeys(typedKeys, field);
             if ((DateTime.Now - previous.t).TotalSeconds <= 8) AddKeys(typedKeys, previous);
+            // a cell with no name of its own: the field under the editor that has, or just had, the focus, by place
+            if (field.rect.Width > 0) { var at = FieldReads.AtRect(reads, $"{field.rect.Left},{field.rect.Top} {field.rect.Width}x{field.rect.Height}"); if (at is not null) typedKeys.Add(at.Label); }
+            if (previous.rect.Width > 0 && (DateTime.Now - previous.t).TotalSeconds <= 8) { var at = FieldReads.AtRect(reads, $"{previous.rect.Left},{previous.rect.Top} {previous.rect.Width}x{previous.rect.Height}"); if (at is not null) typedKeys.Add(at.Label); }
             foreach (var k in typedKeys) userKeys.Add(k);
             if (before is null) return; // the first read of a document is the baseline
             var (typedNow, filled) = FieldReads.Diff(before, reads, typedKeys);
@@ -1132,7 +1229,7 @@ internal sealed class UiaCollector : IDisposable
                 if (already == f.Value) continue;
                 lock (_gate) { _lastTyped[f.AutomationId.Length > 0 ? f.AutomationId : f.Label] = f.Value; _userKeysSinceRead[f.Label] = DateTime.Now; }
                 _status.ValuesTypedReread++;
-                Emit(new RawEvent { Act = Acts.Value, Ct = f.IsCell ? "DataItem" : f.Type, Name = f.Label, Aid = f.IsCell ? "" : f.AutomationId, Val = Masking.ForEvent(f.Value, f.Label, f.AutomationId, f.IsPassword), How = "read", WindowTitle = screen, Hwnd = hwnd });
+                Emit(new RawEvent { T = batchT, Act = Acts.Value, Ct = f.IsCell ? "DataItem" : f.Type, Name = f.Label, Aid = f.IsCell ? "" : f.AutomationId, Val = Masking.ForEvent(f.Value, f.Label, f.AutomationId, f.IsPassword), How = "read", WindowTitle = screen, Hwnd = hwnd });
             }
             var anyFill = false;
             foreach (var f in filled)
@@ -1140,7 +1237,7 @@ internal sealed class UiaCollector : IDisposable
                 if (f.IsPassword || Masking.IsSensitiveName(f.Label) || Masking.IsSensitiveName(f.AutomationId)) continue;
                 if (userKeys.Contains(f.Label) && !typedKeys.Contains(f.Label)) continue; // typed a moment ago by the field's own event
                 _status.ValuesFilled++; _status.ValuesReread++; anyFill = true;
-                Emit(new RawEvent { Act = Acts.Value, Ct = f.IsCell ? "DataItem" : f.Type, Name = f.Label, Aid = f.IsCell ? "" : f.AutomationId, Val = Masking.ForAppValue(f.Value, f.Label, f.AutomationId, false), By = ValueBy.App, WindowTitle = screen, Hwnd = hwnd });
+                Emit(new RawEvent { T = batchT, Act = Acts.Value, Ct = f.IsCell ? "DataItem" : f.Type, Name = f.Label, Aid = f.IsCell ? "" : f.AutomationId, Val = Masking.ForAppValue(f.Value, f.Label, f.AutomationId, false, f.Type), By = ValueBy.App, WindowTitle = screen, Hwnd = hwnd });
             }
             if (anyFill) InferPress("value filled", from: screen);
             // a lookup list that opened inside the window under the field being typed in
@@ -1242,7 +1339,7 @@ internal sealed class UiaCollector : IDisposable
             {
                 // a total recalculated, a name looked up from a code: the program filled it in (personal fields keep their shape only)
                 r.By = ValueBy.App;
-                r.Val = Masking.ForAppValue(v, r.Name, r.Aid, r.IsPassword);
+                r.Val = Masking.ForAppValue(v, r.Name, r.Aid, r.IsPassword, r.Ct);
                 _status.ValuesFilled++;
                 Emit(r);
                 InferPress("value filled", from: CurrentTitle);
@@ -1276,6 +1373,9 @@ internal sealed class UiaCollector : IDisposable
         {
             var focused = _automation.FocusedElement();
             if (focused is null) return true;
+            // the focused element is the inner editor of this field, or this field is the inner editor of the focused one: by id first, then by place
+            string fa = ""; try { fa = focused.Properties.AutomationId.ValueOrDefault ?? ""; } catch { }
+            if (fa.Length > 0 && r.Aid.Length > 0 && (fa == r.Aid || Labels.Clean(fa) == Labels.Clean(r.Aid))) return true;
             var a = el.BoundingRectangle; var b = focused.BoundingRectangle;
             if (a.IsEmpty || b.IsEmpty) return false;
             return a.Contains(b) || b.Contains(a);
@@ -1329,6 +1429,7 @@ internal sealed class UiaCollector : IDisposable
                 if (r.Ct is not ("Button" or "SplitButton" or "MenuItem" or "CheckBox" or "RadioButton" or "Edit" or "ComboBox" or "Spinner" or "TabItem" or "Hyperlink" or "Image" or "Text")) return;
                 if (r.Name.Length == 0) return;
                 if (Hints.IsFieldValueTip(r.Ct, text)) return; // "Remit-to: Same" over a field is its own label and value, not a help text
+                if (IsMenuOrScreenName(text, r.Name)) return;   // "Accounting" over the Sales Order button is the name of a menu, not help
                 var key = r.Ct + "\u0001" + r.Name + "\u0001" + text;
                 lock (_gate)
                 {
@@ -1344,6 +1445,20 @@ internal sealed class UiaCollector : IDisposable
         });
     }
 
+    /// <summary>The tip text is the name of a menu, a button, a tab or a window of the program (other than the control it hangs over).</summary>
+    private bool IsMenuOrScreenName(string text, string subject)
+    {
+        var t = text.Trim();
+        if (t.Length == 0 || string.Equals(t, subject, StringComparison.OrdinalIgnoreCase)) return false;
+        lock (_gate)
+        {
+            if (_knownWindows.Values.Any(w => string.Equals(w, t, StringComparison.OrdinalIgnoreCase))) return true;
+            foreach (var rows in _rows.Values)
+                if (rows.Any(c => c.Type is "MenuItem" or "MenuBar" or "TabItem" or "Button" && string.Equals(c.Name.Trim(), t, StringComparison.OrdinalIgnoreCase))) return true;
+        }
+        return false;
+    }
+
     private void OnToggleChanged(AutomationElement el, PropertyId prop, object newValue)
     {
         try
@@ -1357,10 +1472,10 @@ internal sealed class UiaCollector : IDisposable
             bool clicked, focused;
             lock (_gate)
             {
-                clicked = _decider.ClickedRecently(now) || (_clickSeenAt != DateTime.MinValue && (now - _clickSeenAt).TotalMilliseconds <= PressDecider.ClickAgeMs);
-                focused = _lastToggleFocus.name == r.Name && (now - _lastToggleFocus.t).TotalSeconds <= 5;
+                // the click landed on this box (its recorded tree or the live read said so); a box the program flips when a record loads is a value
+                clicked = _decider.ClickedRecently(now) && _decider.Pending?.Name == r.Name;
+                focused = false;
             }
-            if (!focused) { try { focused = el.Properties.HasKeyboardFocus.ValueOrDefault; } catch { } }
             if (!PressDecider.ToggleIsUserAction(clicked, focused))
             {
                 r.Act = Acts.Value; r.By = ValueBy.App; r.Val = val;
@@ -1368,6 +1483,7 @@ internal sealed class UiaCollector : IDisposable
                 Emit(r);
                 return;
             }
+            lock (_gate) _decider.Pressed(r.Name, now);
             r.How = PressHow.Toggle;
             r.Val = val;
             _status.Toggles++;
@@ -1443,6 +1559,18 @@ internal sealed class UiaCollector : IDisposable
             }
             catch { }
         }
+        if ((r.Name.Length == 0 || Labels.IsWrapperId(r.Name) || Masking.LooksLikeData(r.Name)) && r.Ct is "Edit" or "DataItem" or "ComboBox" or "Custom" or "Text")
+        {
+            // 0b. a grid cell editor with no name (or a name that is its own value): the column of the recorded tree whose cell holds it
+            try
+            {
+                var rect = el.BoundingRectangle;
+                List<ControlRow>? rows; lock (_gate) _rows.TryGetValue(FrontHwnd(), out rows);
+                var column = rows is null || rect.IsEmpty ? null : ColumnAt(rows, rect.Left + rect.Width / 2, rect.Top + rect.Height / 2);
+                if (column is not null) r.Name = column;
+            }
+            catch { }
+        }
         if (r.Name.Length == 0 || Labels.IsWrapperId(r.Name))
         {
             // 1. the control's LabeledBy, 2. the nearest Text in the last tree dump, 3. the cleaned automation id (done by FieldKey)
@@ -1463,6 +1591,25 @@ internal sealed class UiaCollector : IDisposable
     }
 
     private static bool LooksLikeValue(string s) => s.Length > 60 || s.All(c => char.IsDigit(c) || c is '.' or ',' or '/' or '-' or ':' or ' ' or '$');
+
+    /// <summary>The column name of the recorded grid cell (DataItem) or header that holds a point, cleaned of line breaks; null when none.</summary>
+    private static string? ColumnAt(List<ControlRow> rows, int x, int y)
+    {
+        ControlRow? best = null; long bestArea = long.MaxValue;
+        foreach (var r in rows)
+        {
+            if (r.Type is not ("DataItem" or "HeaderItem") || r.Name.Trim().Length == 0) continue;
+            if (!Labels.TryRect(r.Position, out var rx, out var ry, out var rw, out var rh) || rw <= 0 || rh <= 0) continue;
+            if (r.Type == "HeaderItem") { if (x < rx || x >= rx + rw) continue; }
+            else if (x < rx || x >= rx + rw || y < ry || y >= ry + rh) continue;
+            var area = (long)rw * rh;
+            if (best is null || (r.Type == "DataItem" && best.Type == "HeaderItem") || (r.Type == best.Type && area < bestArea)) { best = r; bestArea = area; }
+        }
+        if (best is null) return null;
+        var name = best.Name.Replace("\r", " ").Replace("\n", " ").Trim();
+        while (name.Contains("  ")) name = name.Replace("  ", " ");
+        return name.Length == 0 || name.Length > 40 || Masking.LooksLikeData(name) ? null : name;
+    }
 
     private void Emit(RawEvent r, bool press = false)
     {
@@ -1725,6 +1872,7 @@ internal sealed class UiaCollector : IDisposable
     {
         Detach();
         _rereadTimer?.Dispose();
+        _rereadAgainTimer?.Dispose();
         try { _automation.Dispose(); } catch { }
     }
 }

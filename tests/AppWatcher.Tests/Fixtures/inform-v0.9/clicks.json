@@ -1,0 +1,714 @@
+[
+ {
+  "t": "15:55:56",
+  "kind": "nav",
+  "name": "Main",
+  "record": "ddi-system-inform-sample-co-customer-master.md",
+  "x": 137,
+  "y": 943
+ },
+ {
+  "t": "15:56:01",
+  "kind": "nav",
+  "name": "General",
+  "record": "ddi-system-inform-sample-co-customer-master.md",
+  "x": 200,
+  "y": 943
+ },
+ {
+  "t": "15:56:07",
+  "kind": "nav",
+  "name": "Credit",
+  "record": "ddi-system-inform-sample-co-customer-master.md",
+  "x": 267,
+  "y": 943
+ },
+ {
+  "t": "15:56:14",
+  "kind": "nav",
+  "name": "Notes",
+  "record": "ddi-system-inform-sample-co-customer-master.md",
+  "x": 327,
+  "y": 943
+ },
+ {
+  "t": "15:56:19",
+  "kind": "nav",
+  "name": "Freight",
+  "record": "ddi-system-inform-sample-co-customer-master.md",
+  "x": 391,
+  "y": 943
+ },
+ {
+  "t": "15:56:35",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-customer-master.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "15:57:04",
+  "kind": "nav",
+  "name": "Main",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": 131,
+  "y": 943
+ },
+ {
+  "t": "15:57:10",
+  "kind": "nav",
+  "name": "General",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": 194,
+  "y": 943
+ },
+ {
+  "t": "15:57:16",
+  "kind": "nav",
+  "name": "Drop Ship Charges",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": 307,
+  "y": 943
+ },
+ {
+  "t": "15:57:22",
+  "kind": "nav",
+  "name": "Purchasing",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": 431,
+  "y": 943
+ },
+ {
+  "t": "15:57:37",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "15:58:15",
+  "kind": "nav",
+  "name": "Main",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": 604,
+  "y": 453
+ },
+ {
+  "t": "15:58:21",
+  "kind": "nav",
+  "name": "Main",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": 604,
+  "y": 453
+ },
+ {
+  "t": "15:58:35",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "15:59:42",
+  "kind": "nav",
+  "name": "Current Warehouse",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "15:59:48",
+  "kind": "nav",
+  "name": "Overview",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "15:59:53",
+  "kind": "nav",
+  "name": "Assembly",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:00:06",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:01:18",
+  "kind": "nav",
+  "name": "Special Instructions",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 1095,
+  "y": 650
+ },
+ {
+  "t": "16:01:24",
+  "kind": "nav",
+  "name": "Internal Notes",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 1233,
+  "y": 649
+ },
+ {
+  "t": "16:01:30",
+  "kind": "nav",
+  "name": "Main",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 433,
+  "y": 545
+ },
+ {
+  "t": "16:01:36",
+  "kind": "nav",
+  "name": "Johnstone",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:01:50",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:02:10",
+  "kind": "prompt",
+  "name": "OK",
+  "title": "Close?",
+  "record": "inform/close.md",
+  "x": 1048,
+  "y": 576
+ },
+ {
+  "t": "16:02:39",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-customer-order-pad.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:03:17",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-price-change.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:04:09",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-price-matrix-master.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:04:43",
+  "kind": "prompt",
+  "name": "No",
+  "title": "No Selection Specified",
+  "record": "inform/no-selection-specified.md",
+  "x": 1163,
+  "y": 584
+ },
+ {
+  "t": "16:05:24",
+  "kind": "nav",
+  "name": "Category Prices",
+  "record": "ddi-system-inform-sample-co-inventory-inquiry.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:05:29",
+  "kind": "nav",
+  "name": "Competitive Prices",
+  "record": "ddi-system-inform-sample-co-inventory-inquiry.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:05:34",
+  "kind": "nav",
+  "name": "Inventory",
+  "record": "ddi-system-inform-sample-co-inventory-inquiry.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:05:39",
+  "kind": "nav",
+  "name": "Johnstone National",
+  "record": "ddi-system-inform-sample-co-inventory-inquiry.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:05:58",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-inventory-inquiry.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:06:30",
+  "kind": "nav",
+  "name": "Chart",
+  "record": "ddi-system-inform-sample-co-customer.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:06:45",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-customer.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:07:31",
+  "kind": "prompt",
+  "name": "OK",
+  "title": "Advanced Demand Forecasting and Purchasing",
+  "record": "inform/advanced-demand-forecasting-and-purchasing.md",
+  "x": 1430,
+  "y": 660
+ },
+ {
+  "t": "16:07:43",
+  "kind": "nav",
+  "name": "Projection",
+  "record": "ddi-system-inform-sample-co-projected-purchase-order.md",
+  "x": 367,
+  "y": 920
+ },
+ {
+  "t": "16:07:48",
+  "kind": "nav",
+  "name": "Vendor Returns",
+  "record": "ddi-system-inform-sample-co-projected-purchase-order.md",
+  "x": 477,
+  "y": 920
+ },
+ {
+  "t": "16:07:53",
+  "kind": "nav",
+  "name": "Stock Transfer",
+  "record": "ddi-system-inform-sample-co-projected-purchase-order.md",
+  "x": 602,
+  "y": 920
+ },
+ {
+  "t": "16:07:58",
+  "kind": "nav",
+  "name": "Criteria",
+  "record": "ddi-system-inform-sample-co-projected-purchase-order.md",
+  "x": 40,
+  "y": 944
+ },
+ {
+  "t": "16:08:15",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-projected-purchase-order.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:09:05",
+  "kind": "prompt",
+  "name": "Cancel",
+  "title": "Protected Area",
+  "record": "inform/close.md",
+  "x": 1163,
+  "y": 576
+ },
+ {
+  "t": "16:09:43",
+  "kind": "nav",
+  "name": "Inquiry",
+  "record": "ddi-system-inform-sample-co-sales-order-inquiry.md",
+  "x": 36,
+  "y": 182
+ },
+ {
+  "t": "16:09:48",
+  "kind": "nav",
+  "name": "Analysis",
+  "record": "ddi-system-inform-sample-co-sales-order-inquiry.md",
+  "x": 35,
+  "y": 233
+ },
+ {
+  "t": "16:10:01",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-sales-order-inquiry.md",
+  "x": 1861,
+  "y": 984
+ },
+ {
+  "t": "16:10:29",
+  "kind": "nav",
+  "name": "Inquiry",
+  "record": "ddi-system-inform-sample-co-purchase-order-inquiry.md",
+  "x": 37,
+  "y": 183
+ },
+ {
+  "t": "16:10:34",
+  "kind": "nav",
+  "name": "Analysis",
+  "record": "ddi-system-inform-sample-co-purchase-order-inquiry.md",
+  "x": 36,
+  "y": 234
+ },
+ {
+  "t": "16:10:51",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-purchase-order-inquiry.md",
+  "x": 1860,
+  "y": 983
+ },
+ {
+  "t": "16:11:15",
+  "kind": "nav",
+  "name": "Report",
+  "record": "ddi-system-inform-sample-co-purchase-order-report.md",
+  "x": 65,
+  "y": 224
+ },
+ {
+  "t": "16:11:21",
+  "kind": "nav",
+  "name": "Header Criteria",
+  "record": "ddi-system-inform-sample-co-purchase-order-report.md",
+  "x": 65,
+  "y": 267
+ },
+ {
+  "t": "16:11:26",
+  "kind": "nav",
+  "name": "Detail Criteria",
+  "record": "ddi-system-inform-sample-co-purchase-order-report.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:11:39",
+  "kind": "press",
+  "name": "Run",
+  "record": "ddi-system-inform-sample-co-purchase-order-report.md",
+  "x": 1641,
+  "y": 984
+ },
+ {
+  "t": "16:11:45",
+  "kind": "prompt",
+  "name": "OK",
+  "title": "Attention",
+  "record": "inform/close.md",
+  "x": 1048,
+  "y": 576
+ },
+ {
+  "t": "16:11:53",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-purchase-order-report.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:12:55",
+  "kind": "press",
+  "name": "Add Line Item",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 189,
+  "y": 700
+ },
+ {
+  "t": "16:13:03",
+  "kind": "nav",
+  "name": "Details",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 1655,
+  "y": 299
+ },
+ {
+  "t": "16:13:09",
+  "kind": "nav",
+  "name": "Procurement",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 1758,
+  "y": 299
+ },
+ {
+  "t": "16:13:14",
+  "kind": "nav",
+  "name": "Final",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 61,
+  "y": 453
+ },
+ {
+  "t": "16:13:19",
+  "kind": "nav",
+  "name": "Shipments",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:13:25",
+  "kind": "nav",
+  "name": "Header",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 61,
+  "y": 319
+ },
+ {
+  "t": "16:13:30",
+  "kind": "nav",
+  "name": "Detail",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 62,
+  "y": 386
+ },
+ {
+  "t": "16:13:44",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:13:49",
+  "kind": "prompt",
+  "name": "OK",
+  "title": "Close?",
+  "record": "inform/close.md",
+  "x": 1048,
+  "y": 576
+ },
+ {
+  "t": "16:14:49",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-customer-order-pad.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:18:31",
+  "kind": "press",
+  "name": "Add Line Item",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 189,
+  "y": 700
+ },
+ {
+  "t": "16:18:54",
+  "kind": "nav",
+  "name": "Details",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 1655,
+  "y": 299
+ },
+ {
+  "t": "16:18:59",
+  "kind": "nav",
+  "name": "Procurement",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 1758,
+  "y": 299
+ },
+ {
+  "t": "16:19:04",
+  "kind": "nav",
+  "name": "Final",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 61,
+  "y": 453
+ },
+ {
+  "t": "16:19:10",
+  "kind": "nav",
+  "name": "Shipments",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:19:15",
+  "kind": "nav",
+  "name": "Header",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 61,
+  "y": 319
+ },
+ {
+  "t": "16:19:25",
+  "kind": "nav",
+  "name": "Detail",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 62,
+  "y": 386
+ },
+ {
+  "t": "16:19:39",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-new-sales-order.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:19:44",
+  "kind": "prompt",
+  "name": "OK",
+  "title": "Close?",
+  "record": "inform/close.md",
+  "x": 1048,
+  "y": 576
+ },
+ {
+  "t": "16:20:14",
+  "kind": "nav",
+  "name": "Special Instructions",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 1095,
+  "y": 650
+ },
+ {
+  "t": "16:20:20",
+  "kind": "nav",
+  "name": "Internal Notes",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 1233,
+  "y": 649
+ },
+ {
+  "t": "16:20:26",
+  "kind": "nav",
+  "name": "Main",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 433,
+  "y": 545
+ },
+ {
+  "t": "16:20:32",
+  "kind": "nav",
+  "name": "Johnstone",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:20:46",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-new-purchase-order.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:21:04",
+  "kind": "prompt",
+  "name": "OK",
+  "title": "Close?",
+  "record": "inform/close.md",
+  "x": 1048,
+  "y": 576
+ },
+ {
+  "t": "16:21:41",
+  "kind": "nav",
+  "name": "Chart",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:21:50",
+  "kind": "nav",
+  "name": "Data",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:21:59",
+  "kind": "nav",
+  "name": "Invoices",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:22:08",
+  "kind": "nav",
+  "name": "Payment History",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:22:37",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-vendor.md",
+  "x": 1863,
+  "y": 984
+ },
+ {
+  "t": "16:23:08",
+  "kind": "nav",
+  "name": "Current Warehouse",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:23:13",
+  "kind": "nav",
+  "name": "Overview",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:23:19",
+  "kind": "nav",
+  "name": "Assembly",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": null,
+  "y": null
+ },
+ {
+  "t": "16:23:36",
+  "kind": "press",
+  "name": "Exit",
+  "record": "ddi-system-inform-sample-co-product-ex.md",
+  "x": 1863,
+  "y": 984
+ }
+]

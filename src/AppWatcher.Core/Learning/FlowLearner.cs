@@ -83,7 +83,7 @@ public static class FlowLearner
         // join. The main window, prompts and the session windows are never that (returning to the main window needs no click).
         bool IsDialogWin(string win) => dialogWindows is not null && dialogWindows.Contains(win);
         var mainOfAll = MainWindow(all.Where(v => !IsDialogWin(v.Win) && (sessionWindows is null || !sessionWindows.Contains(v.Win))).GroupBy(v => v.Win).Select(g => (g.Key, g.Sum(v => (v.End - v.Start).TotalSeconds), g.Count())));
-        all = WithoutProgramShown(all, win => IsDialogWin(win) || win == mainOfAll || (sessionWindows is not null && sessionWindows.Contains(win)));
+        all = WithoutProgramShown(all, win => IsDialogWin(win) || win == mainOfAll || (sessionWindows is not null && sessionWindows.Contains(win)), mainOfAll);
         for (var i = 1; i < all.Count; i++)
         {
             var k = LearnState.Key(all[i - 1].Win, all[i].Win);
@@ -110,7 +110,13 @@ public static class FlowLearner
             var v = visits[i];
             if (v.Win == main) { Cut(); continue; }
             cur.Add(v);
-            if (v.ClosedDocument) { Cut(); continue; }
+            if (v.ClosedDocument)
+            {
+                // the close of a document seen on its own (the Exit press was credited to the main window in between) belongs to the
+                // run that was working in that document: the flow runs from the document's open to its close
+                if (cur.Count(x => !isDialog(x)) == 1 && v.Controls.Count == 0 && runs.Count > 0 && runs[^1].LastOrDefault(x => !isDialog(x))?.Win == v.Win) { runs[^1].AddRange(cur); cur.Clear(); continue; }
+                Cut(); continue;
+            }
             // a prompt answered, and the window after it is not the one before it: the document closed
             if (isDialog(v) && i + 1 < visits.Count)
             {
@@ -187,6 +193,8 @@ public static class FlowLearner
             var key = Titles.Key(e.Win);
             var click = e.Act is Acts.Invoke or Acts.Select or Acts.Menu or Acts.Dropdown;
             if (key.Length == 0) { if (click) lastClick = e.T; continue; }
+            // a value credited to the main window within two seconds of the document in front of it (the program's fills, a cell read late) stays with the document
+            if (cur is not null && e.Act == Acts.Value && cur.Win.StartsWith(key + " › ", StringComparison.Ordinal) && (e.T - cur.End).TotalSeconds <= 2) key = cur.Win;
             if (cur is null || cur.Win != key)
             {
                 cur = new Visit { Win = key, Start = e.T, End = e.T, Source = e.Source };
@@ -211,12 +219,17 @@ public static class FlowLearner
     /// Drops the visits of windows the program showed on its own (except prompts, which the flow rules handle) and joins the
     /// visits around them when they are the same window, so "Main → Notes → Main" is one stay on Main.
     /// </summary>
-    public static List<Visit> WithoutProgramShown(List<Visit> visits, Func<string, bool> isDialog)
+    public static List<Visit> WithoutProgramShown(List<Visit> visits, Func<string, bool> isDialog, string? main = null)
     {
         var result = new List<Visit>();
-        foreach (var v in visits)
+        for (var i = 0; i < visits.Count; i++)
         {
+            var v = visits[i];
             if (v.ShownByProgram && !isDialog(v.Win)) continue;
+            // the main window flickering in front for under a second with nothing done on it, between two visits of the same
+            // document (a prompt closing, a popup going): the document stayed open, its visit goes on
+            if (main is not null && v.Win == main && v.Controls.Count == 0 && (v.End - v.Start).TotalSeconds < 1 && result.Count > 0 && i + 1 < visits.Count
+                && result[^1].Win == visits[i + 1].Win && result[^1].Win != main && !result[^1].ClosedDocument) continue;
             if (result.Count > 0 && result[^1].Win == v.Win && !isDialog(v.Win))
             {
                 var prev = result[^1];

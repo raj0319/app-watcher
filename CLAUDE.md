@@ -12,7 +12,7 @@ src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, da
 src/AppWatcher/          the tray app: WinForms tray icon, three-step first-run wizard, settings window (Simple/Advanced), UI Automation collector (with MSAA, menu and press-inference fallbacks),
                          window capture (one picture per screen), ETW file-access trace
 profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
-tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform and Fixtures/inform-v0.8 hold anonymised copies of two real sessions (see their READMEs)
+tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform, inform-v0.8 and inform-v0.9 hold anonymised copies of three real sessions (see their READMEs; inform-v0.9/clicks.json holds every truth click with its point)
 tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
 scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
@@ -101,7 +101,10 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   ElementFromPoint at once when the left button went down (`GetAsyncKeyState` sampled at each event the collector
   already receives: a read, never a hook) or when a PRESSED state or mouse capture says so (a state change on hover
   remembers nothing), or from the focused button; counted when a window, document, tab or message changes or the
-  program fills a value within 1.5 s (`PressDecider`, pure and tested). Documents of an MDI workspace are the child
+  program fills a value within 1.5 s (`PressDecider`, pure and tested). When the button is gone by the time the click is
+  heard of (Exit, OK, Cancel: the next event is the destroy), the window's last recorded tree is the hit-test surface
+  (`TreeHitTest`, positions in screen pixels); a hit on a tab item is a page selection. Nothing is remembered from a
+  state change (Infragistics raises it on hover). Documents of an MDI workspace are the child
   windows of the MDICLIENT pane (`MdiWorkspace`): the one in front by z-order is the screen, read from its own window;
   a `Tab` control inside a document is never the workspace strip; where a strip is exposed it is read after events
   (every 2 s at most), never through the selection pattern on WinForms. Inner tab pages are read with the document after

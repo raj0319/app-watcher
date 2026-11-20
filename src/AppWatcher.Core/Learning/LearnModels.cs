@@ -385,14 +385,24 @@ public static class Titles
         var t = title.Replace("*", "").Replace("•", "").Trim();
         foreach (var p in MaskPatterns)
         {
-            var star = p.IndexOf('*');
-            if (star < 0) continue;
-            var head = p[..star]; var tail = p[(star + 1)..];
-            if (head.Length == 0 || !t.StartsWith(head, StringComparison.OrdinalIgnoreCase)) continue;
-            var rest = t[head.Length..];
-            var end = tail.Length == 0 ? rest.IndexOf(" › ", StringComparison.Ordinal) : rest.IndexOf(tail, StringComparison.OrdinalIgnoreCase);
-            if (end < 0) { if (tail.Length > 0) continue; end = rest.Length; }
-            if (rest[..end].Trim().Length > 0) t = head + "…" + rest[end..];
+            if (!p.Contains('*')) continue;
+            // each * is one masked part ("Vendor - * "*"" masks the number and the name); a part without letters is left for the digit masking (#)
+            var parts = p.Split('*');
+            // a star at the end takes everything up to the end of the title or the " › " of a document
+            var rx = "^" + string.Join("(.*?)", parts.Select(System.Text.RegularExpressions.Regex.Escape)) + (p.EndsWith('*') ? "(?=$| › )" : "");
+            var m = System.Text.RegularExpressions.Regex.Match(t, rx, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!m.Success) continue;
+            var sb0 = new System.Text.StringBuilder();
+            var pos = 0;
+            for (var g = 1; g < m.Groups.Count; g++)
+            {
+                var grp = m.Groups[g];
+                sb0.Append(t, pos, grp.Index - pos);
+                sb0.Append(grp.Value.Any(char.IsLetter) ? "…" : grp.Value);
+                pos = grp.Index + grp.Length;
+            }
+            sb0.Append(t, pos, t.Length - pos);
+            t = sb0.ToString();
             break;
         }
         var sb = new System.Text.StringBuilder();

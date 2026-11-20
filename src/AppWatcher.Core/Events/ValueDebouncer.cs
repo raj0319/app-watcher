@@ -1,4 +1,4 @@
-using AppWatcher.Core.Models;
+﻿using AppWatcher.Core.Models;
 
 namespace AppWatcher.Core.Events;
 
@@ -11,14 +11,16 @@ public sealed class ValueDebouncer
     private readonly Dictionary<string, (UiEvent ev, DateTime at)> _pending = new();
     private readonly object _gate = new();
 
-    public TimeSpan Quiet { get; init; } = TimeSpan.FromMilliseconds(800);
+    public TimeSpan Quiet { get; init; } = TimeSpan.FromMilliseconds(1000);
 
     public int PendingCount { get { lock (_gate) return _pending.Count; } }
 
     /// <summary>Stores or replaces the pending value for the control.</summary>
     public void Push(UiEvent valueEvent, DateTime now)
     {
-        var key = valueEvent.Win + "\u0001" + valueEvent.FieldKey + "\u0001" + valueEvent.Ct;
+        // keyed by the field, not the window: the keystrokes of one value can be credited to two windows while a popup flickers
+        // in front (the notes window a record opens), and the program's own fills are kept apart from the user's typing
+        var key = (valueEvent.Aid.Length > 0 && !Screens.Labels.IsWrapperId(valueEvent.Aid) ? valueEvent.Aid : valueEvent.FieldKey) + "\u0001" + valueEvent.Ct + "\u0001" + (valueEvent.By ?? "");
         lock (_gate) _pending[key] = (valueEvent, now);
     }
 

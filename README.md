@@ -120,9 +120,10 @@ Only inside the chosen app, and only while it is the window in front:
 - which buttons and menu items were pressed, seen five ways so that apps whose controls stay silent are
   covered too (UI Automation, the older accessibility events, a menu closing after an item was chosen, and, for
   toolkits whose buttons say nothing, the control under the pointer when the left button went down, sampled from the
-  key state at each event the watcher receives, or the button with focus, counted when a window, document, tab or
-  message changes or the program fills a value within 1.5 s; no mouse or keyboard hook, the pointer and the key state
-  are only read), which fields got focus, what was selected or ticked
+  key state at each event the watcher receives, or, when that button is already gone, the button at that point in the
+  window's last recorded control tree, or the button with focus; counted when a window, document, tab or message
+  changes or the program fills a value within 1.5 s; no mouse or keyboard hook, the pointer and the key state are only
+  read), which fields got focus, what was selected or ticked
 - the values the program fills in by itself (a name looked up from a code, a total recalculated, the cells a new
   order line gets): from the field's own change event, or, when a toolkit's grid cells and bound editors report
   nothing, by reading the document's fields once, 300 ms after each typed value, press, Enter, Tab or focus move, and
@@ -419,6 +420,8 @@ Something like this can go on the notice board or in an e-mail:
   recorded as a screen, and on which screens people typed without a typed value being recorded.
 - A window the program opens by itself (a notes popup when a record loads) is not a step people take: it starts
   no flow and is not a visit, though it is still listed as a screen.
+- A calculation found in grid cells or on pictures is only written with three distinct values and one formula that
+  fits them all; with less, or with two formulas that both fit, it is a question in logic.md, not a finding.
 - Formulas found from the pictures' text depend on how well the OCR read the numbers; they carry the picture as
   evidence so a person can check.
 - The learner finds simple formulas and plain rules. Anything cleverer is for the analyze skill and for people.

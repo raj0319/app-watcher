@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Serialization;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Screens;
@@ -106,6 +106,7 @@ public static class LogicLearner
         var values = new Dictionary<string, Dictionary<string, string>>();
         (string kind, string name, string win, DateTime t)? user = null;
         (string win, string name, DateTime t)? press = null;
+        var filledForCause = new HashSet<string>(StringComparer.Ordinal); // a field filled twice after one action (read at 300 ms and again at 1.5 s) is one fill
         foreach (var e in CauseFirst(session))
         {
             var win = Titles.Key(e.Win);
@@ -113,19 +114,21 @@ public static class LogicLearner
             {
                 var f = e.FieldKey;
                 var v = e.Val ?? "";
+                // a fill credited to the main window within two seconds of a value typed in one of its documents belongs to that document
+                if (e.By == ValueBy.App && user is { } ud && ud.win != win && ud.win.StartsWith(win + " › ", StringComparison.Ordinal) && (e.T - ud.t).TotalSeconds is >= -0.5 and <= 2) win = ud.win;
                 if (!values.TryGetValue(win, out var cur)) values[win] = cur = new Dictionary<string, string>();
                 if (e.By == ValueBy.App)
                 {
                     if (v != Masking.Masked && v.Trim().Length > 0)
                     {
-                        if (user is { } u && u.win == win && u.name != f && (e.T - u.t).TotalSeconds is >= -0.5 and <= LinkWindowSeconds)
+                        if (user is { } u && u.win == win && u.name != f && (e.T - u.t).TotalSeconds is >= -0.5 and <= LinkWindowSeconds && filledForCause.Add(f))
                             Add(s.Fills, LearnState.Key(win, u.kind + ":" + u.name, f), e.Source);
-                        LearnCalc(s, win, f, v, cur, e.Source);
+                        LearnCalc(s, win, f, v, cur, e.Source, weak: e.Ct == "DataItem");
                     }
                 }
                 else
                 {
-                    user = ("typed", f, win, e.T);
+                    user = ("typed", f, win, e.T); filledForCause.Clear();
                     Count(s.Causes, LearnState.Key(win, "typed:" + f));
                 }
                 cur[f] = v;
@@ -133,14 +136,14 @@ public static class LogicLearner
             else if (e.Act == Acts.Select && win.Length > 0)
             {
                 var name = e.FieldKey;
-                user = ("chose", name, win, e.T);
+                user = ("chose", name, win, e.T); filledForCause.Clear();
                 Count(s.Causes, LearnState.Key(win, "chose:" + name));
             }
             else if (e.Act == Acts.Invoke && win.Length > 0)
             {
                 var kind = e.How == PressHow.Toggle ? "ticked" : e.Ct == "MenuItem" || e.How == PressHow.Menu ? "chose menu" : "pressed";
                 var name = e.FieldKey;
-                user = (kind, name, win, e.T);
+                user = (kind, name, win, e.T); filledForCause.Clear();
                 Count(s.Causes, LearnState.Key(win, kind + ":" + name));
                 if (kind == "pressed") press = (win, name, e.T);
             }
@@ -196,7 +199,7 @@ public static class LogicLearner
     /// <summary>On, Off, Indeterminate: the state of a tick box, never a value another field could be copied from.</summary>
     public static bool IsToggleText(string? text) => text is not null && text.Trim() is "On" or "Off" or "Indeterminate" or "on" or "off" or "True" or "False";
 
-    private static void LearnCalc(LearnState s, string win, string field, string value, Dictionary<string, string> cur, string src)
+    private static void LearnCalc(LearnState s, string win, string field, string value, Dictionary<string, string> cur, string src, bool weak = false)
     {
         var text = value.Trim();
         if (IsToggleText(text)) return; // a tick box is never "copied from" another
@@ -205,7 +208,7 @@ public static class LogicLearner
             var xs = new List<(string n, decimal v)>();
             foreach (var kv in cur.OrderBy(k => k.Key, StringComparer.Ordinal))
                 if (kv.Key != field && Values.TryDecimal(kv.Value.Trim(), out var d) && d != 0) xs.Add((kv.Key, d));
-            LearnCalc(s, win, field, t, xs, src);
+            LearnCalc(s, win, field, t, xs, src, weak);
             return;
         }
         if (text.Length < 2) return;
@@ -214,18 +217,35 @@ public static class LogicLearner
             if (kv.Key != field && !IsToggleText(kv.Value) && string.Equals(kv.Value.Trim(), text, StringComparison.OrdinalIgnoreCase)) fits.Add("= " + kv.Key);
         if (fits.Count == 0) return; // a text the program looked up (a name for a code) is a link, not a calculation
         Count(s.CalcTests, LearnState.Key(win, field));
+        NoteValue(s, win, field, text, weak: true); // a copy is as weak as a cell: three distinct values before it is written
         foreach (var f in fits.Distinct()) Add(s.CalcFits, LearnState.Key(win, field, f), src);
     }
+
+    /// <summary>Remembers (as a hash) one more value the program showed in the field, and whether the field's evidence is weak (a grid cell, a picture, a copy).</summary>
+    private static void NoteValue(LearnState s, string win, string field, string valueText, bool weak)
+    {
+        var key = LearnState.Key(win, field);
+        if (!s.CalcValues.TryGetValue(key, out var set)) s.CalcValues[key] = set = new HashSet<string>();
+        if (set.Count < 50) set.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(valueText.Trim())))[..16]);
+        if (weak) s.CalcWeak.Add(key);
+    }
+
+    /// <summary>Distinct values seen in a calculated field (the state holds hashes only).</summary>
+    public static int DistinctValues(LearnState s, string win, string field) => s.CalcValues.TryGetValue(LearnState.Key(win, field), out var set) ? set.Count : 0;
 
     /// <summary>
     /// Tests one number the program showed against the given inputs (in the caller's order of relevance; at most
     /// <see cref="MaxInputs"/> are used). Shared by the tree path and the picture-text path (OcrLogic).
     /// </summary>
-    public static void LearnCalc(LearnState s, string win, string field, decimal t, List<(string n, decimal v)> inputs, string src)
+    public static void LearnCalc(LearnState s, string win, string field, decimal t, List<(string n, decimal v)> inputs, string src) => LearnCalc(s, win, field, t, inputs, src, src.EndsWith(".ocr.json", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Same; <paramref name="weak"/> marks a number from a grid cell or a picture, which needs three distinct values and no alternative before it is written.</summary>
+    public static void LearnCalc(LearnState s, string win, string field, decimal t, List<(string n, decimal v)> inputs, string src, bool weak)
     {
         if (t == 0) return;
         var xs = inputs.Where(x => x.v != 0 && x.n.Length > 0 && x.n != field).Take(MaxInputs).ToList();
         if (xs.Count == 0) return;
+        NoteValue(s, win, field, t.ToString(CultureInfo.InvariantCulture), weak);
         var fits = Formulas(t, xs);
         if (fits.Count == 0)
         {
@@ -311,13 +331,17 @@ public static class LogicLearner
         var rep = new LogicReport();
         var sep = LearnState.Sep;
 
+        // how many fields each cause filled: a code typed once that filled a batch of three or more fields is a rule from the first time
+        var batch = s.Fills.Keys.Select(k => k.Split(sep)).Where(p => p.Length >= 3).GroupBy(p => p[0] + sep + p[1]).ToDictionary(g => g.Key, g => g.Select(p => p[2]).Distinct().Count(), StringComparer.Ordinal);
         foreach (var (key, ev) in s.Fills.OrderBy(k => k.Key, StringComparer.Ordinal))
         {
             var p = key.Split(sep);
             if (p.Length < 3) continue;
             var causes = Math.Max(s.Causes.GetValueOrDefault(LearnState.Key(p[0], p[1])), ev.Seen);
-            // a rule, not a coincidence: seen at least twice, and after at least half of the times the cause happened
-            if (ev.Seen >= 2 && ev.Seen * 2 >= causes)
+            // a rule, not a coincidence: seen at least twice and after at least half of the times the cause happened, or every time
+            // the cause happened when it fills a batch of fields at once
+            var everyTime = ev.Seen == causes && batch.GetValueOrDefault(p[0] + sep + p[1]) >= 3;
+            if ((ev.Seen >= 2 && ev.Seen * 2 >= causes) || everyTime)
                 rep.Links.Add(new FieldLink { Screen = p[0], When = p[1], Field = p[2], Seen = ev.Seen, CauseCount = causes, Evidence = ev });
         }
 
@@ -335,6 +359,11 @@ public static class LogicLearner
                 calc.Formula = cands[0].f; calc.Fits = cands[0].ev.Seen; calc.Evidence = cands[0].ev;
                 calc.Alternatives = cands.Skip(1).Where(c => c.ev.Seen == calc.Fits).Select(c => c.f).Take(3).ToList();
             }
+            // a number from a grid cell, a picture or a copy: three distinct values and one formula that fits them all, else it is a question
+            var weak = s.CalcWeak.Contains(tkey);
+            var distinct = DistinctValues(s, parts[0], parts[1]);
+            if (weak && (calc.Fits < 3 || distinct < 3)) { if (tested >= 2) rep.Unexplained.Add(calc); continue; }
+            if (calc.Alternatives.Count > 0 && calc.Fits >= 2) { rep.Unexplained.Add(calc); continue; } // several formulas fit every observation: ask, do not guess
             if (calc.Fits >= 2 && calc.Fits * 5 >= tested * 4) rep.Calculations.Add(calc);
             else if (calc.Fits >= 2 && calc.Fits * 2 >= tested) { calc.WithExceptions = true; rep.Calculations.Add(calc); }
             else if (tested >= 2) rep.Unexplained.Add(calc);
@@ -347,11 +376,18 @@ public static class LogicLearner
             rep.Leads.Add(new ButtonLead { Screen = p[0], Button = p[1], Opens = p[2], Message = p[3] == "message", Seen = ev.Seen, Evidence = ev });
         }
 
-        // the same tip on the same control at least twice: a help text, not a value that happened to be under the pointer
+        // the same tip on the same control at least twice: a help text, not a value that happened to be under the pointer;
+        // a tip that is the name of a menu, a button or a screen ("Accounting" over the Sales Order button) is a label, not help
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rec in input.Screens) { names.Add(Titles.Key(rec.Title)); foreach (var c in rec.Controls) if (c.Type is "MenuItem" or "Button" or "TabItem" or "MenuBar" && c.Name.Trim().Length > 0) names.Add(c.Name.Trim()); }
+        foreach (var k in s.MenuSeen.Keys) { var p = k.Split(sep); if (p.Length >= 2) { names.Add(p[0]); names.Add(p[1]); } }
+        foreach (var k in s.Screens.Keys) names.Add(k);
         foreach (var (key, ev) in s.Hints.OrderBy(k => k.Key, StringComparer.Ordinal))
         {
             var p = key.Split(sep);
-            if (p.Length >= 3 && ev.Seen >= 2) rep.Hints.Add(new HoverHint { Screen = p[0], Control = p[1], Text = p[2], Seen = ev.Seen, Evidence = ev });
+            if (p.Length < 3 || ev.Seen < 2) continue;
+            if (names.Contains(p[2].Trim()) && !string.Equals(p[2].Trim(), p[1].Trim(), StringComparison.OrdinalIgnoreCase)) continue;
+            rep.Hints.Add(new HoverHint { Screen = p[0], Control = p[1], Text = p[2], Seen = ev.Seen, Evidence = ev });
         }
 
         rep.NotUsed = NotUsed(s, input, rep);

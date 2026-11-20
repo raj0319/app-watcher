@@ -158,8 +158,20 @@ internal sealed class MainForm : Form
         // the same workspace as View > Workspace, for a test that cannot read the menu's drop-down (WinForms hides it from a second UIA client now and then)
         var workspace = new Button { Text = "Workspace", Name = "btnWorkspace", Left = 90, Top = 2, Width = 90, Height = 26 };
         workspace.Click += (_, _) => new WorkspaceForm(this).Show(this);
+        // a modal message box (a body and OK/Cancel) whose OK closes it: the live test clicks OK with the real mouse
+        var confirm = new Button { Text = "Confirm...", Name = "btnConfirm", Left = 186, Top = 2, Width = 90, Height = 26 };
+        confirm.Click += (_, _) =>
+        {
+            using var box = new Form { Text = "Confirm?", ClientSize = new Size(360, 110), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.Manual, ShowInTaskbar = false, MinimizeBox = false, MaximizeBox = false, Location = new Point(Location.X + 80, Location.Y + 120) };
+            box.Controls.Add(new Label { Text = "All changes will be lost. Continue?", Name = "lblBody", Left = 12, Top = 14, Width = 336, Height = 40 });
+            var ok = new Button { Text = "OK", Name = "btnConfirmOk", Left = 170, Top = 70, Width = 84, DialogResult = DialogResult.OK };
+            var cancel = new Button { Text = "Cancel", Name = "btnConfirmCancel", Left = 262, Top = 70, Width = 84, DialogResult = DialogResult.Cancel };
+            box.Controls.AddRange(new Control[] { ok, cancel });
+            box.AcceptButton = ok; box.CancelButton = cancel;
+            _statusText.Text = box.ShowDialog(this) == DialogResult.OK ? "Confirmed" : "Not confirmed";
+        };
         tips.SetToolTip(refresh, "Reload the lists from the database");
-        toolbar.Controls.AddRange(new Control[] { refresh, workspace });
+        toolbar.Controls.AddRange(new Control[] { refresh, workspace, confirm });
 
         _tabs.TabPages.Add(customers); _tabs.TabPages.Add(orders); _tabs.TabPages.Add(quote);
         _status.Items.Add(_statusText);
