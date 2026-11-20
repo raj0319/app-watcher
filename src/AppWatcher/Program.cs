@@ -2,8 +2,10 @@ using System.Runtime.InteropServices;
 using AppWatcher.Core;
 using AppWatcher.Core.Analysis;
 using AppWatcher.Core.Discovery;
+using AppWatcher.Core.Events;
 using AppWatcher.Core.Export;
 using AppWatcher.Core.Learning;
+using AppWatcher.Core.Verification;
 
 namespace AppWatcher;
 
@@ -76,7 +78,7 @@ internal static class Program
             switch (cmd)
             {
                 case "--help":
-                    Console.WriteLine("AppWatcher.exe [--tray] | --learn | --rebuild | --export | --payload | --status | --expect | --detect [exe] | --merge <folder or zip> | --trace-files <pid> <seconds> <out.json>   (add --portable to use a folder next to the exe)");
+                    Console.WriteLine("AppWatcher.exe [--tray] | --learn | --rebuild | --export | --payload | --status | --expect | --detect [exe] | --merge <folder or zip> | --verify <scenario.json> <run.jsonl> | --trace-files <pid> <seconds> <out.json>   (add --portable to use a folder next to the exe)");
                     Console.WriteLine("From a shell use scripts\\appwatcher.cmd <command> so the shell waits for the output.");
                     return 0;
                 case "--status":
@@ -217,6 +219,23 @@ internal static class Program
                     foreach (var line in Learner.Expectations(input)) Console.WriteLine(line);
                     var problems = input.Collector?.Problems() ?? new();
                     foreach (var p in problems) Console.WriteLine("Collector: " + p);
+                    return 0;
+                }
+                case "--verify":
+                {
+                    // the scorecard of a driven run: what AppWatcher.Driver did (run.jsonl) against what the watcher recorded
+                    var rest = args.SkipWhile(a => a != "--verify").Skip(1).Where(a => !a.StartsWith("--")).ToList();
+                    if (rest.Count < 2) { Console.Error.WriteLine("usage: --verify <scenario.json> <run.jsonl>"); return 1; }
+                    var scenario = Scenario.Load(rest[0]);
+                    var run = ScenarioScorer.ReadRun(rest[1]);
+                    var card = ScenarioScorer.Score(scenario.Name, run, EventReader.ReadAll(paths.Events));
+                    Directory.CreateDirectory(paths.Verification);
+                    var stem = Path.Combine(paths.Verification, $"{scenario.Name}-{DateTime.Now:yyyy-MM-dd-HHmmss}");
+                    File.WriteAllText(stem + ".md", ScenarioScorer.Markdown(card));
+                    File.WriteAllText(stem + ".json", ScenarioScorer.Json(card));
+                    Console.WriteLine($"{card.Passed} passed, {card.Failed} failed, {card.Blocked} blocked, {card.Untested} untested of {card.Steps.Count} steps; {card.UnexplainedPresses.Count} press(es) no step explains.");
+                    foreach (var (kind, v) in card.ByKind.OrderBy(k => k.Key, StringComparer.Ordinal)) Console.WriteLine($"  {kind}: {v.passed}/{v.passed + v.failed} seen" + (v.blocked > 0 ? $", {v.blocked} blocked" : "") + (v.untested > 0 ? $", {v.untested} untested" : ""));
+                    Console.WriteLine("Scorecard: " + stem + ".md");
                     return 0;
                 }
                 case "--merge":

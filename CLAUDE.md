@@ -11,10 +11,13 @@ src/AppWatcher.Core/     the engine: config, event store, snapshots and diff, da
                          SQL log readers, discovery (toolkit, backends, profiles), learner (incremental), export (twin kit + XES), merge, retention, API clients
 src/AppWatcher/          the tray app: WinForms tray icon, three-step first-run wizard, settings window (Simple/Advanced), UI Automation collector (with MSAA, menu and press-inference fallbacks),
                          window capture (one picture per screen), ETW file-access trace
+src/AppWatcher.Driver/   the scenario driver: runs scenarios/*.json on the original program with real input (test environments only, typed
+                         confirmation, acts only while the target is in front); the one program here that clicks. Writes run.jsonl for --verify
+scenarios/               scenario files (sample-erp.json drives tests/SampleApp); the format is src/AppWatcher.Core/Verification/Scenario.cs
 profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
 tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform, inform-v0.8 and inform-v0.9 hold anonymised copies of three real sessions (see their READMEs; inform-v0.9/clicks.json holds every truth click with its point)
 tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
-scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
+scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, scenario-run.ps1 (driver + scorecard on the sample app), check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
 openclaw/                how to use the skills from OpenClaw
 prompts/analyst-prompt.md  the architect prompt shared by the analyze skill and the optional API/local analysis
@@ -30,7 +33,8 @@ kills only the two processes it started).
 
 The exe also has headless commands: `AppWatcher.exe --learn` (incremental), `--rebuild` (from day one),
 `--export`, `--payload`, `--status`, `--expect`, `--detect <exe>`, `--setup <exe> <password> [profile]`,
-`--merge <folder or zip>`, `--trace-files <pid> <seconds> <out.json>` (admin), and the hidden `--render-ui <dir>`
+`--merge <folder or zip>`, `--verify <scenario.json> <run.jsonl>` (scorecard of a driven run into `verification/`),
+`--trace-files <pid> <seconds> <out.json>` (admin), and the hidden `--render-ui <dir>`
 (pictures of the wizard and Settings for the docs, with a made-up program, never this PC's). Add `--portable` when the
 data lives in `AppWatcherData\` next to the exe. The exe is a windowed program, so from a shell use
 `scripts\appwatcher.cmd <command>` (start /wait) to get its output and exit code.
@@ -124,6 +128,11 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   TabControl: UIA property conditions evaluated on it can flip or hide tab items; walk the tree with a true
   condition and filter yourself, or switch tabs through a menu.
 - Memory files must never contain raw typed values; use shapes (`Masking.Shape`) and patterns.
+- `src/AppWatcher.Driver` is the only program in the repository that clicks and types, and it never does so in the watcher's
+  name: it refuses to run without `--test-environment`, asks for the word DRIVE unless `--yes` is given, acts only while a
+  window of the target process is in front, and blocks a press on Save, Post, Delete, Send and the like unless the step says
+  `confirm: true`. The scorer (`ScenarioScorer`) is pure and tested on the anonymised rerun log of 2026-11-19, so a change
+  to the scoring rules must keep that run's numbers (open 4/4, Exit 1/4, prompts 0/2, sub-tabs 1/17, 5 unexplained presses).
 - The learner is incremental: every per-session heuristic accumulates into `LearnState` (additive
   counters); snapshot-based findings are recomputed each learn. A learn run twice must give identical memory,
   and an incremental run must equal a full rebuild (tests cover both). Keep new heuristics additive.

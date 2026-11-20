@@ -62,6 +62,30 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.11: the scenario driver and the scorecard (milestone M3, 2026-11-20)
+
+The hand-driven runs on the test PC (`drive-*.ps1` plus `score9.py`) became a tool in the repository.
+
+- **Scenario files** (`scenarios/*.json`, `Scenario.cs`): steps `press`, `open`, `menu`, `nav`, `type`, `hover`, `prompt`,
+  `wait`, each with a default expectation (a press of that name within 4 s, the opened screen within 6 s, the selected tab,
+  the typed value, the dialog plus its button, a tip that is optional).
+- **`AppWatcher.Driver`**: runs a scenario on the original with UI Automation to find and the real mouse and keyboard to act.
+  Test environments only (`--test-environment` plus the word DRIVE), acts only while the target is in front, blocks
+  data-changing presses unless the step says `confirm: true`, and writes `run.jsonl` with what it clicked where. Two things
+  it learned on the sample app: a modal box and a menu drop-down are not always listed under the desktop by UI Automation, so
+  it also walks the process's visible top-level windows with Win32; and a control is a target only when the element at its
+  centre is itself (an MDI document behind another has visible buttons too).
+- **`ScenarioScorer`** and **`--verify`**: per step passed | failed | blocked | untested, per kind, the presses no step
+  explains, typed values credited to the program; Markdown and JSON under `verification/`. The anonymised text log of the
+  2026-11-19 rerun scores through the same scorer (`LegacyDriverLog`) and reproduces the hand score exactly: opens 4/4,
+  Exit 1/4, prompts 0/2, Add Line Item 0/1, sub-tabs 1/17, the five wrong-name presses (Exit, Cancel, Exit, Exit, Edit).
+- **First scorecard on the sample app** (`scripts\scenario-run.ps1`): 13 of 16 steps passed, 2 untested (the password,
+  a wait), 1 failed: the press on the workspace's own "Close workspace" button is not recorded (the MDI container has no
+  recorded tree to hit-test when it is destroyed). One press no step explains: the click on Help > About, whose drop-down item
+  lies over the toolbar, was credited to the "Workspace" button under it. Both are collector gaps for the next version; the
+  tool exists to find exactly these.
+- Tests: `ScenarioTests` (3: the rerun log, the scenario format and defaults, the run log). 135 in all.
+
 ## Version 0.10: one attempt, four jobs (after the v0.9 run, 2026-11-19)
 
 The third measured run (v0.9 on the same ERP) left four jobs: clicks on buttons that are gone by the time the watcher hears

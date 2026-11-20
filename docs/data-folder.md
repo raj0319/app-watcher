@@ -129,3 +129,12 @@ Every record carries a stable id (a hash of its own key, the same at every learn
 or more; `single_observation`; `inferred`: a formula with exceptions or alternatives, a relation by name; `unknown`:
 nothing seen, or a candidate column mapping) and an `evidence` list of the files behind it. Calculations list their
 observations as regression cases that point at the evidence lines; typed values are never copied into the blueprint.
+
+## verification/<scenario>-<time>.md and .json
+
+Scorecards written by `AppWatcher.exe --verify <scenario.json> <run.jsonl>`: a driven run (what `AppWatcher.Driver` did,
+step by step, with the time) compared with the events in `events/`. Per step: what was done, what the watcher was
+expected to record, what it recorded, the verdict (`passed`: recorded within the step's seconds; `failed`: not recorded;
+`blocked`: the driver could not do the step; `untested`: nothing to check, or a hover that showed no tip) and the evidence
+line. Then the totals per kind and the presses recorded during the run that no step explains (a wrong name or a
+phantom press). Typed values appear only as "typed value", never as the text.

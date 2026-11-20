@@ -6,7 +6,7 @@ namespace AppWatcher.Core;
 
 public sealed class WatcherConfig
 {
-    public const string AppVersion = "0.10";
+    public const string AppVersion = "0.11";
 
     /// <summary>Words on a button or menu item that mean "this writes data", in the languages we meet most. Profiles add their own.</summary>
     public static readonly string[] DefaultTriggers =

@@ -324,11 +324,13 @@ next to the exe by the installer) does:
 
 ```
 appwatcher --status | --learn | --rebuild | --export | --expect | --detect <exe> | --merge <folder or zip>
+appwatcher --verify <scenario.json> <run.jsonl>
 appwatcher --setup <exe> <password> [profile]
 ```
 
 The output also works when redirected, for example `appwatcher --detect C:\Apps\erp.exe > out.txt`.
 `--setup` uses the same recommended choices as the first-run window. `--detect` prints the toolkit, the profile and the backends of any program file without setting anything up.
+`--verify` scores a driven run (see "Verifying the watcher with a scenario" below) and writes the scorecard to `verification/`.
 
 ## Handing the result to the App Twin Kit, to a process-mining tool, or to any AI
 
@@ -438,9 +440,25 @@ Something like this can go on the notice board or in an e-mail:
 C# on .NET 8, WinForms for the tray and settings, FlaUI (UI Automation) for the collector with MSAA
 (IAccessible) fallbacks, Microsoft.Data.Sqlite / OleDb / SqlClient / Odbc as read-only readers, XELite for
 Extended Events files, TraceEvent for the one-time file access detection. `dotnet build`, `dotnet test`
-(69 tests), `scripts\live-test.ps1` (drives `tests\SampleApp` by UI Automation and checks what the watcher
-recorded), `scripts\publish.ps1`. See `CLAUDE.md` for the folder layout and the rules the code follows,
+(135 tests), `scripts\live-test.ps1` (drives `tests\SampleApp` by UI Automation and checks what the watcher
+recorded), `scripts\scenario-run.ps1` (the same with a scenario file and a scorecard), `scripts\publish.ps1`. See `CLAUDE.md` for the folder layout and the rules the code follows,
 `docs\data-folder.md` for the file formats, and `docs\improvements.md` for what changed after the first real run.
+
+### Verifying the watcher with a scenario
+
+A scenario (`scenarios/*.json`) is a list of steps a user would do: `press`, `open`, `menu`, `nav` (an inner tab), `type`,
+`hover`, `prompt` (a message window and the button to press), `wait`. Each step carries what the watcher is expected to
+record (a press of that name, a selected tab, the typed value, a dialog, a screen); the defaults fit the step, so most
+steps need no `expect`. `AppWatcher.Driver` runs a scenario against the original program with the real mouse and
+keyboard, found by UI Automation. It is the only program in this repository that clicks: it refuses to run without
+`--test-environment`, asks you to type DRIVE unless `--yes` is given, acts only while a window of the target process is
+in front, and blocks a press on Save, Post, Delete, Send and the like unless the step says `"confirm": true`. It writes
+`run.jsonl` (one line per step: time, step, done | blocked | failed, what was clicked where). `AppWatcher.exe --verify
+<scenario.json> <run.jsonl>` then compares the run with the events the watcher wrote and writes a scorecard
+(`verification/<scenario>-<time>.md` and `.json`): per step passed | failed | blocked | untested, per kind, and the
+presses the watcher recorded that no step explains (wrong names). `scripts\scenario-run.ps1` does all of it on the
+sample app: setup, watcher, sample app, driver, learn, scorecard. The text logs of the earlier hand-driven runs on the
+real ERP (`drive-*.log`) score through the same scorer (`LegacyDriverLog`), so old and new runs compare.
 
 ## License
 

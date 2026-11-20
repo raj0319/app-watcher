@@ -1,0 +1,24 @@
+{
+  "name": "sample-erp",
+  "app": "Sample ERP",
+  "window": "Sample ERP*",
+  "note": "The sample program of tests/SampleApp: login, a silent toolbar button, an MDI workspace with two documents, an inner tab page, a typed quantity with a calculated total, a document's Exit, a modal prompt, a menu. Run it with scripts/scenario-run.ps1.",
+  "steps": [
+    { "do": "type", "field": "txtUser", "value": "tester", "then": "tab" },
+    { "do": "type", "field": "txtPassword", "value": "test1234", "then": "tab", "expect": { } },
+    { "do": "press", "target": "Log in", "expect": { "screen": "Sample ERP", "withinSeconds": 8 } },
+    { "do": "press", "target": "Refresh" },
+    { "do": "hover", "target": "Refresh" },
+    { "do": "open", "target": "Workspace", "expect": { "press": "Workspace", "screen": "*Workspace › Sales Order Entry", "withinSeconds": 8 } },
+    { "do": "nav", "target": "Notes" },
+    { "do": "nav", "target": "Main" },
+    { "do": "type", "field": "txtDocQty", "value": "4", "then": "tab" },
+    { "do": "type", "field": "txtDocQty", "value": "6", "then": "tab" },
+    { "do": "press", "target": "Exit" },
+    { "do": "press", "target": "Close workspace" },
+    { "do": "press", "target": "Confirm..." },
+    { "do": "prompt", "title": "Confirm?", "button": "OK" },
+    { "do": "menu", "path": [ "Help", "About" ] },
+    { "do": "wait", "ms": 2500 }
+  ]
+}

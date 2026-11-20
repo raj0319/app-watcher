@@ -35,7 +35,7 @@ cite, questions), prompt versioning, retries, and a check that every cited evide
 `memory/architecture-reviewed.md` as it is today, marked as model output. Test: a recorded reply fixture through the
 validator; a live check on a PC with a model.
 
-### M3. The driven workload as a verification engine for the watcher (medium, 1 week)
+### M3. The driven workload as a verification engine for the watcher (done 2026-11-20: `Scenario`, `AppWatcher.Driver`, `ScenarioScorer`, `--verify`, `scripts/scenario-run.ps1`)
 Turn the test PC's `drive-*.ps1` plus `score9.py` into a repo tool: scenario files (open document, type, press, expect
 message), a driver that runs them on the original with UIA (test environment only, typed confirmation), and a scorer that
 compares the collector's events with the scenario. This is what has been done by hand for four releases; as a tool it gives
@@ -73,5 +73,8 @@ An MSI or a signed installer replaces `install.ps1` when the first client needs 
   forbids them, and the health page keeps saying what was not seen.
 
 ## Immediate next step
-The v0.10 driven run on the test PC fills the scorecard; its result decides whether M1 starts on a solid collector or another
-collector release comes first.
+M3's first scorecard on the sample app (13 of 16 steps passed) found two collector gaps: a press on the MDI container's own
+button that closes the container is not recorded (the container has no recorded tree to hit-test when it is destroyed), and a
+click on a menu drop-down item that lies over the toolbar is credited to the toolbar button under it (the recorded tree does
+not know the popup). Fix both, then run `scenarios/` on the test PC's ERP with the driver instead of the hand scripts, so the
+v0.10 column of the scorecard comes from `--verify`. M2 (local model) and M4 (rule experiments, built on the driver) follow.

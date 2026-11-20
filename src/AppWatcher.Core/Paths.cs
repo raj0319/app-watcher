@@ -43,6 +43,7 @@ public sealed record AppPaths(string Root)
     public string Snapshots => Path.Combine(Root, "snapshots");
     public string Memory => Path.Combine(Root, "memory");
     public string Export => Path.Combine(Root, "export");
+    public string Verification => Path.Combine(Root, "verification");
     public string BeforeSnapshot => Path.Combine(Snapshots, "before.json");
     public string HotTables => Path.Combine(Snapshots, "hot-tables.json");
 

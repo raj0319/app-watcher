@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>AppWatcher.Driver</AssemblyName>
+    <RootNamespace>AppWatcher.Driver</RootNamespace>
+    <Description>Drives a scenario against the original program on a test environment, so the watcher's record can be scored. Not part of the watcher: it clicks and types.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FlaUI.UIA3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AppWatcher.Core\AppWatcher.Core.csproj" />
+  </ItemGroup>
+
+</Project>
