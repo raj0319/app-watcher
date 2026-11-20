@@ -1,6 +1,7 @@
-# Implementation roadmap (after the audit of 2026-11-20)
+﻿# Implementation roadmap (after the audit of 2026-11-20)
 
-The plan's twelve phases are not one project. Phases 2, 4, 6 and 8 build on what App Watcher has; phases 3, 9 and 10 are
+The plan (twelve phases in its first version, fourteen in the second, which adds a technology comparison and splits
+capture from observation) is not one project. Phases 2, 4, 6 and 8 build on what App Watcher has; phases 3, 9 and 10 are
 new products; 5, 7, 11 and 12 are work on all of them. The order below keeps the rule that made every release so far
 measurable: each step has a test on evidence and a pass mark on the next driven run, and nothing claims equivalence it
 cannot show.
@@ -19,7 +20,7 @@ cannot show.
 
 ## Milestones
 
-### M1. Blueprint in the plan's layout (small, 1 to 2 days)
+### M1. Blueprint in the plan's layout (done 2026-11-20: `BlueprintWriter`, `blueprint/` in every export, tests on the three fixtures)
 A writer from `LearnResult` to `blueprint/` (`screens.json`, `fields.json`, `navigation_graph.json`, `workflows.json`,
 `calculations.json`, `business_rules.json`, `database_model.json`, `coverage_report.json`, `AI_REBUILD_INSTRUCTIONS.md`,
 plus `evidence/` and `screenshots/` as copies of what the export already holds). `permissions.json`, `integrations.json`

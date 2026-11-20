@@ -19,7 +19,8 @@ skills/                  portable Agent Skills: app-watcher-analyze (the archite
 openclaw/                how to use the skills from OpenClaw
 prompts/analyst-prompt.md  the architect prompt shared by the analyze skill and the optional API/local analysis
 .claude/commands/analyze.md  thin wrapper that invokes skills/app-watcher-analyze
-docs/                    notes for people (data-folder.md: file formats; demo-test.md: 30-minute test; improvements.md: what changed after each real run and why; test-v0.8-inform.md: the anonymised scorecard of the second measured run)
+docs/                    notes for people (data-folder.md: file formats; demo-test.md: 30-minute test; improvements.md: what changed after each real run and why; test-v0.8-inform.md: the anonymised scorecard of the second measured run;
+                         CURRENT_ARCHITECTURE.md, FEATURE_GAP_ANALYSIS.md, CAPTURE_TECHNOLOGY_COMPARISON.md, IMPLEMENTATION_ROADMAP.md: the audit against the "Ultimate Edition" plan and its milestones)
 ```
 
 Build: `dotnet build` (needs the .NET 8 SDK). Tests: `dotnet test`. One-file exe: `scripts\publish.ps1`.
@@ -51,7 +52,7 @@ memory/                     the living architecture written by the learner:
   data-model.md  screens.md  rules.md  flows.md  architecture.md  health.md  logic.md  logic.json  changelog.md
   learn-state.json          the learner's accumulated counters and watermark (incremental learning)
   architecture-reviewed.md  written by the analyze skill or by the optional API/local analysis
-export/<date>/              bundles in the App Twin Kit format plus events.xes, zipped
+export/<date>/              bundles in the App Twin Kit format plus events.xes and blueprint/ (ids, statuses, evidence), zipped
 ```
 
 Every line in `memory/*.md` ends with a confidence (`seen N×` = observed that many times, `inferred` =

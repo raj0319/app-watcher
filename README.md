@@ -341,6 +341,9 @@ Choose **Make a report folder** from the tray (or `appwatcher --export`). It wri
 - `docs\raw\probes\*.md`: per screen, the fields, the distinct values seen (personal-looking values masked) and the rules learned
 - `docs\raw\data-model.md`: tables, columns, relations, backends, snapshot paths
 - `docs\raw\memory\*.md`: the six living documents and the changelog
+- `blueprint\`: the same facts as the files an AI coding agent rebuilds from (screens, fields, navigation graph,
+  workflows, calculations, business rules, database model, permissions, integrations, reports, coverage, rebuild
+  instructions), each record with a stable id, a status (observed, single observation, inferred, unknown) and its evidence
 - `events.xes`: a process-mining event log (IEEE XES), one trace per user session, one event per window
   visit or save. Open it in PM4Py, ProM or Disco. `scripts\pm4py_example.py` draws the directly-follows
   graph from it (`pip install pm4py`).

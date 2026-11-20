@@ -119,4 +119,13 @@ values and become exact screen-to-table and field-to-column evidence (`sql/<file
 
 Bundles in the App Twin Kit `docs/raw` layout (screen records with the learned menu path and
 predecessor filled in, the pictures under `screens/shots`, tasks, probes, data model, memory), plus
-`events.xes` (process-mining event log) and a zip. See the README for how to hand them over.
+`events.xes` (process-mining event log), `blueprint/` and a zip. See the README for how to hand them over.
+
+`blueprint/` is the memory rearranged into the files an AI coding agent rebuilds from: `screens.json`, `fields.json`,
+`navigation_graph.json`, `workflows.json`, `calculations.json`, `business_rules.json`, `database_model.json`,
+`permissions.json`, `integrations.json`, `reports.json`, `coverage_report.json`, `application_overview.md`,
+`AI_REBUILD_INSTRUCTIONS.md`, `evidence/` (the memory files) and `screenshots/README.md` (where the pictures are).
+Every record carries a stable id (a hash of its own key, the same at every learn), a `status` (`observed`: seen twice
+or more; `single_observation`; `inferred`: a formula with exceptions or alternatives, a relation by name; `unknown`:
+nothing seen, or a candidate column mapping) and an `evidence` list of the files behind it. Calculations list their
+observations as regression cases that point at the evidence lines; typed values are never copied into the blueprint.

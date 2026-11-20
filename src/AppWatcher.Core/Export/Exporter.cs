@@ -1,4 +1,4 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text;
 using AppWatcher.Core.Learning;
 
@@ -52,6 +52,19 @@ public static class Exporter
             var p = Path.Combine(paths.Memory, extra);
             if (File.Exists(p)) File.Copy(p, Path.Combine(raw, "memory", extra), true);
         }
+        // the blueprint: the same facts in the files an AI coding agent rebuilds from (ids, statuses, evidence)
+        try
+        {
+            var records = Directory.Exists(paths.Screens) ? Core.Screens.ScreenWriter.ReadAll(paths.Screens) : new List<Core.Screens.ScreenRecord>();
+            foreach (var (name, text) in BlueprintWriter.Render(result, records))
+            {
+                var dest = Path.Combine(root, "blueprint", name.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.WriteAllText(dest, text);
+            }
+            foreach (var (name, text) in memory) File.WriteAllText(Path.Combine(root, "blueprint", "evidence", name), text);
+        }
+        catch (Exception ex) { Log.Warn("blueprint export failed: " + ex.Message); }
         // process-mining event log for PM4Py, ProM, Disco
         try
         {
@@ -179,6 +192,10 @@ How to use it:
 1. Copy the `docs/raw` folder into your `app-twin-kit` folder, replacing its `docs/raw`.
 2. Open `app-twin-kit` in Claude Code and type `/mode spec`.
 3. The kit continues from the SPEC step using these screens, tasks, probes and the data model.
+
+`blueprint/` holds the same facts as the files an AI coding agent rebuilds from: screens, fields, navigation graph, workflows,
+calculations, business rules, database model, permissions, integrations, reports, coverage and `AI_REBUILD_INSTRUCTIONS.md`.
+Every record has a stable id, a status (observed, single_observation, inferred, unknown) and its evidence files.
 
 Any AI can also read `docs/raw/memory/*.md` directly: they are plain text with a confidence tag on every line.
 Nothing in here contains raw values typed by users except the masked examples in `probes/`.
