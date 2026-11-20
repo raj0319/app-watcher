@@ -73,8 +73,7 @@ An MSI or a signed installer replaces `install.ps1` when the first client needs 
   forbids them, and the health page keeps saying what was not seen.
 
 ## Immediate next step
-M3's first scorecard on the sample app (13 of 16 steps passed) found two collector gaps: a press on the MDI container's own
-button that closes the container is not recorded (the container has no recorded tree to hit-test when it is destroyed), and a
-click on a menu drop-down item that lies over the toolbar is credited to the toolbar button under it (the recorded tree does
-not know the popup). Fix both, then run `scenarios/` on the test PC's ERP with the driver instead of the hand scripts, so the
-v0.10 column of the scorecard comes from `--verify`. M2 (local model) and M4 (rule experiments, built on the driver) follow.
+M3's first scorecard on the sample app (13 of 16 steps passed) found two collector gaps, both fixed the same day (a press on
+the MDI container's own close button, resolved on the container's tree; a menu item click no longer credited to the toolbar
+button under the popup), unit-tested but not yet rerun on real windows. Next: rerun the sample scenario and the live test, then run `scenarios/` on the test PC's ERP with the driver instead of the hand scripts, so the v0.10
+column of the scorecard comes from `--verify`. M2 (local model) and M4 (rule experiments, built on the driver) follow.

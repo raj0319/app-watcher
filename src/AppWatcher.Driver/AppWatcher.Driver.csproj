@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AppWatcher.Driver</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>AppWatcher.Driver</RootNamespace>
     <Description>Drives a scenario against the original program on a test environment, so the watcher's record can be scored. Not part of the watcher: it clicks and types.</Description>
   </PropertyGroup>

@@ -38,8 +38,15 @@ public sealed class PressDecider
     /// The left button went down since the previous event: <paramref name="underPointerNow"/> is the control read under the
     /// pointer right now (null when none or not a button). Decides the click's target.
     /// </summary>
-    public void Clicked(PressCandidate? underPointerNow, int x, int y, DateTime now)
+    public void Clicked(PressCandidate? underPointerNow, int x, int y, DateTime now) => Clicked(underPointerNow, x, y, now, overPopup: false);
+
+    /// <summary>
+    /// Same, saying whether the pointer was over an open menu popup: then the click belongs to the menu (its item is counted
+    /// when the menu closes), and nothing read or recorded from the window beneath the popup is a target.
+    /// </summary>
+    public void Clicked(PressCandidate? underPointerNow, int x, int y, DateTime now, bool overPopup)
     {
+        if (overPopup) { _pressed = (null, 0, 0, DateTime.MinValue); _click = (null, now); return; }
         var fresh = underPointerNow is not null && IsActionable(underPointerNow.Ct) && underPointerNow.Name.Length > 0 ? underPointerNow : null;
         PressCandidate? remembered = null;
         if (_pressed.c is not null && (now - _pressed.t).TotalMilliseconds <= ClickAgeMs)
@@ -51,6 +58,9 @@ public sealed class PressDecider
         _pressed = (null, 0, 0, DateTime.MinValue);
         _click = (target, now);
     }
+
+    /// <summary>True when the last press was counted within <paramref name="ms"/> before <paramref name="now"/>: a window that opens right after it was opened by it.</summary>
+    public bool PressedWithin(int ms, DateTime now) => _last.t != DateTime.MinValue && (now - _last.t).TotalMilliseconds >= -50 && (now - _last.t).TotalMilliseconds < ms;
 
     /// <summary>True when a click began within the last <see cref="ClickAgeMs"/> (a toggle needs one, or focus on the tick box).</summary>
     public bool ClickedRecently(DateTime now) => _click.t != DateTime.MinValue && (now - _click.t).TotalMilliseconds <= ClickAgeMs;

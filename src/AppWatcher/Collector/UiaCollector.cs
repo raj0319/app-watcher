@@ -85,6 +85,7 @@ internal sealed class UiaCollector : IDisposable
     private DateTime _lastPointerRead = DateTime.MinValue;
     private System.Drawing.Point _lastPointerPress = new(-9999, -9999);
     private (string name, DateTime t) _lastPress = ("", DateTime.MinValue);
+    private string _lastPressHow = "";
     private DateTime _clickSeenAt = DateTime.MinValue;            // the left button went down (sampled, no hook); the read under the pointer may still be in flight
     private DateTime _clickReadDone = DateTime.MinValue;
     private (string why, string from, DateTime at)? _pendingConfirm;  // a change that would confirm a press came while that read was in flight
@@ -105,6 +106,8 @@ internal sealed class UiaCollector : IDisposable
     private readonly Dictionary<string, Dictionary<string, string>> _innerTabs = new(StringComparer.Ordinal);
     private (string name, DateTime t) _lastMenuItem = ("", DateTime.MinValue);
     private DateTime _menuOpenedAt = DateTime.MinValue;
+    private bool _menuOpen;
+    private DateTime _menuClosedAt = DateTime.MinValue;
     private int _stateEventsThisSecond; private DateTime _stateSecond = DateTime.MinValue;
     private (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) _lastField = ("", "", "", DateTime.MinValue, default);
     private (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) _previousField = ("", "", "", DateTime.MinValue, default);
@@ -257,14 +260,29 @@ internal sealed class UiaCollector : IDisposable
         var now = DateTime.Now;
         var win = CurrentTitle;
         lock (_gate) { _clickSeenAt = now; _pendingConfirm = null; }
-        // (b) the recorded tree, now
+        // a click on an open menu popup belongs to the menu: its item is counted when the menu closes, and the toolbar
+        // button that lies under the popup in the window's recorded tree is not what was clicked
+        bool menuClick;
+        lock (_gate) menuClick = (_lastPressHow == PressHow.Menu && (now - _lastPress.t).TotalMilliseconds < 1000) || _menuOpen || (now - _menuClosedAt).TotalMilliseconds < 300;
+        if (menuClick || OverMenuPopup(pt, destroyed))
+        {
+            Log.Info($"click at {pt.X},{pt.Y}: a menu click ({(menuClick ? "menu open or just closed" : "over the popup")}), no target beneath");
+            lock (_gate) { _decider.Clicked(null, pt.X, pt.Y, now, overPopup: true); _clickReadDone = DateTime.Now; }
+            return;
+        }
+        // (b) the recorded trees, now: the window destroyed, the one in front, the one that was in front at the previous event
+        // (the click went to it before the switch), each followed by its MDI container (whose own buttons are not in a document's tree)
         (ControlRow row, IntPtr hwnd, int index)? hit = null;
-        if (destroyed != IntPtr.Zero) hit = HitRows(destroyed, pt);
-        hit ??= HitRows(front, pt);
         var moved = prevPt.X > -9999 && (Math.Abs(pt.X - prevPt.X) > PressDecider.MovedPx || Math.Abs(pt.Y - prevPt.Y) > PressDecider.MovedPx);
-        if (hit is null && moved && prevFront != IntPtr.Zero) hit ??= HitRows(prevFront, prevPt);
+        var surfaces = TreeHitTest.Surfaces((long)destroyed, (long)front, (long)prevFront, pt.X, pt.Y, prevPt.X, prevPt.Y, moved, ContainerOf);
+        foreach (var (sh, sx, sy) in surfaces)
+        {
+            hit = HitRows(new IntPtr(sh), new System.Drawing.Point(sx, sy));
+            if (hit is not null) break;
+        }
+        Log.Info($"click at {pt.X},{pt.Y} (destroyed {destroyed}, front {front}, prev {prevFront} at {prevPt.X},{prevPt.Y}): surfaces {string.Join(" ", surfaces.Select(s => $"{s.hwnd}{(HasRows(new IntPtr(s.hwnd)) ? "+" : "-")}@{s.x},{s.y}"))} -> {(hit is { } hh ? hh.row.Name + " in " + ScreenTitleOf(hh.hwnd) : "nothing")}");
         if (hit is { } h && h.row.Type == "TabItem") { OnTabHit(h.row.Name.Trim(), ScreenTitleOf(h.hwnd), now); lock (_gate) { _decider.Clicked(null, pt.X, pt.Y, now); _clickReadDone = DateTime.Now; } return; }
-        var provisional = hit is { } hb ? new PressCandidate(hb.row.Name.Trim(), hb.row.AutomationId, hb.row.Type, ScreenTitleOf(hb.hwnd)) : null;
+        var provisional = hit is { } hb ? new PressCandidate(hb.row.Name.Trim(), hb.row.AutomationId, hb.row.Type, HitWindowOf(hb.hwnd)) : null;
         lock (_gate) { _decider.Clicked(provisional, pt.X, pt.Y, now); _clickReadDone = provisional is not null ? DateTime.Now : DateTime.MinValue; }
         if (destroyed != IntPtr.Zero) { lock (_gate) _clickReadDone = DateTime.Now; return; } // the window is gone: a live read would find the window behind
         // (a) the live read under the pointer, which refines the answer when it finds a control of a window that still exists
@@ -294,6 +312,34 @@ internal sealed class UiaCollector : IDisposable
             if (pending is { } p) InferPress(p.why, p.from, p.at);
             else if (c is not null || provisional is not null) ScheduleReread("click " + (c ?? provisional)!.Name); // a click on a tick box or button changes the document: read it once
         });
+    }
+
+    private bool HasRows(IntPtr hwnd) { lock (_gate) return _rows.ContainsKey(hwnd); }
+
+    /// <summary>The window a recorded-tree hit belongs to: an MDI container's own buttons are the container's (its plain title), not the document's in front.</summary>
+    private string HitWindowOf(IntPtr hwnd)
+    {
+        lock (_gate) { if (_mdiClients.ContainsKey(hwnd) && _knownWindows.TryGetValue(hwnd, out var t) && t.Length > 0) return t; }
+        return ScreenTitleOf(hwnd);
+    }
+
+    /// <summary>The top-level window of a document of an MDI workspace, zero for anything else.</summary>
+    private long ContainerOf(long hwnd)
+    {
+        lock (_gate) return _mdiChildren.TryGetValue(new IntPtr(hwnd), out var top) ? (long)top : 0;
+    }
+
+    /// <summary>True when the point lies on a menu popup of the watched program that is open now, or on the one just hidden (the click closed it).</summary>
+    private bool OverMenuPopup(System.Drawing.Point pt, IntPtr hidden)
+    {
+        List<IntPtr> popups; lock (_gate) popups = _menuPopups.ToList();
+        foreach (var h in popups)
+        {
+            if (h != hidden && !Win32.IsWindowVisible(h)) continue;
+            if (!Win32.GetWindowRect(h, out var r)) continue;
+            if (pt.X >= r.Left && pt.X < r.Right && pt.Y >= r.Top && pt.Y < r.Bottom) return true;
+        }
+        return false;
     }
 
     /// <summary>The recorded tree of a window hit-tested at a point: the clickable row there, or null.</summary>
@@ -365,7 +411,8 @@ internal sealed class UiaCollector : IDisposable
         if (idObject != Win32.OBJID_WINDOW || idChild != 0 || hwnd == IntPtr.Zero) return;
         bool knownTop, knownChild;
         lock (_gate) { knownTop = _knownWindows.ContainsKey(hwnd); knownChild = _mdiChildren.ContainsKey(hwnd); }
-        if (ev is Win32.EVENT_OBJECT_DESTROY or Win32.EVENT_OBJECT_HIDE && (knownTop || knownChild)) NoteInput(destroyed: hwnd);
+        bool knownMenu; lock (_gate) knownMenu = _menuPopups.Contains(hwnd);
+        if (ev is Win32.EVENT_OBJECT_DESTROY or Win32.EVENT_OBJECT_HIDE && (knownTop || knownChild || knownMenu)) NoteInput(destroyed: hwnd);
         else if (ev is Win32.EVENT_OBJECT_SHOW or Win32.EVENT_OBJECT_DESTROY or Win32.EVENT_OBJECT_HIDE) NoteInput();
         switch (ev)
         {
@@ -426,7 +473,7 @@ internal sealed class UiaCollector : IDisposable
         {
             case Win32.EVENT_SYSTEM_MENUSTART:
             case Win32.EVENT_SYSTEM_MENUPOPUPSTART:
-                _menuOpenedAt = DateTime.Now;
+                MenuOpened();
                 ReadPointer("menu");
                 break;
             case Win32.EVENT_SYSTEM_MENUPOPUPEND:
@@ -444,10 +491,12 @@ internal sealed class UiaCollector : IDisposable
     }
 
     /// <summary>A menu closed: if an item was highlighted or focused just before, that item was chosen (unless a real press already said so).</summary>
+    private void MenuOpened() { lock (_gate) { _menuOpenedAt = DateTime.Now; _menuOpen = true; } }
+
     private void MenuClosed()
     {
         (string name, DateTime t) item;
-        lock (_gate) item = _lastMenuItem;
+        lock (_gate) { item = _lastMenuItem; _menuOpen = false; _menuClosedAt = DateTime.Now; }
         if (item.name.Length == 0 || (DateTime.Now - item.t).TotalMilliseconds > 1500) return;
         // the menu-bar item ("File", "View") is highlighted before its popup opens; a chosen item is highlighted after
         if (_menuOpenedAt != DateTime.MinValue && item.t < _menuOpenedAt) { lock (_gate) _lastMenuItem = ("", DateTime.MinValue); return; }
@@ -543,9 +592,18 @@ internal sealed class UiaCollector : IDisposable
         if (!_settings.PressInference) return;
         var now = at ?? DateTime.Now;
         (string name, string aid, string ct, string win, DateTime t) a; (string name, DateTime t) last;
-        bool SameWindow(string win) => from.Length == 0 || win.Length == 0 || Core.Learning.Titles.Key(win) == Core.Learning.Titles.Key(from);
+        bool SameWindow(string win)
+        {
+            // the same screen, or a window and one of its documents ("Main" and "Main › Order"): a button on the workspace's own
+            // chrome is confirmed by the workspace closing while a document is in front, a document's button by the main window changing
+            if (from.Length == 0 || win.Length == 0) return true;
+            var a = Core.Learning.Titles.Key(win); var b = Core.Learning.Titles.Key(from);
+            return a == b || a.StartsWith(b + " \u203A ", StringComparison.Ordinal) || b.StartsWith(a + " \u203A ", StringComparison.Ordinal);
+        }
         PressCandidate? c;
+        PressCandidate? pendingBefore; lock (_gate) pendingBefore = _decider.Pending;
         lock (_gate) { c = _decider.Confirm(now, SameWindow); a = _lastActionable; last = _lastPress; }
+        if (why != "value changed") Log.Info($"infer '{why}' from [{from}]: pending {(pendingBefore is null ? "none" : pendingBefore.Name + " in " + pendingBefore.Win)} -> {(c is null ? "not confirmed" : "confirmed " + c.Name)}; last actionable {a.name} {(now - a.t).TotalMilliseconds:0} ms");
         if (c is not null)
         {
             lock (_gate) _lastPointerPress = System.Windows.Forms.Cursor.Position;
@@ -564,6 +622,10 @@ internal sealed class UiaCollector : IDisposable
         // A pointer that has not moved since the last press it was credited with is parked, not clicking: nothing is credited to it.
         if (why is "window opened" or "window closed" or "window changed" or "tab changed" or "dialog")
         {
+            // a window that opens right after a counted press (a menu item, a button seen by its own event) was opened by that
+            // press: the control under the pointer now is whatever lies where the menu popup or the button was
+            bool justPressed; lock (_gate) justPressed = _decider.PressedWithin(1000, now);
+            if (justPressed) return;
             var pt = System.Windows.Forms.Cursor.Position;
             System.Drawing.Point lastAt; lock (_gate) lastAt = _lastPointerPress;
             if (Math.Abs(pt.X - lastAt.X) <= 3 && Math.Abs(pt.Y - lastAt.Y) <= 3) return;
@@ -605,7 +667,7 @@ internal sealed class UiaCollector : IDisposable
             var window = r.How is PressHow.Msaa or PressHow.Inferred ? 1500 : 400;
             if (_lastPress.name == r.Name && (DateTime.Now - _lastPress.t).TotalMilliseconds < window) return;
             if (r.How is PressHow.Inferred && _decider.IsRepeat(r.Name, DateTime.Now)) return;
-            _lastPress = (r.Name, DateTime.Now);
+            _lastPress = (r.Name, DateTime.Now); _lastPressHow = r.How ?? "";
             _decider.Pressed(r.Name, DateTime.Now);
             if (_lastActionable.name == r.Name) _lastActionable = ("", "", "", "", DateTime.MinValue);
         }
@@ -738,7 +800,7 @@ internal sealed class UiaCollector : IDisposable
         var cls = Win32.ClassName(hwnd);
         if (cls is "tooltips_class32" || cls.Contains("tooltips_class32", StringComparison.OrdinalIgnoreCase) || cls.Contains("ToolTip", StringComparison.OrdinalIgnoreCase)) { OnTooltip(hwnd, null); return; }
         if (cls is "IME" or "MSCTFIME UI" or "Shell_TrayWnd") return;
-        if (cls == "#32768") { lock (_gate) _menuPopups.Add(hwnd); _menuOpenedAt = DateTime.Now; return; }
+        if (cls == "#32768") { lock (_gate) _menuPopups.Add(hwnd); MenuOpened(); return; }
         if (Ignored(title)) return;
         var excluded = Excluded(title);
         var appeared = DateTime.Now;
@@ -778,7 +840,7 @@ internal sealed class UiaCollector : IDisposable
                         catch { }
                         try
                         {
-                            var menuOpened = el.RegisterAutomationEvent(lib.Element.MenuOpenedEvent, TreeScope.Subtree, (e, _) => _menuOpenedAt = DateTime.Now);
+                            var menuOpened = el.RegisterAutomationEvent(lib.Element.MenuOpenedEvent, TreeScope.Subtree, (e, _) => MenuOpened());
                             var menuClosed = el.RegisterAutomationEvent(lib.Element.MenuClosedEvent, TreeScope.Subtree, (e, _) => MenuClosed());
                             lock (handlers) { handlers.Add(menuOpened); handlers.Add(menuClosed); }
                         }
@@ -800,7 +862,7 @@ internal sealed class UiaCollector : IDisposable
                     if (DialogDetector.IsMenuWindow(rec.Controls) && rec.Controls.Count <= 120)
                     {
                         lock (_gate) _menuPopups.Add(hwnd);
-                        _menuOpenedAt = DateTime.Now;
+                        MenuOpened();
                         var menuName = DialogDetector.MenuName(title);
                         if (menuName.Length == 0) menuName = menuPath ?? "";
                         // what the menu offers, even if nothing is chosen: shows the screens nobody opened

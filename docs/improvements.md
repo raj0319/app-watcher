@@ -85,6 +85,24 @@ The hand-driven runs on the test PC (`drive-*.ps1` plus `score9.py`) became a to
   lies over the toolbar, was credited to the "Workspace" button under it. Both are collector gaps for the next version; the
   tool exists to find exactly these.
 - Tests: `ScenarioTests` (3: the rerun log, the scenario format and defaults, the run log). 135 in all.
+- **Both gaps fixed the same day** (`ClickSurfaceTests`, 137 tests in all; the rules are unit-tested, and the diagnostic log of
+  the last scenario run showed the two causes exactly, but the scenario and the live test have not been rerun on real windows
+  yet: the desktop was taken by another tool's fixture windows at the time. Rerun `scripts\scenario-run.ps1` and
+  `scripts\live-test.ps1` before the next release):
+  - A click is now resolved on the recorded trees in this order (`TreeHitTest.Surfaces`, pure): the window being destroyed,
+    the window in front, the window that was in front at the previous event when it changed since (the click went to it
+    before the switch), and that window at the previous pointer position when the pointer moved; a document of an MDI
+    workspace is followed by its container, whose own buttons are not in the document's tree. A hit in the container's
+    tree belongs to the container (its plain title). A press is confirmed by its own window or by one of that window's
+    documents ("Main" and "Main › Order" are the same for that purpose), so the press on "Close workspace" is counted
+    when the workspace closes while a document is still in front.
+  - A click heard of while a menu is open, within 300 ms after it closed, or within 1 s after a menu item was counted,
+    belongs to the menu (`PressDecider.Clicked(..., overPopup: true)` keeps no target): the toolbar button lying under the
+    popup in the recorded tree is not what was clicked. A window that opens within 1 s after a counted press
+    (`PressDecider.PressedWithin`) is that press's doing, so the control under the pointer is not credited again.
+  - The driver is per-monitor DPI aware (`app.manifest`), so the points in its run log are physical pixels, the same as the
+    Position column of the screen records; and the watcher's log now says, per click, which trees were tried and what was hit,
+    and per inference what was pending and whether it was confirmed (`watcher.log`, the lines starting "click at" and "infer").
 
 ## Version 0.10: one attempt, four jobs (after the v0.9 run, 2026-11-19)
 
