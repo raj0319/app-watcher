@@ -364,7 +364,11 @@ public class InformV10Tests
         var same = before.ToList();
         Assert.Null(FieldReads.NewLookup(same, before, "201,399 150x24"));                      // the same rows as before the typing: no lookup opened
         var changed = before.Select(r => r.Name == "100EXA | SAMPLE PRODUCT A" ? R(2, "ListItem", "12 | TWELVE", "", "201,450 400x20") : r).ToList();
-        Assert.NotNull(FieldReads.NewLookup(before, changed, "201,399 150x24"));                 // new rows under the field: a lookup
+        // v0.11: new rows in a list that was already there are not a lookup that opened (the v0.10 run counted "12" typed in a
+        // grid cell under the product list as one); only a list that was not in the previous read is
+        Assert.Null(FieldReads.NewLookup(before, changed, "201,399 150x24"));
+        var opened = before.Where(r => r.AutomationId != "lstLookup" && !r.Name.Contains('|')).ToList();
+        Assert.NotNull(FieldReads.NewLookup(opened, before, "201,399 150x24"));                  // a list that opened right under the field: a lookup
         var r = Learner.Learn(Input());
         Assert.DoesNotContain(r.Logic.Hints, h => h.Text == "Accounting");
         var flow = r.Flows.FirstOrDefault(f => f.Key.EndsWith("› New Sales Order"));

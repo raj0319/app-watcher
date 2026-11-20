@@ -1,0 +1,271 @@
+08:32:43 START complex2 pid=676 minutes=14 flows=16 once=False
+08:32:43 FLOW SalesOrder
+08:32:44 OPEN Sales Order (mouse)
+08:32:51   focused Edit id=2688680 -> type
+08:33:07   line1: um=EA price=45.3426 ext=45.34
+08:33:14   qty 5 -> ext=226.71
+08:33:21   qty 20 -> ext=906.85
+08:33:21   press 'Add Line Item' (mouse)
+08:33:45   line2 ext=0
+08:33:45   nav 'Details'
+08:33:51   nav 'Procurement'
+08:33:56   nav 'Final'
+08:34:02   nav 'Shipments'
+08:34:07   nav 'Header'
+08:34:16   nav 'Detail'
+08:34:23   hover 'New'
+08:34:24   hover 'Save'
+08:34:26   hover 'Cancel'
+08:34:27   hover 'Exit'
+08:34:28   hover 'Add Line Item'
+08:34:30   hover 'Comments'
+08:34:30   press 'Exit' (mouse)
+08:34:36   prompt 'Close?' buttons [OK, Cancel] -> OK
+08:34:43 LEAVE (tab items visible: 0)
+08:34:45 FLOW PurchaseOrder
+08:34:45 OPEN Purchase Order (mouse)
+08:34:52   focused Edit id=395894 -> type
+08:34:59   grid headers: 
+08:35:00   tabs: Special Instructions | Internal Notes | Main | Johnstone | Other | Header | Detail | Final | Receivings | Activities | Attachments | Audit | Custom Fields
+08:35:01   grid headers: 
+08:35:01   nav 'Special Instructions'
+08:35:07   nav 'Internal Notes'
+08:35:13   nav 'Main'
+08:35:19   nav 'Johnstone'
+08:35:26   hover 'Edit'
+08:35:28   hover 'Exit'
+08:35:29   hover 'New'
+08:35:30   hover 'Save'
+08:35:32   hover 'Cancel'
+08:35:33   press 'Exit' (mouse)
+08:35:52   prompt 'Close?' buttons [OK, Cancel] -> OK
+08:35:55 LEAVE (tab items visible: 0)
+08:35:57 FLOW OrderPad
+08:35:57 OPEN Customer Order Pad (mouse)
+08:36:03   focused Edit id=6555436 -> type
+08:36:12   tabs: 
+08:36:12   grid headers: 
+08:36:13   hover 'Create Quote'
+08:36:15   hover 'Create Order'
+08:36:16   hover 'Search'
+08:36:17   hover 'Exit'
+08:36:19   hover 'Find'
+08:36:20   press 'Exit' (mouse)
+08:36:30 LEAVE (tab items visible: 0)
+08:36:32 FLOW PriceChange
+08:36:33 OPEN Price Change (mouse)
+08:36:40   focused Edit id=2886138 -> type
+08:36:48   tabs: 
+08:36:48   grid headers: 
+08:36:49   hover 'Save'
+08:36:51   hover 'Exit'
+08:36:52   hover 'Select Products'
+08:36:53   hover 'Percent Increase'
+08:36:55   hover 'Reset All'
+08:36:56   press 'Exit' (mouse)
+08:37:06 LEAVE (tab items visible: 0)
+08:37:08 FLOW PriceMatrix
+08:37:12   menu > Pricing (mouse)
+08:37:13   menu > Price Matrix (mouse)
+08:37:13 OPEN menu Sales > Pricing > Price Matrix
+08:37:19   focused Edit id=2754522 -> type
+08:37:28   tabs: 
+08:37:28   grid headers: 
+08:37:30   hover 'Search'
+08:37:31   hover 'Net Pricing'
+08:37:33   hover 'Exit'
+08:37:34   hover 'Matrix Report'
+08:37:35   hover '1.0.1 is now available!'
+08:37:45   press 'Exit' (mouse)
+08:37:55 LEAVE (tab items visible: 0)
+08:37:57 FLOW PriceBook
+08:38:01   menu > Pricing (mouse)
+08:38:02   menu > Price Book Report (mouse)
+08:38:02 OPEN menu Sales > Pricing > Price Book Report
+08:38:08   criteria 'Product Selection Criteria - PRICE BOOK REPORT' -> OK
+08:38:19   prompt 'No Selection Specified' buttons [Yes, No] -> No
+08:38:22   tabs: 
+08:38:22   grid headers: 
+08:38:24   hover 'Cancel'
+08:38:25   hover 'OK'
+08:38:26   hover 'Reset'
+08:38:28   hover '1.0.1 is now available!'
+08:38:29   hover 'Select Card Terminal'
+08:38:29   button 'Preview' not found
+08:38:29   button 'Print Preview' not found
+08:38:30   button 'View' not found
+08:38:30   button 'Run' not found
+08:38:30   close popup 'Product Selection Criteria - PRICE BOOK REPORT' via Cancel
+08:38:34   button 'Exit' not found
+08:38:34   button 'Cancel' not found
+08:38:41 LEAVE (tab items visible: 0)
+08:38:43 FLOW InventoryInq
+08:38:44 OPEN Inventory Inquiry (mouse)
+08:38:50   focused Edit id=4718616 -> type
+08:38:59   tabs: Category Prices | Competitive Prices | Inventory | Johnstone National
+08:38:59   grid headers: 
+08:38:59   nav 'Category Prices'
+08:39:04   nav 'Competitive Prices'
+08:39:09   nav 'Inventory'
+08:39:14   nav 'Johnstone National'
+08:39:20   hover 'Exit'
+08:39:22   hover 'Search'
+08:39:23   hover '1.0.1 is now available!'
+08:39:24   hover 'Select Card Terminal'
+08:39:26   hover 'Change Register'
+08:39:32   press 'Exit' (mouse)
+08:39:42 LEAVE (tab items visible: 0)
+08:39:44 FLOW CustomerLedger
+08:39:44 OPEN Customer Ledger (mouse)
+08:39:51   focused Edit id=1575766 -> type
+08:40:03   tabs: Chart | Data | Invoices | Payment History | Transactions | Orders | Sales History | Sales Analysis | Sub Account Ledger | Monthly Breakdown | Setup | Ledger | Ship Tos | Contacts | Activities | Attachments | Audit
+08:40:03   grid headers: DataID | Rank | Points | Days Overdue | Amount | Percent
+08:40:04   nav 'Chart'
+08:40:09   nav 'Data' not found
+08:40:09   nav 'Invoices' not found
+08:40:10   nav 'Payment History' not found
+08:40:10   nav 'Transactions' not found
+08:40:11   hover 'New'
+08:40:12   hover 'Edit'
+08:40:14   hover 'Exit'
+08:40:15   hover 'Report'
+08:40:17   hover 'Labels'
+08:40:18   press 'Exit' (mouse)
+08:40:29 LEAVE (tab items visible: 0)
+08:40:31 FLOW VendorLedger
+08:40:35 OPEN Vendor Ledger (mouse)
+08:40:40   focused Edit id= -> type
+08:40:48   tabs: 
+08:40:48   grid headers: 
+08:40:50   hover '1.0.1 is now available!'
+08:40:51   hover 'Select Card Terminal'
+08:40:52   hover 'Change Register'
+08:40:54   hover 'User Mail'
+08:40:55   hover 'Change Branch'
+08:41:00   button 'Exit' not found
+08:41:00   button 'Cancel' not found
+08:41:07 LEAVE (tab items visible: 0)
+08:41:09 FLOW ProjectedPO
+08:41:09 OPEN Projected Purchase Order (mouse)
+08:41:16   prompt 'Advanced Demand Forecasting and Purchasing' buttons [OK] -> OK
+08:41:18   focused Custom id=1838054 -> type
+08:41:26   tabs: Projection | Vendor Returns | Stock Transfer | Criteria | Summary Results | Projection Results
+08:41:26   grid headers: Code | Description
+08:41:27   nav 'Projection'
+08:41:32   nav 'Vendor Returns'
+08:41:37   nav 'Stock Transfer'
+08:41:41   nav 'Criteria'
+08:41:47   hover 'Generate Transfer'
+08:41:48   hover 'Exit'
+08:41:50   hover 'Product Criteria'
+08:41:51   hover '1.0.1 is now available!'
+08:41:52   hover 'Select Card Terminal'
+08:41:58   press 'Exit' (mouse)
+08:42:08 LEAVE (tab items visible: 0)
+08:42:10 FLOW ProductAnalysis
+08:42:11 OPEN Product Analysis (mouse)
+08:42:17   focused Edit id=5637782 -> type
+08:42:25   tabs: Current Warehouse | All Warehouses | Overview | Assembly | Demand | Vendors | Transactions | Sales Orders | Purchase Orders | Transfers | Work Orders | Serial Numbers | Lots | Substitutes | Bins | Bins | Setup | Analysis | Inventory | Pricing | Johnstone | Attachments | Audit
+08:42:26   grid headers: On Hand | Cmttd | Picked | On Shelf | Avail | On P/O | On B/O | Staged | On SO/Pckd | Trans Out/Pckd | Trans In/Pckd | On D/S | S/O Rtrn | On W/O Kit | On W/O Comp | MTD Units | LYCM Units | 12 Mon Units | 12 Mon Dmnd | 12 Mon Hits | Rank | Dmnd Trend % | Qrtly Proj Usage | Weeks Available | Reorder Pnt | Stock Value | YTD Avg GP % | Primary Bin | Forecast Type | On P/O Future | Whse Cst | Column | Amount | Changed
+08:42:26   nav 'Current Warehouse'
+08:42:31   nav 'All Warehouses' not found
+08:42:32   nav 'Overview'
+08:42:37   nav 'Assembly'
+08:42:41   nav 'Demand' not found
+08:42:43   hover 'New'
+08:42:44   hover 'Edit'
+08:42:46   hover 'Exit'
+08:42:47   hover 'Report'
+08:42:48   hover '1.0.1 is now available!'
+08:42:54   press 'Exit' (mouse)
+08:43:04 LEAVE (tab items visible: 0)
+08:43:06 FLOW ExecSummary
+08:43:06 OPEN Executive Performance Summary (mouse)
+08:43:12   prompt 'Protected Area' buttons [OK, Cancel] -> Cancel
+08:43:13   tabs: 
+08:43:13   grid headers: 
+08:43:14   hover '1.0.1 is now available!'
+08:43:16   hover 'Select Card Terminal'
+08:43:17   hover 'Change Register'
+08:43:19   hover 'User Mail'
+08:43:20   hover 'Change Branch'
+08:43:25   button 'Exit' not found
+08:43:25   button 'Cancel' not found
+08:43:32 LEAVE (tab items visible: 0)
+08:43:34 FLOW SalesOrderInq
+08:43:34 OPEN Sales Order Inquiry (mouse)
+08:43:40   focused Edit id=5637484 -> type
+08:43:48   tabs: Inquiry | Analysis
+08:43:48   grid headers: 
+08:43:49   nav 'Inquiry'
+08:43:54   nav 'Analysis'
+08:44:00   hover 'Search'
+08:44:01   hover 'Print'
+08:44:02   hover 'Report'
+08:44:04   hover 'Exit'
+08:44:05   hover 'Reset'
+08:44:07   press 'Exit' (mouse)
+08:44:16 LEAVE (tab items visible: 0)
+08:44:18 FLOW POInquiry
+08:44:19 OPEN Purchase Order Inquiry (mouse)
+08:44:25   focused Edit id=6818096 -> type
+08:44:33   tabs: Inquiry | Analysis
+08:44:33   grid headers: 
+08:44:34   nav 'Inquiry'
+08:44:38   nav 'Analysis'
+08:44:44   hover 'Search'
+08:44:45   hover 'Print'
+08:44:47   hover 'Exit'
+08:44:48   hover 'Reset'
+08:44:49   hover '1.0.1 is now available!'
+08:44:55   press 'Exit' (mouse)
+08:45:05 LEAVE (tab items visible: 0)
+08:45:07 FLOW POReport
+08:45:10   menu > Purchase Order Report (mouse)
+08:45:10 OPEN menu Purchasing > Purchase Order Report
+08:45:17   tabs: Report | Header Criteria | Detail Criteria
+08:45:17   grid headers: 
+08:45:18   nav 'Report'
+08:45:23   nav 'Header Criteria'
+08:45:28   nav 'Detail Criteria'
+08:45:35   hover 'Run'
+08:45:36   hover 'Save As'
+08:45:37   hover 'Exit'
+08:45:39   hover 'New'
+08:45:40   hover 'Add Warehouse'
+08:45:40   button 'Preview' not found
+08:45:40   button 'Print Preview' not found
+08:45:41   button 'View' not found
+08:45:41   press 'Run' (mouse)
+08:45:47   prompt 'Attention' buttons [OK] -> OK
+08:45:54   press 'Exit' (mouse)
+08:46:04 LEAVE (tab items visible: 0)
+08:46:06 FLOW AgedTrial
+08:46:10   menu > Accounts Receivable (mouse)
+08:46:10   menu item 'Aged Trial Balance' not found; items in popups: 
+08:46:13 round 1 done
+08:46:13 FLOW SalesOrder
+08:46:14 OPEN Sales Order (mouse)
+08:46:23   focused Edit id=4393454 -> type
+08:46:40   line1: um=EA price=45.3426 ext=45.34
+08:46:48   qty 5 -> ext=226.71
+08:46:55   qty 20 -> ext=906.85
+08:46:55   press 'Add Line Item' (mouse)
+08:47:18   line2 ext=0
+08:47:19   nav 'Details'
+08:47:24   nav 'Procurement'
+08:47:29   nav 'Final'
+08:47:35   nav 'Shipments'
+08:47:41   nav 'Header'
+08:47:52   nav 'Detail'
+08:47:58   hover 'New'
+08:48:00   hover 'Save'
+08:48:01   hover 'Cancel'
+08:48:02   hover 'Exit'
+08:48:04   hover 'Add Line Item'
+08:48:05   hover 'Comments'
+08:48:06   press 'Exit' (mouse)
+08:48:12   prompt 'Close?' buttons [OK, Cancel] -> OK
+08:48:18 LEAVE (tab items visible: 0)
+08:48:20 round 2 done
+08:48:20 END

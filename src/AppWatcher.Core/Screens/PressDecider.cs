@@ -76,6 +76,13 @@ public sealed class PressDecider
         _click = (c, clickedAt);
     }
 
+    /// <summary>The click's target turned out wrong (the live element under the point is another control): the click keeps no target.</summary>
+    public void Cancel(DateTime clickedAt)
+    {
+        if (_click.t != clickedAt) return;
+        _click = (null, clickedAt);
+    }
+
     /// <summary>
     /// Something that a click explains just happened: the control the click went to, if one is pending and fresh, else null.
     /// The candidate is cleared so a second confirmation (a window opened and a tab changed) counts it once.

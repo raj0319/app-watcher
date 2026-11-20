@@ -49,6 +49,38 @@ internal static class Win32
     /// <summary>True when the key went down since the last time anyone asked (one read, consumed).</summary>
     public static bool WentDown(int vKey) { try { return (GetAsyncKeyState(vKey) & 1) != 0; } catch { return false; } }
 
+    /// <summary>One read of a key's state: whether it went down since the last read (bit 0) and whether it is down now (bit 15).</summary>
+    public static (bool wentDown, bool down) KeyState(int vKey)
+    {
+        try { var s = GetAsyncKeyState(vKey); return ((s & 1) != 0, (s & 0x8000) != 0); } catch { return (false, false); }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
+
+    /// <summary>The deepest visible window at a screen point (a read).</summary>
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public int cbSize; public int flags; public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+        public Rect rcCaret;
+    }
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint idThread, ref GuiThreadInfo info);
+
+    /// <summary>The window with the keyboard focus in the GUI thread that owns <paramref name="anyWindowOfThread"/> (GetGUIThreadInfo, a read), or zero.</summary>
+    public static IntPtr FocusedWindowOf(IntPtr anyWindowOfThread)
+    {
+        if (anyWindowOfThread == IntPtr.Zero) return IntPtr.Zero;
+        try
+        {
+            var tid = GetWindowThreadProcessId(anyWindowOfThread, out _);
+            var info = new GuiThreadInfo { cbSize = Marshal.SizeOf<GuiThreadInfo>() };
+            return tid != 0 && GetGUIThreadInfo(tid, ref info) ? info.hwndFocus : IntPtr.Zero;
+        }
+        catch { return IntPtr.Zero; }
+    }
+
     /// <summary>The MDI client pane a window is a direct child of (its parent's class contains MDICLIENT), or zero.</summary>
     public static IntPtr MdiClientOf(IntPtr hwnd)
     {

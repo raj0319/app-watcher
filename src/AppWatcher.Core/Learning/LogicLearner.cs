@@ -101,14 +101,22 @@ public static class LogicLearner
     public const double LinkWindowSeconds = 3;
     private static readonly HashSet<string> WindowButtons = DialogDetector.WindowButtons;
 
+    /// <summary>How long after a code typed in a window, before its document took its title, the document's fills are still that code's doing.</summary>
+    public const double RetitleLinkSeconds = 5;
+
     public static void Accumulate(LearnState s, List<UiEvent> session)
     {
         var values = new Dictionary<string, Dictionary<string, string>>();
+        // grid cells of one row (events that carry a row): their own values, so a new empty line does not stand in for the line being priced
+        var rowValues = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         (string kind, string name, string win, DateTime t)? user = null;
         (string win, string name, DateTime t)? press = null;
         var filledForCause = new HashSet<string>(StringComparer.Ordinal); // a field filled twice after one action (read at 300 ms and again at 1.5 s) is one fill
-        foreach (var e in CauseFirst(session))
+        var retitledCause = new HashSet<string>(StringComparer.Ordinal);  // the documents a typed code was counted as a cause in, after they took their title
+        var ordered = CauseFirst(session);
+        for (var n = 0; n < ordered.Count; n++)
         {
+            var e = ordered[n];
             var win = Titles.Key(e.Win);
             if (e.Act == Acts.Value && win.Length > 0)
             {
@@ -117,25 +125,57 @@ public static class LogicLearner
                 // a fill credited to the main window within two seconds of a value typed in one of its documents belongs to that document
                 if (e.By == ValueBy.App && user is { } ud && ud.win != win && ud.win.StartsWith(win + " › ", StringComparison.Ordinal) && (e.T - ud.t).TotalSeconds is >= -0.5 and <= 2) win = ud.win;
                 if (!values.TryGetValue(win, out var cur)) values[win] = cur = new Dictionary<string, string>();
+                // a grid cell with a row: its operands are the cells of the same row (read in the same batch first) plus the window's fields
+                var operands = cur;
+                if (!string.IsNullOrEmpty(e.Row))
+                {
+                    var rk = win + "\u0001" + e.Row;
+                    if (!rowValues.TryGetValue(rk, out var row)) rowValues[rk] = row = new Dictionary<string, string>();
+                    for (var k = n + 1; k < ordered.Count && ordered[k].T == e.T; k++)
+                    {
+                        var o = ordered[k];
+                        if (o.Act == Acts.Value && o.Row == e.Row && Titles.Key(o.Win) == Titles.Key(e.Win) && o.Val is { } ov && ov != Masking.Masked) row[o.FieldKey] = ov;
+                    }
+                    operands = new Dictionary<string, string>(cur);
+                    foreach (var kv in row) operands[kv.Key] = kv.Value;
+                    row[f] = v;
+                }
                 if (e.By == ValueBy.App)
                 {
                     if (v != Masking.Masked && v.Trim().Length > 0)
                     {
-                        if (user is { } u && u.win == win && u.name != f && (e.T - u.t).TotalSeconds is >= -0.5 and <= LinkWindowSeconds && filledForCause.Add(f))
-                            Add(s.Fills, LearnState.Key(win, u.kind + ":" + u.name, f), e.Source);
-                        LearnCalc(s, win, f, v, cur, e.Source, weak: e.Ct == "DataItem");
+                        if (user is { } u && u.name != f && filledForCause.Add(f))
+                        {
+                            var age = (e.T - u.t).TotalSeconds;
+                            // the same screen within the link window; or a code typed in a window whose document then took its title
+                            var linked = u.win == win && age is >= -0.5 and <= LinkWindowSeconds
+                                         || u.kind == "typed" && win.StartsWith(u.win + " › ", StringComparison.Ordinal) && age is >= -0.5 and <= RetitleLinkSeconds;
+                            if (linked)
+                            {
+                                Add(s.Fills, LearnState.Key(win, u.kind + ":" + u.name, f), e.Source);
+                                // the code was typed before the document had its title: it is a cause in the document too (once per typing)
+                                if (u.win != win && retitledCause.Add(win)) Count(s.Causes, LearnState.Key(win, u.kind + ":" + u.name));
+                            }
+                            else filledForCause.Remove(f);
+                        }
+                        LearnCalc(s, win, f, v, operands, e.Source, weak: e.Ct == "DataItem");
                     }
                 }
                 else
                 {
-                    user = ("typed", f, win, e.T); filledForCause.Clear();
+                    user = ("typed", f, win, e.T); filledForCause.Clear(); retitledCause.Clear();
                     Count(s.Causes, LearnState.Key(win, "typed:" + f));
                 }
-                cur[f] = v;
+                if (string.IsNullOrEmpty(e.Row)) cur[f] = v;
             }
             else if (e.Act == Acts.Select && win.Length > 0)
             {
                 var name = e.FieldKey;
+                // a document of the window taking its title right after a code was typed in that window is the program loading
+                // the record, not the user choosing a page: the typed code stays the cause of what fills next
+                var retitle = user is { kind: "typed" } ut && win.StartsWith(ut.win + " › ", StringComparison.Ordinal)
+                              && (e.T - ut.t).TotalSeconds is >= -0.5 and <= RetitleLinkSeconds && win.EndsWith(" › " + name, StringComparison.Ordinal);
+                if (retitle) continue;
                 user = ("chose", name, win, e.T); filledForCause.Clear();
                 Count(s.Causes, LearnState.Key(win, "chose:" + name));
             }
@@ -156,7 +196,9 @@ public static class LogicLearner
             }
             else if (e.Act == Acts.Close && e.Ct == "Window")
             {
-                values.Remove(Titles.Key(e.Name));
+                var closed = Titles.Key(e.Name);
+                values.Remove(closed);
+                foreach (var k in rowValues.Keys.Where(k => k.StartsWith(closed + "\u0001", StringComparison.Ordinal)).ToList()) rowValues.Remove(k);
             }
             else if (e.Act == Acts.Hint && win.Length > 0 && !string.IsNullOrWhiteSpace(e.Val) && e.Val != Masking.Masked)
             {

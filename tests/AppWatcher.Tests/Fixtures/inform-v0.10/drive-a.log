@@ -1,0 +1,78 @@
+08:28:11 START part A pid=676
+08:28:11 OPEN Customer Master (mouse)
+08:28:20   type into id=527184
+08:28:29   tabs: Main | General | Credit | Notes | Freight | Truck Routes | Authentication | Credit References | Price Contracts | P/O Specs | Part Numbers | Vendor Ids | Sources | Tax Matrix | Custom Fields | Consignment | Johnstone | Web Options | Layouts | Setup | Ledger | Ship Tos | Contacts | Activities | Attachments | Audit
+08:28:30   nav 'Main'
+08:28:36   nav 'General'
+08:28:42   nav 'Credit'
+08:28:48   nav 'Notes'
+08:28:53   nav 'Freight'
+08:28:59   hover 'New'
+08:29:00   hover 'Edit'
+08:29:01   hover 'Exit'
+08:29:03   hover 'Report'
+08:29:04   hover 'Labels'
+08:29:05   hover 'New Order'
+08:29:06   press 'Exit' (mouse)
+08:29:16 LEAVE (tab items visible: 0)
+08:29:17 OPEN Vendor Master (mouse)
+08:29:24   type into id=1575874
+08:29:33   tabs: Main | General | Drop Ship Charges | Purchasing | Notes | Consignment / MFG Rep | Warranty | Sources | Patterns | Custom Fields | Johnstone | Setup | Ledger | Activities | Contacts | Johnstone | Attachment | Audit
+08:29:34   nav 'Main'
+08:29:40   nav 'General'
+08:29:46   nav 'Drop Ship Charges'
+08:29:52   nav 'Purchasing'
+08:29:59   hover 'Edit'
+08:30:00   hover 'Exit'
+08:30:01   hover 'New'
+08:30:03   hover 'Edit'
+08:30:04   hover 'Exit'
+08:30:05   hover 'Report'
+08:30:06   press 'Exit' (mouse)
+08:30:25 LEAVE (tab items visible: 0)
+08:30:26 OPEN Product Master (mouse)
+08:30:33   type into id=3409452
+08:30:42   tabs: Main | Quote | Catalog | S/O Ext Comments | Main | General | Purchasing | Notes | Options & Accessories | Assemblies | Bins | Replenishments | Vendors | Substitutes | Keywords | Secondary Price Groups | Web Options | Part Numbers | Roll-Up History | Custom Fields | Johnstone | Popup Control | Setup | Analysis | Inventory | Pricing | Johnstone | Attachments | Audit
+08:30:43   nav 'Main'
+08:30:48   nav 'Quote' not found
+08:30:48   nav 'Catalog' not found
+08:30:48   nav 'S/O Ext Comments' not found
+08:30:49   nav 'Main'
+08:30:55   hover 'New'
+08:30:57   hover 'Edit'
+08:30:58   hover 'Exit'
+08:30:59   hover 'Report'
+08:31:01   hover '1.0.1 is now available!'
+08:31:02   hover 'Select Card Terminal'
+08:31:03   press 'Exit' (mouse)
+08:31:13 LEAVE (tab items visible: 0)
+08:31:18   contact search 'Test': windows 
+08:31:21   hover '1.0.1 is now available!'
+08:31:22   hover 'Select Card Terminal'
+08:31:23   hover 'Change Register'
+08:31:25   hover 'User Mail'
+08:31:25   button 'Exit' not found
+08:31:32 LEAVE (tab items visible: 0)
+08:31:37   contact search 'ACME': windows 
+08:31:40   hover '1.0.1 is now available!'
+08:31:41   hover 'Select Card Terminal'
+08:31:43   hover 'Change Register'
+08:31:44   hover 'User Mail'
+08:31:44   button 'Exit' not found
+08:31:51 LEAVE (tab items visible: 0)
+08:31:52 OPEN Product Analysis (mouse)
+08:31:59   type into id=2295514
+08:32:07   tabs: Current Warehouse | All Warehouses | Overview | Assembly | Demand | Vendors | Transactions | Sales Orders | Purchase Orders | Transfers | Work Orders | Serial Numbers | Lots | Substitutes | Bins | Bins | Setup | Analysis | Inventory | Pricing | Johnstone | Attachments | Audit
+08:32:08   nav 'Current Warehouse'
+08:32:13   nav 'All Warehouses' not found
+08:32:13   nav 'Overview'
+08:32:19   nav 'Assembly'
+08:32:24   hover 'New'
+08:32:26   hover 'Edit'
+08:32:27   hover 'Exit'
+08:32:29   hover 'Report'
+08:32:30   hover '1.0.1 is now available!'
+08:32:31   hover 'Select Card Terminal'
+08:32:32   press 'Exit' (mouse)
+08:32:42 LEAVE (tab items visible: 0)
+08:32:42 END part A

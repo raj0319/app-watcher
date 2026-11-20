@@ -26,9 +26,13 @@ public sealed class UiEvent
     [JsonPropertyName("shot")] public string? Shot { get; set; }
     /// <summary>For value events: "app" when the program filled the value in itself (the field did not have keyboard focus); null when the user typed it.</summary>
     [JsonPropertyName("by")] public string? By { get; set; }
+    /// <summary>For grid cell values: the row the cell belongs to ("line 1" by the line number cell, else "row 0"); null for fields.</summary>
+    [JsonPropertyName("row")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Row { get; set; }
 
     /// <summary>"events/2026-01-01.jsonl#L12" - set by the reader, never serialized.</summary>
     [JsonIgnore] public string Source { get; set; } = "";
+    /// <summary>Collector only, never written: a value from an editor lying over a grid cell (the editor names the grid, not the column).</summary>
+    [JsonIgnore] public bool OverGridCell { get; set; }
 
     /// <summary>
     /// The name a person would use for the control: its Name, else its cleaned AutomationId, else the control type. A Name

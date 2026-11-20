@@ -6,6 +6,9 @@ person or an AI that wants to read the raw evidence, not only the memory files.
 
 ## events/<yyyy-MM-dd>.jsonl
 
+Grid cell values carry `row` ("line 2" by the line number cell, else "row 0" by order) so the cells of one line can be told
+apart from a new empty line read in the same batch.
+
 One JSON object per line, one line per user action inside the watched app. Nothing is written while
 another program is in front. After a merge from another PC the file is `<yyyy-MM-dd>.<machine>.jsonl`.
 

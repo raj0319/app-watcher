@@ -14,6 +14,8 @@ public sealed class FieldRead
     public bool IsCell { get; set; }
     /// <summary>The control's screen rectangle ("x,y wxh"), so the focused cell can be matched by place when it has no name.</summary>
     public string Position { get; set; } = "";
+    /// <summary>For a grid cell: its row ("line 2" by the line number cell, else "row 0" by order); empty for a field.</summary>
+    public string Row { get; set; } = "";
 }
 
 /// <summary>
@@ -49,6 +51,7 @@ public static class FieldReads
             foreach (var c in rowCells)
             {
                 c.Key = $"{gridName}\u0001{c.Label}\u0001{rowKey}";
+                c.Row = rowKey;
                 if (seenKeys.Add(c.Key) && result.Count < MaxControls) result.Add(c);
             }
             rowCells.Clear();
@@ -186,26 +189,96 @@ public static class FieldReads
     {
         if (!Labels.TryRect(editorPosition, out var ex, out var ey, out var ew, out var eh) || ew <= 0) return null;
         static string Identity(ControlRow r) => r.Type + "\u0001" + r.AutomationId + "\u0001" + r.Name + (r.AutomationId.Length == 0 && r.Name.Length == 0 ? "\u0001" + r.Position : "");
-        // a grid that was there before with the same rows is not a lookup that opened (the product lookup stays on screen after the first search)
-        var old = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        for (var i = 0; i < before.Count; i++) if (GridTypes.Contains(before[i].Type)) old[Identity(before[i])] = GridLines(before, i, maxRows);
+        // a list or grid that was in the previous read of this window is not a lookup that opened, whatever rows it shows now
+        // (a record loaded by a code refills grids that were there; the product lookup stays on screen while a cell is typed in)
+        var old = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < before.Count; i++) if (GridTypes.Contains(before[i].Type)) old.Add(Identity(before[i]));
         for (var i = 0; i < after.Count; i++)
         {
             var g = after[i];
             if (!GridTypes.Contains(g.Type)) continue;
-            if (old.TryGetValue(Identity(g), out var oldLines) && oldLines.SequenceEqual(GridLines(after, i, maxRows))) continue;
+            if (old.Contains(Identity(g))) continue;
             if (!Labels.TryRect(g.Position, out var gx, out var gy, out var gw, out var gh) || gw <= 0 || gh <= 0) continue;
             var holdsEditor = ex >= gx && ey >= gy && ex + ew <= gx + gw && ey + eh <= gy + gh;
             if (holdsEditor) continue;
-            var overlapsX = gx < ex + ew && gx + gw > ex;
-            var below = gy >= ey + eh - 4 && gy - (ey + eh) <= 400;
-            if (!overlapsX || !below) continue;
+            if (!UnderOrBeside(ex, ey, ew, eh, gx, gy, gw, gh)) continue;
             var lines = GridLines(after, i, maxRows);
             if (lines.Count <= 1) continue;
             var name = g.Name.Length > 0 ? g.Name : Labels.Clean(g.AutomationId);
             return (name.Length == 0 ? "lookup" : name, lines);
         }
         return null;
+    }
+
+    /// <summary>The most a lookup list may start away from the field it serves (below it, or beside it).</summary>
+    public const int LookupGapPx = 40;
+
+    /// <summary>
+    /// A list starts under the field (its top within <see cref="LookupGapPx"/> below the field's bottom, overlapping its columns)
+    /// or beside it (its left within <see cref="LookupGapPx"/> of the field's right edge, overlapping its rows).
+    /// </summary>
+    public static bool UnderOrBeside(int ex, int ey, int ew, int eh, int gx, int gy, int gw, int gh)
+    {
+        var overlapsX = gx < ex + ew && gx + gw > ex;
+        var overlapsY = gy < ey + eh && gy + gh > ey;
+        var below = gy >= ey + eh - 4 && gy - (ey + eh) <= LookupGapPx;
+        var beside = gx >= ex + ew - 4 && gx - (ex + ew) <= LookupGapPx;
+        return overlapsX && below || overlapsY && beside;
+    }
+
+    /// <summary>A popup window (a top window of its own) is a lookup for the field when it starts under or beside it.</summary>
+    public static bool PopupServesField(string fieldPosition, string popupPosition)
+    {
+        if (!Labels.TryRect(fieldPosition, out var ex, out var ey, out var ew, out var eh) || ew <= 0) return false;
+        if (!Labels.TryRect(popupPosition, out var gx, out var gy, out var gw, out var gh) || gw <= 0 || gh <= 0) return false;
+        return UnderOrBeside(ex, ey, ew, eh, gx, gy, gw, gh);
+    }
+
+    /// <summary>The cells of one grid row of a read, by row key.</summary>
+    public static List<FieldRead> RowCells(IReadOnlyList<FieldRead> reads, string row) => row.Length == 0 ? new() : reads.Where(f => f.IsCell && f.Row == row).ToList();
+
+    /// <summary>
+    /// One grid row read on its own (the row under the cell the user typed in, read by place after the focus moved to another
+    /// line): the grid row and its column headers from the last full read of the document, then the row's own subtree.
+    /// The cells come out keyed exactly as in a full read (by the line number cell when there is one).
+    /// </summary>
+    public static List<FieldRead> RowFromSubtree(IList<ControlRow> lastFullRead, string anyCellPosition, IList<ControlRow> rowSubtree)
+    {
+        if (rowSubtree.Count == 0 || !Labels.TryRect(anyCellPosition, out var cx, out var cy, out var cw, out var ch)) return new();
+        var gi = -1;
+        for (var i = 0; i < lastFullRead.Count; i++)
+        {
+            var r = lastFullRead[i];
+            if (!(GridTypes.Contains(r.Type) || r.Type == "Custom" && r.AutomationId.StartsWith("grid", StringComparison.OrdinalIgnoreCase))) continue;
+            if (Labels.TryRect(r.Position, out var gx, out var gy, out var gw, out var gh) && cx + cw / 2 >= gx && cx + cw / 2 <= gx + gw && cy + ch / 2 >= gy && cy + ch / 2 <= gy + gh) gi = i;
+        }
+        if (gi < 0) return new();
+        var grid = lastFullRead[gi];
+        var synthetic = new List<ControlRow> { grid };
+        for (var j = gi + 1; j < lastFullRead.Count && lastFullRead[j].Depth > grid.Depth; j++)
+            if (lastFullRead[j].Type is "HeaderItem" or "Header") synthetic.Add(lastFullRead[j]);
+        var top = rowSubtree.Min(r => r.Depth);
+        foreach (var r in rowSubtree)
+            synthetic.Add(new ControlRow { Depth = grid.Depth + 1 + (r.Depth - top), Type = r.Type, Name = r.Name, AutomationId = r.AutomationId, Position = r.Position, IsPassword = r.IsPassword, Value = r.Value });
+        return FromRows(synthetic).Where(f => f.IsCell).ToList();
+    }
+
+    /// <summary>
+    /// The difference inside one grid row between a snapshot and a later read of it: the typed column's change is the user's,
+    /// every other changed cell is the program's (a price, an extension). Cells that went empty are left out.
+    /// </summary>
+    public static (List<FieldRead> typed, List<FieldRead> filled) RowDiff(IReadOnlyList<FieldRead> before, IReadOnlyList<FieldRead> after, string typedColumn)
+    {
+        var prev = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var f in before) prev.TryAdd(f.Label, f.Value);
+        var typed = new List<FieldRead>(); var filled = new List<FieldRead>();
+        foreach (var f in after)
+        {
+            if (prev.TryGetValue(f.Label, out var old) && old == f.Value) continue;
+            if (f.Value.Trim().Length == 0) continue;
+            if (f.Label == typedColumn) typed.Add(f); else filled.Add(f);
+        }
+        return (typed, filled);
     }
 
     /// <summary>Header line and first rows of the grid at <paramref name="index"/>, cells joined by " | ".</summary>

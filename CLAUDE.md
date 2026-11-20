@@ -15,7 +15,7 @@ src/AppWatcher.Driver/   the scenario driver: runs scenarios/*.json on the origi
                          confirmation, acts only while the target is in front); the one program here that clicks. Writes run.jsonl for --verify
 scenarios/               scenario files (sample-erp.json drives tests/SampleApp); the format is src/AppWatcher.Core/Verification/Scenario.cs
 profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
-tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform, inform-v0.8 and inform-v0.9 hold anonymised copies of three real sessions (see their READMEs; inform-v0.9/clicks.json holds every truth click with its point)
+tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform, inform-v0.8, inform-v0.9 and inform-v0.10 hold anonymised copies of four real sessions (see their READMEs; inform-v0.9/clicks.json holds every truth click with its point)
 tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
 scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, scenario-run.ps1 (driver + scorecard on the sample app), check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
@@ -102,15 +102,18 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   Validation messages go to the settings window's status line. Export writes to a fixed path.
 - Dialogs are decided by structure (`DialogDetector`), never by a title pattern alone; a profile's `dialogWindows`
   pattern only helps when the structure allows it (`CouldBeNamedDialog`).
+- Click and press decisions live in `ClickTracker` (Core, pure): the collector feeds it one `InputSample` per event and the
+  fixture replay feeds it the live order of a recorded run. A click is a down seen (bit 0) and the button up at a sample;
+  without one nothing is pressed (no hovered button, no focused default button, no resting pointer). Trees are kept per
+  window handle; a document with no tree of its own is never resolved on its top window's tree.
 - Presses on toolkits whose buttons announce nothing come from the control under the pointer, read with
   ElementFromPoint at once when the left button went down (`GetAsyncKeyState` sampled at each event the collector
   already receives: a read, never a hook) or when a PRESSED state or mouse capture says so (a state change on hover
   remembers nothing), or from the focused button; counted when a window, document, tab or message changes or the
   program fills a value within 1.5 s (`PressDecider`, pure and tested). When the button is gone by the time the click is
   heard of (Exit, OK, Cancel: the next event is the destroy), the window's last recorded tree is the hit-test surface
-  (`TreeHitTest`, positions in screen pixels); the trees are tried in the order `TreeHitTest.Surfaces` gives (the window
-  destroyed, the one in front, the one in front at the previous event, each followed by its MDI container), and a hit on a
-  tab item is a page selection. A click while a menu is open or just closed belongs to the menu (its item is counted when
+  (`TreeHitTest`, positions in screen pixels); the trees are tried in the order `ClickSurfaces.Resolve` gives (a window
+  going away first, then the window really under the point, by WindowFromPoint), and a hit on a tab item is a page selection. A click while a menu is open or just closed belongs to the menu (its item is counted when
   the menu closes), never to the control under the popup. Nothing is remembered from a state change (Infragistics raises
   it on hover). Documents of an MDI workspace are the child
   windows of the MDICLIENT pane (`MdiWorkspace`): the one in front by z-order is the screen, read from its own window;

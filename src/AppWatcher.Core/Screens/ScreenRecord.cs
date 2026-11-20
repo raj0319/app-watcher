@@ -246,8 +246,35 @@ public static class ScreenWriter
             }
             if (File.Exists(path))
             {
-                // same title pattern, different structure: keep the richer tree
                 var old = ScreenRecord.Parse(path);
+                if (old is not null && IsOtherLayout(old, rec))
+                {
+                    // same title, another layout (Product Master and Product Analysis both show "Product - <code>"): a record of its own,
+                    // unless one of the variants already has this layout
+                    var stem = Path.GetFileNameWithoutExtension(rec.FileName);
+                    for (var n = 2; n <= MaxLayoutsPerTitle; n++)
+                    {
+                        var variant = Path.Combine(screensDir, $"{stem}-{n}.md");
+                        if (File.Exists(variant))
+                        {
+                            var v = ScreenRecord.Parse(variant);
+                            if (v is not null && !IsOtherLayout(v, rec))
+                            {
+                                var keep = v.Controls.Count >= rec.Controls.Count;
+                                if (!keep) File.WriteAllText(variant, rec.ToMarkdown());
+                                index[hash] = new IndexEntry { File = Path.GetFileName(variant), Titles = { rec.Title }, Kind = rec.Kind };
+                                File.WriteAllText(indexPath, JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
+                                return !keep;
+                            }
+                            continue;
+                        }
+                        File.WriteAllText(variant, rec.ToMarkdown());
+                        index[hash] = new IndexEntry { File = Path.GetFileName(variant), Titles = { rec.Title }, Kind = rec.Kind };
+                        File.WriteAllText(indexPath, JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
+                        return true;
+                    }
+                }
+                // same title pattern, the same layout read more or less fully: keep the richer tree
                 if (old is not null && old.Controls.Count >= rec.Controls.Count)
                 {
                     index[hash] = new IndexEntry { File = rec.FileName, Titles = { rec.Title }, Kind = rec.Kind };
@@ -260,6 +287,25 @@ public static class ScreenWriter
             File.WriteAllText(indexPath, JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
             return true;
         }
+    }
+
+    /// <summary>At most this many layouts are kept under one title (the first record plus "-2" to "-5").</summary>
+    public const int MaxLayoutsPerTitle = 5;
+
+    /// <summary>
+    /// Two trees under one title are different layouts when the buttons, fields and tab pages they share are fewer than half of
+    /// the ones they have between them (a tree read before the window finished loading shares nearly all of its controls).
+    /// </summary>
+    public static bool IsOtherLayout(ScreenRecord a, ScreenRecord b)
+    {
+        static HashSet<string> Ids(ScreenRecord r) => r.Controls
+            .Where(c => c.Depth > 0 && c.Type is "Button" or "SplitButton" or "MenuItem" or "TabItem" or "Edit" or "ComboBox" or "CheckBox" or "RadioButton")
+            .Select(c => c.Type + "\u0001" + (c.AutomationId.Length > 0 && !c.AutomationId.All(char.IsDigit) ? c.AutomationId : c.Name.Trim()))
+            .Where(k => !k.EndsWith("\u0001", StringComparison.Ordinal)).ToHashSet(StringComparer.Ordinal);
+        var x = Ids(a); var y = Ids(b);
+        if (x.Count < 5 || y.Count < 5) return false;
+        var shared = x.Count(y.Contains);
+        return shared * 2 < x.Union(y).Count();
     }
 
     private static Dictionary<string, IndexEntry> ReadIndex(string indexPath)

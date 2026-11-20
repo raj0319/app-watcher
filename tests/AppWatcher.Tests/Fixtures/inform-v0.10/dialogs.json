@@ -1,0 +1,88 @@
+{
+  "Close?": {
+    "w": 541,
+    "h": 183,
+    "buttons": [
+      {
+        "name": "Cancel",
+        "x": 432,
+        "y": 139,
+        "w": 84,
+        "h": 26
+      },
+      {
+        "name": "OK",
+        "x": 318,
+        "y": 139,
+        "w": 84,
+        "h": 26
+      }
+    ]
+  },
+  "No Selection Specified": {
+    "w": 541,
+    "h": 183,
+    "buttons": [
+      {
+        "name": "Yes",
+        "x": 316,
+        "y": 139,
+        "w": 84,
+        "h": 26
+      },
+      {
+        "name": "No",
+        "x": 433,
+        "y": 139,
+        "w": 84,
+        "h": 26
+      }
+    ]
+  },
+  "Attention": {
+    "w": 541,
+    "h": 219,
+    "buttons": [
+      {
+        "name": "OK",
+        "x": 433,
+        "y": 175,
+        "w": 84,
+        "h": 26
+      }
+    ]
+  },
+  "Advanced Demand Forecasting and Purchasing": {
+    "w": 1075,
+    "h": 351,
+    "buttons": [
+      {
+        "name": "OK",
+        "x": 967,
+        "y": 307,
+        "w": 84,
+        "h": 26
+      }
+    ]
+  },
+  "Protected Area": {
+    "w": 508,
+    "h": 246,
+    "buttons": [
+      {
+        "name": "Cancel",
+        "x": 396,
+        "y": 199,
+        "w": 84,
+        "h": 26
+      },
+      {
+        "name": "OK",
+        "x": 282,
+        "y": 199,
+        "w": 84,
+        "h": 26
+      }
+    ]
+  }
+}

@@ -179,6 +179,7 @@ internal sealed class WatchService : IDisposable
                 if (png is not null) StoreShot(raw.Screen.Title, "first-seen", png, hash, raw.T, "screen record");
             }
         }
+        if (raw.ScreenOnly) return; // a second layout under a title: the record is kept, no event is written for it
         if (raw.Act == Acts.Dropdown && _shotMode == "actions" && raw.Hwnd != IntPtr.Zero && !Paused && _uia.InFront)
         {
             // the suggestion list is its own little window and goes away fast: picture it now
@@ -190,14 +191,14 @@ internal sealed class WatchService : IDisposable
         if (!inFront) return; // another program is in front: record nothing
         _lastActivity = DateTime.Now;
 
-        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How, By = raw.By };
+        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How, By = raw.By, Row = raw.Row, OverGridCell = raw.OverGridCell };
         if (raw.Act == Acts.Value)
         {
             // one event per typed value: committed when focus moves on or after the quiet time
             _debounce.Push(ev, DateTime.Now);
             return;
         }
-        FlushPending(all: true); // focus left the control (or anything else happened): commit pending values first
+        Commit(_debounce.FlushFor(ev, DateTime.Now)); // the user moved on (focus, press, close, message): commit what that ends
         if (raw.Act == Acts.Dropdown) { ev.Items = raw.Items; _status.Dropdowns = Math.Max(_status.Dropdowns, 0); }
         if (raw.Act == Acts.Menu) ev.Items = raw.Items;
         Write(ev);
@@ -214,9 +215,11 @@ internal sealed class WatchService : IDisposable
         }
     }
 
-    private void FlushPending(bool all)
+    private void FlushPending(bool all) => Commit(_debounce.Flush(DateTime.Now, all));
+
+    private void Commit(List<UiEvent> values)
     {
-        foreach (var e in _debounce.Flush(DateTime.Now, all))
+        foreach (var e in values)
         {
             Write(e);
             if (e.By != ValueBy.App) _status.ValuesTyped++; // one typed value, after the keystrokes settled

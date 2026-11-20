@@ -62,6 +62,40 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.11: the four red rows of the v0.10 run (2026-11-20)
+
+The v0.10 run on the real ERP met five pass marks and moved Exit to 12 of 17 and sub-tabs to 32 of 49. The brief named six
+causes, each checked in the events; all six are fixed, and the run is the new fixture `inform-v0.10`.
+
+- **One place for the click decisions** (`ClickTracker` in Core): the collector calls it at every event, and the fixture
+  replay calls the same class with the run's live order (hovers, the click heard at the event that followed it, the destroy).
+- **A click needs a click.** `ClickSampler`: a down seen since the last sample (bit 0) and the button up at a sample; the
+  point is the pointer read in the same handler. Without a click nothing is pressed: the control under a resting pointer and
+  a focused default button are credited only right after a click (or Enter), and a PRESSED state only while the button is
+  down. The "moved since the previous event" surface of the last commit is gone (it used a point from an earlier event).
+- **Message boxes** keep their button rows in memory while they live; a click heard at the foreground switch that comes
+  before the box closes is resolved on the box (`ClickSurfaces`: a window going away first, then the window really under the
+  point by WindowFromPoint, never a tree found by title, never the top window's tree inside a document).
+- **One tree per document window.** A document whose title was seen before (Product Analysis after Product Master) gets its
+  own tree read for clicks, and a second layout under one title gets its own screen record (`name-2.md`). When the live element
+  under the point disagrees with the recorded row, the press is cancelled (the tree was stale).
+- **Clicks in a document are confirmed by its re-read** at 300 ms: a new row or a changed cell (Add Line Item).
+- **The typed grid row**: Enter or Tab notes the cell that had the focus; its row is read again (by place when the focus moved to
+  a new line) at 300 ms and 1.5 s; its cells carry a `row` field, and the learner keeps cell values per row, so a new empty line
+  no longer spoils the line being priced. Field reads are kept per window handle, so a document that takes its title keeps its
+  baseline. Windows that had the keyboard focus (GetGUIThreadInfo, a read) count as typed-in even when a focus event is missed.
+- **Typed values**: a value stays pending while the program reacts (retitle, tab reads, lookups) and is written once with the
+  final window; an empty typed value is never written; the grid editor's copy (named after the grid) waits 1.5 s and is dropped
+  when the cell read names the column; the cell's own value shown when editing starts is not typed.
+- **Learner**: a code typed in a window whose document takes its title within 5 s is the cause of the document's fills
+  (the document's own title read in between is the program, not a choice).
+- **Lookups**: only a list that was not in the previous read, starting within 40 px below or beside the field; a popup list
+  shown again while the same one is open is not new.
+- **Replay of the run** (`InformV11Tests`, 12 tests): Exit 17 of 17, message-box buttons 7 of 7, Add Line Item 2 of 2,
+  wrong-name presses 0, typed values without fragments or empty values and each quantity once, the extension formula, the
+  customer's header fills seen 2 of 2, lookups 2 right and 0 false. Sub-tabs: 42 of 49 resolve from the recorded trees and the
+  live read; the other 7 are in the two layouts v0.10 never recorded and need a driven run of v0.11. 149 tests in all.
+
 ## Version 0.11: the scenario driver and the scorecard (milestone M3, 2026-11-20)
 
 The hand-driven runs on the test PC (`drive-*.ps1` plus `score9.py`) became a tool in the repository.
