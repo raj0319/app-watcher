@@ -1,0 +1,87 @@
+16:17:50 START complex2 pid=676 minutes=12 flows=2 once=False
+16:17:51 FLOW SalesOrder
+16:17:51 OPEN Sales Order (mouse)
+16:18:00   focused Edit id=2688564 -> type
+16:18:17   line1: um=EA price=45.3426 ext=45.34
+16:18:24   qty 5 -> ext=226.71
+16:18:30   qty 20 -> ext=906.85
+16:18:31   press 'Add Line Item' (mouse)
+16:18:54   line2 ext=0
+16:18:54   nav 'Details'
+16:18:59   nav 'Procurement'
+16:19:04   nav 'Final'
+16:19:10   nav 'Shipments'
+16:19:15   nav 'Header'
+16:19:25   nav 'Detail'
+16:19:31   hover 'New'
+16:19:32   hover 'Save'
+16:19:34   hover 'Cancel'
+16:19:35   hover 'Exit'
+16:19:36   hover 'Add Line Item'
+16:19:38   hover 'Comments'
+16:19:39   press 'Exit' (mouse)
+16:19:44   prompt 'Close?' buttons [OK, Cancel] -> OK
+16:19:51 LEAVE (tab items visible: 0)
+16:19:53 round 1 done
+16:19:53 END
+16:19:55 START complex2 pid=676 minutes=12 flows=2 once=False
+16:19:55 FLOW PurchaseOrder
+16:19:56 OPEN Purchase Order (mouse)
+16:20:03   focused Edit id=4262006 -> type
+16:20:12   grid headers: 
+16:20:13   tabs: Special Instructions | Internal Notes | Main | Johnstone | Other | Header | Detail | Final | Receivings | Activities | Attachments | Audit | Custom Fields
+16:20:14   grid headers: 
+16:20:14   nav 'Special Instructions'
+16:20:20   nav 'Internal Notes'
+16:20:26   nav 'Main'
+16:20:32   nav 'Johnstone'
+16:20:39   hover 'Edit'
+16:20:40   hover 'Exit'
+16:20:42   hover 'New'
+16:20:43   hover 'Save'
+16:20:44   hover 'Cancel'
+16:20:46   press 'Exit' (mouse)
+16:21:04   prompt 'Close?' buttons [OK, Cancel] -> OK
+16:21:07 LEAVE (tab items visible: 0)
+16:21:09 round 1 done
+16:21:09 END
+16:21:12 START complex2 pid=676 minutes=12 flows=2 once=False
+16:21:12 FLOW VendorLedger
+16:21:12 OPEN Vendor Ledger (mouse)
+16:21:19   focused Edit id=4392470 -> type
+16:21:32   tabs: Chart | Data | Invoices | Payment History | Transactions | Orders | Setup | Ledger | Activities | Contacts | Johnstone | Attachment | Audit
+16:21:40   grid headers: Days Overdue | Amount | Percent | Document | Br/Bnk | Status | Date | PO/Ref # | Due Date | Discount | Disc Date | Balance
+16:21:41   nav 'Chart'
+16:21:50   nav 'Data'
+16:21:59   nav 'Invoices'
+16:22:08   nav 'Payment History'
+16:22:19   hover 'Edit'
+16:22:21   hover 'Exit'
+16:22:22   hover 'New'
+16:22:23   hover 'Edit'
+16:22:25   hover 'Exit'
+16:22:26   close popup 'Vendor - 00001 "ACME" Internal Notes' via Exit
+16:22:37   press 'Exit' (mouse)
+16:22:47 LEAVE (tab items visible: 0)
+16:22:49 round 1 done
+16:22:49 END
+16:22:51 START complex2 pid=676 minutes=12 flows=2 once=False
+16:22:52 FLOW ProductAnalysis
+16:22:52 OPEN Product Analysis (mouse)
+16:22:59   focused Edit id=4196452 -> type
+16:23:07   tabs: Current Warehouse | All Warehouses | Overview | Assembly | Demand | Vendors | Transactions | Sales Orders | Purchase Orders | Transfers | Work Orders | Serial Numbers | Lots | Substitutes | Bins | Bins | Setup | Analysis | Inventory | Pricing | Johnstone | Attachments | Audit
+16:23:08   grid headers: On Hand | Cmttd | Picked | On Shelf | Avail | On P/O | On B/O | Staged | On SO/Pckd | Trans Out/Pckd | Trans In/Pckd | On D/S | S/O Rtrn | On W/O Kit | On W/O Comp | MTD Units | LYCM Units | 12 Mon Units | 12 Mon Dmnd | 12 Mon Hits | Rank | Dmnd Trend % | Qrtly Proj Usage | Weeks Available | Reorder Pnt | Stock Value | YTD Avg GP % | Primary Bin | Forecast Type | On P/O Future | Whse Cst | Column | Amount | Changed
+16:23:08   nav 'Current Warehouse'
+16:23:13   nav 'All Warehouses' not found
+16:23:13   nav 'Overview'
+16:23:19   nav 'Assembly'
+16:23:23   nav 'Demand' not found
+16:23:25   hover 'New'
+16:23:26   hover 'Edit'
+16:23:27   hover 'Exit'
+16:23:29   hover 'Report'
+16:23:30   hover '26.4.1 is now available!'
+16:23:36   press 'Exit' (mouse)
+16:23:46 LEAVE (tab items visible: 0)
+16:23:48 round 1 done
+16:23:48 END
