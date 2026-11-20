@@ -14,3 +14,6 @@ evidence/
 # evidence copied from a client PC (never committed)
 app-watcher-v*-inform-evidence-*/
 /test-v*-inform.md
+
+# third-party code unpacked for audit (no licence file; never committed)
+external/
