@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using AppWatcher.Core.Learning;
 
@@ -6,13 +6,13 @@ namespace AppWatcher.Core;
 
 public sealed class WatcherConfig
 {
-    public const string AppVersion = "0.11";
+    public const string AppVersion = "0.12";
 
     /// <summary>Words on a button or menu item that mean "this writes data", in the languages we meet most. Profiles add their own.</summary>
     public static readonly string[] DefaultTriggers =
     {
         "save", "post", "ok", "apply", "submit", "print", "delete", "send", "update", "accept", "finalize", "finalise", "process", "commit", "confirm", "release", "approve", "void", "complete",
-        "guardar", "speichern", "enregistrer", "salva", "salvar", "opslaan", "zapisz", "gem", "spara", "tallenna", "сохранить", "保存", "저장", "保存する",
+        "guardar", "speichern", "enregistrer", "salva", "salvar", "opslaan", "zapisz", "gem", "spara", "tallenna", "ÑÐ¾Ñ…Ñ€Ð°Ð½Ð¸Ñ‚ÑŒ", "ä¿å­˜", "ì €ìž¥", "ä¿å­˜ã™ã‚‹",
     };
 
     public int Version { get; set; } = 1;
@@ -134,9 +134,9 @@ public sealed class SqlCaptureSettings
 /// <summary>What stays out of the files. Titles of windows and tabs often carry record ids and names.</summary>
 public sealed class PrivacySettings
 {
-    /// <summary>Replace quoted parts of window titles and tab labels ("ACME INC") with "…" in memory and export files.</summary>
+    /// <summary>Replace quoted parts of window titles and tab labels ("ACME INC") with "â€¦" in memory and export files.</summary>
     public bool MaskTitles { get; set; } = true;
-    /// <summary>Title patterns with one * ("DDI System Inform - *"): the part the star matches (the company name) becomes "…" in memory and export files.</summary>
+    /// <summary>Title patterns with one * ("DDI System Inform - *"): the part the star matches (the company name) becomes "â€¦" in memory and export files.</summary>
     public List<string> TitleMasks { get; set; } = new();
     /// <summary>Pictures of the app's window under screens/shots/. Kept for older configs; ScreenshotMode decides.</summary>
     public bool Screenshots { get; set; } = true;
@@ -160,7 +160,7 @@ public sealed class CollectorSettings
     public bool MsaaFallback { get; set; } = true;
     /// <summary>Count a focus on a button or menu item followed within half a second by a window change as a press.</summary>
     public bool PressInference { get; set; } = true;
-    /// <summary>Dump the selected tab's content as a screen of its own ("Window › Tab") and attribute events to it.</summary>
+    /// <summary>Dump the selected tab's content as a screen of its own ("Window â€º Tab") and attribute events to it.</summary>
     public bool TabDocuments { get; set; } = true;
     /// <summary>
     /// Read which inner tab item is selected through the selection property (one cached read). Off for plain WinForms, where

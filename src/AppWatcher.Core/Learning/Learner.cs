@@ -17,11 +17,23 @@ public static class Learner
 {
     public const string StateFile = "learn-state.json";
 
+    /// <summary>
+    /// The title masks of the settings and the profile (the company name in the main title, quoted record names), applied to
+    /// every title key: memory text and the file names of screens and pictures alike. The watcher calls it at start too, so a
+    /// screen file is never named after the company.
+    /// </summary>
+    public static void ApplyTitleMasks(WatcherConfig? config)
+    {
+        if (config is null) return;
+        Titles.MaskQuoted = config.Privacy.MaskTitles; Titles.MaskPatterns = config.Privacy.TitleMasks.ToList();
+        var profile = config.Profile is { Length: > 0 } pn ? Discovery.ProfileStore.ByName(pn) : null;
+        if (profile is not null) foreach (var m in profile.TitleMasks) if (!Titles.MaskPatterns.Contains(m)) Titles.MaskPatterns.Add(m);
+    }
+
     public static LearnInput LoadInput(AppPaths paths, string appName, WatcherConfig? config = null, DateTime? since = null)
     {
-        if (config is not null) { Titles.MaskQuoted = config.Privacy.MaskTitles; Titles.MaskPatterns = config.Privacy.TitleMasks.ToList(); }
+        ApplyTitleMasks(config);
         var profile = config?.Profile is { Length: > 0 } pn ? Discovery.ProfileStore.ByName(pn) : null;
-        if (profile is not null) foreach (var m in profile.TitleMasks) if (!Titles.MaskPatterns.Contains(m)) Titles.MaskPatterns.Add(m);
         var input = new LearnInput
         {
             AppName = appName,
@@ -83,6 +95,13 @@ public static class Learner
     {
         var now = input.Now ?? DateTime.Now;
         var cutoff = now - FlowLearner.SessionGap;
+        // names on one line, for old event files too ("Net\r\nPrice" from a wrapped grid header is "Net Price")
+        foreach (var e in input.Events)
+        {
+            e.Name = Titles.OneLine(e.Name);
+            // a label that is the record's name from its window's title is data: the field goes by its cleaned automation id
+            if (e.Act is Acts.Value or Acts.Focus or Acts.Dropdown && Titles.IsQuotedInTitle(e.Name, e.Win)) e.Name = Screens.Labels.Clean(e.Aid);
+        }
         var wasIncremental = state.Watermark is not null;
         var keyIndex = RelationFinder.BuildKeyIndex(input.Latest);
         var triggers = BuildTriggerRegex(input.Triggers);
@@ -252,6 +271,7 @@ public static class Learner
                 var um = Regex.Match(st.Val!, @"user:(\w+)"); if (um.Success) s.Users.Add(um.Groups[1].Value);
                 var mm = Regex.Match(st.Val!, @"machine:(\w+)"); if (mm.Success) s.Machines.Add(mm.Groups[1].Value);
             }
+            GridEditors.NameEditors(session); // an editor over a grid cell without a name of its own takes the column's name
             FlowLearner.Accumulate(s, session, sessionWindows, dialogWindows);
             ValidationRuleLearner.Accumulate(s, session);
             AccumulateScreens(s, session);
@@ -285,10 +305,11 @@ public static class Learner
     private static void AccumulateScreens(LearnState s, List<UiEvent> session)
     {
         (string name, DateTime t)? lastMenu = null;
+        var echoes = LogicLearner.Echoes(session); // the program's text in a box a code was just typed in is not typing
         foreach (var e in session)
         {
             var key = Titles.Key(e.Win);
-            if (e.Act is Acts.Invoke or Acts.Select && e.Ct == "MenuItem" && !string.IsNullOrEmpty(e.Name)) lastMenu = (e.Name, e.T);
+            if (e.Act is Acts.Invoke or Acts.Select && e.Ct == "MenuItem" && !string.IsNullOrEmpty(e.Name)) lastMenu = (Titles.Name(e.Name), e.T);
             if (key.Length == 0) continue;
             if (!s.Screens.TryGetValue(key, out var si)) s.Screens[key] = si = new ScreenInfo { Title = key, File = "(no screen file)" };
             if (e.Act == Acts.Open || e.Act == Acts.Foreground) si.Visits++;
@@ -296,7 +317,7 @@ public static class Learner
             if (e.Act == Acts.Dialog && (Titles.Key(e.Name) == key || e.Ct == "Window")) si.Dialogs++;
             if (e.Act is Acts.Open or Acts.Dialog && lastMenu is not null && (e.T - lastMenu.Value.t).TotalSeconds <= 5 && Titles.Key(e.Name) == key)
                 si.MenuPaths[lastMenu.Value.name] = si.MenuPaths.GetValueOrDefault(lastMenu.Value.name) + 1;
-            if (e.Act is Acts.Value or Acts.Select && !string.IsNullOrEmpty(e.Val) && e.By != ValueBy.App)
+            if (e.Act is Acts.Value or Acts.Select && !string.IsNullOrEmpty(e.Val) && e.By != ValueBy.App && !echoes.Contains(e))
             {
                 var f = e.FieldKey;
                 if (!si.FieldValues.TryGetValue(f, out var vals)) si.FieldValues[f] = vals = new List<string>();
@@ -310,7 +331,12 @@ public static class Learner
                 var pat = ValuePattern.Of(e.Val);
                 pats[pat] = pats.GetValueOrDefault(pat) + 1;
             }
-            if (e.Act == Acts.Invoke && !string.IsNullOrEmpty(e.Name) && !si.Actions.Contains(e.Name)) si.Actions.Add(e.Name);
+            if (e.Act == Acts.Invoke && !string.IsNullOrEmpty(e.Name))
+            {
+                // the action's name masked like a title: a tab or button named after a record never reaches screens.md
+                var action = Titles.Name(e.FieldKey);
+                if (action.Length > 0 && !si.Actions.Contains(action)) si.Actions.Add(action);
+            }
             if (e.Act == Acts.Dropdown)
             {
                 var f = e.FieldKey;
@@ -402,11 +428,13 @@ public static class Learner
             }
             foreach (var a in rec.Actions)
             {
-                if (!si.Actions.Contains(a.Name)) si.Actions.Add(a.Name);
-                if (a.Shortcut.Length > 0) si.Shortcuts[a.Name] = a.Shortcut;
+                var action = Titles.Name(a.Name); // a tab item named after a record (Customer - # "…") is masked like its title
+                if (action.Length == 0) continue;
+                if (!si.Actions.Contains(action)) si.Actions.Add(action);
+                if (a.Shortcut.Length > 0) si.Shortcuts[action] = a.Shortcut;
             }
             if (rec.Kind is ScreenKinds.Dialog or ScreenKinds.Session or ScreenKinds.Tab) si.Kind = rec.Kind;
-            if (rec.MenuPath is not null && si.MenuPaths.Count == 0) si.MenuPaths[rec.MenuPath] = 1;
+            if (Titles.Name(rec.MenuPath) is { Length: > 0 } menuPath && si.MenuPaths.Count == 0) si.MenuPaths[menuPath] = 1;
             if (rec.ReachedFrom is not null && si.ReachedFrom is null) si.ReachedFrom = Titles.Key(rec.ReachedFrom);
         }
         foreach (var si in byKey.Values)

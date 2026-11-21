@@ -23,6 +23,8 @@ public sealed class CollectorStatus
     public int TabSelections { get; set; }
     /// <summary>Presses inferred from the control under the pointer when a window, tab or message changed.</summary>
     public int PressesPointer { get; set; }
+    /// <summary>Presses written with no click within 1.5 s before them and no Enter or Space (a debug counter: it must stay 0).</summary>
+    public int PressesWithoutClick { get; set; }
     /// <summary>Values the program filled in that were found by re-reading the document (grid cells, bound editors).</summary>
     public int ValuesReread { get; set; }
     public int Hints { get; set; }

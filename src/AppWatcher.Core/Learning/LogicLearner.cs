@@ -109,11 +109,17 @@ public static class LogicLearner
         var values = new Dictionary<string, Dictionary<string, string>>();
         // grid cells of one row (events that carry a row): their own values, so a new empty line does not stand in for the line being priced
         var rowValues = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
-        (string kind, string name, string win, DateTime t)? user = null;
+        var rowChanged = new Dictionary<string, Dictionary<string, DateTime>>(StringComparer.Ordinal); // when each cell of a row last took a new value
+        var userTimes = UserValueTimes(session);
+        // forDoc: a code typed in the main window and credited to the document that then took its title (its fills may take that long)
+        (string kind, string name, string win, DateTime t, bool forDoc)? user = null;
         (string win, string name, DateTime t)? press = null;
         var filledForCause = new HashSet<string>(StringComparer.Ordinal); // a field filled twice after one action (read at 300 ms and again at 1.5 s) is one fill
         var retitledCause = new HashSet<string>(StringComparer.Ordinal);  // the documents a typed code was counted as a cause in, after they took their title
-        var ordered = CauseFirst(session);
+        var echoes = Echoes(session);
+        var ordered = CauseFirst(session, echoes);
+        var partial = GridEditors.PartialCodes(session);      // partial codes typed for a lookup: no typing of the field as a cause
+        var typedForDocument = TypedBeforeTitle(session);     // a code typed in the main window just before one of its documents took its title
         for (var n = 0; n < ordered.Count; n++)
         {
             var e = ordered[n];
@@ -122,25 +128,41 @@ public static class LogicLearner
             {
                 var f = e.FieldKey;
                 var v = e.Val ?? "";
+                if (typedForDocument.TryGetValue(e, out var doc)) win = doc;
                 // a fill credited to the main window within two seconds of a value typed in one of its documents belongs to that document
                 if (e.By == ValueBy.App && user is { } ud && ud.win != win && ud.win.StartsWith(win + " › ", StringComparison.Ordinal) && (e.T - ud.t).TotalSeconds is >= -0.5 and <= 2) win = ud.win;
                 if (!values.TryGetValue(win, out var cur)) values[win] = cur = new Dictionary<string, string>();
                 // a grid cell with a row: its operands are the cells of the same row (read in the same batch first) plus the window's fields
                 var operands = cur;
+                var reread = false;
+                var unsettled = false;
                 if (!string.IsNullOrEmpty(e.Row))
                 {
+                    // the row's last known cells (kept for the whole session, so a price read once and unchanged since is still an
+                    // operand when only the quantity and the extension are read again), then the cells read in the same batch
                     var rk = win + "\u0001" + e.Row;
                     if (!rowValues.TryGetValue(rk, out var row)) rowValues[rk] = row = new Dictionary<string, string>();
+                    var batch = new Dictionary<string, string>(row);
                     for (var k = n + 1; k < ordered.Count && ordered[k].T == e.T; k++)
                     {
                         var o = ordered[k];
-                        if (o.Act == Acts.Value && o.Row == e.Row && Titles.Key(o.Win) == Titles.Key(e.Win) && o.Val is { } ov && ov != Masking.Masked) row[o.FieldKey] = ov;
+                        if (o.Act == Acts.Value && o.Row == e.Row && Titles.Key(o.Win) == Titles.Key(e.Win) && o.Val is { } ov && ov != Masking.Masked) batch[o.FieldKey] = ov;
                     }
                     operands = new Dictionary<string, string>(cur);
-                    foreach (var kv in row) operands[kv.Key] = kv.Value;
+                    foreach (var kv in batch) operands[kv.Key] = kv.Value;
+                    // a cell read again with the value it already had (the document re-read after a page change) is neither a fill nor a calculation
+                    reread = e.By == ValueBy.App && row.TryGetValue(f, out var had) && had == v;
+                    if (!rowChanged.TryGetValue(rk, out var changed)) rowChanged[rk] = changed = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+                    unsettled = e.By == ValueBy.App && !reread && Unsettled(s, win, f, e, row, batch, changed, userTimes);
+                    if (!row.TryGetValue(f, out var old) || old != v) changed[f] = e.T;
                     row[f] = v;
                 }
-                if (e.By == ValueBy.App)
+                if (reread || echoes.Contains(e))
+                {
+                    // an unchanged cell read again; or the program's text put in the box a code was typed in (the record's name
+                    // for the code): the typed code stays the cause of what the program fills next
+                }
+                else if (e.By == ValueBy.App)
                 {
                     if (v != Masking.Masked && v.Trim().Length > 0)
                     {
@@ -148,7 +170,7 @@ public static class LogicLearner
                         {
                             var age = (e.T - u.t).TotalSeconds;
                             // the same screen within the link window; or a code typed in a window whose document then took its title
-                            var linked = u.win == win && age is >= -0.5 and <= LinkWindowSeconds
+                            var linked = u.win == win && age >= -0.5 && age <= (u.forDoc ? RetitleLinkSeconds : LinkWindowSeconds)
                                          || u.kind == "typed" && win.StartsWith(u.win + " › ", StringComparison.Ordinal) && age is >= -0.5 and <= RetitleLinkSeconds;
                             if (linked)
                             {
@@ -158,13 +180,15 @@ public static class LogicLearner
                             }
                             else filledForCause.Remove(f);
                         }
-                        LearnCalc(s, win, f, v, operands, e.Source, weak: e.Ct == "DataItem");
+                        if (!unsettled) LearnCalc(s, win, f, v, operands, e.Source, weak: e.Ct == "DataItem");
                     }
                 }
                 else
                 {
-                    user = ("typed", f, win, e.T); filledForCause.Clear(); retitledCause.Clear();
-                    Count(s.Causes, LearnState.Key(win, "typed:" + f));
+                    user = ("typed", f, win, e.T, doc is not null); filledForCause.Clear(); retitledCause.Clear();
+                    // a partial code (a lookup list followed, or the grid never took it) is not one more time the field was typed:
+                    // what the pick from the lookup fills is still credited to the field, but the typing does not count as a cause
+                    if (!partial.Contains(e)) Count(s.Causes, LearnState.Key(win, "typed:" + f));
                 }
                 if (string.IsNullOrEmpty(e.Row)) cur[f] = v;
             }
@@ -173,17 +197,20 @@ public static class LogicLearner
                 var name = e.FieldKey;
                 // a document of the window taking its title right after a code was typed in that window is the program loading
                 // the record, not the user choosing a page: the typed code stays the cause of what fills next
-                var retitle = user is { kind: "typed" } ut && win.StartsWith(ut.win + " › ", StringComparison.Ordinal)
+                var retitle = user is { kind: "typed" } ut && (win == ut.win || win.StartsWith(ut.win + " › ", StringComparison.Ordinal))
                               && (e.T - ut.t).TotalSeconds is >= -0.5 and <= RetitleLinkSeconds && win.EndsWith(" › " + name, StringComparison.Ordinal);
-                if (retitle) continue;
-                user = ("chose", name, win, e.T); filledForCause.Clear();
+                // a page of the same window shown within a moment of a typed code (the product's page after a product code) is the
+                // program showing the record, not the user choosing it: the code stays the cause of what fills next
+                var shown = e.Ct == "TabItem" && user is { kind: "typed" } us && us.win == win && (e.T - us.t).TotalSeconds is >= 0 and <= EchoSeconds;
+                if (retitle || shown) continue;
+                user = ("chose", name, win, e.T, false); filledForCause.Clear();
                 Count(s.Causes, LearnState.Key(win, "chose:" + name));
             }
             else if (e.Act == Acts.Invoke && win.Length > 0)
             {
                 var kind = e.How == PressHow.Toggle ? "ticked" : e.Ct == "MenuItem" || e.How == PressHow.Menu ? "chose menu" : "pressed";
-                var name = e.FieldKey;
-                user = (kind, name, win, e.T); filledForCause.Clear();
+                var name = Titles.Name(e.FieldKey); // masked like a title, the same as the screens' lists of actions
+                user = (kind, name, win, e.T, false); filledForCause.Clear();
                 Count(s.Causes, LearnState.Key(win, kind + ":" + name));
                 if (kind == "pressed") press = (win, name, e.T);
             }
@@ -198,7 +225,7 @@ public static class LogicLearner
             {
                 var closed = Titles.Key(e.Name);
                 values.Remove(closed);
-                foreach (var k in rowValues.Keys.Where(k => k.StartsWith(closed + "\u0001", StringComparison.Ordinal)).ToList()) rowValues.Remove(k);
+                foreach (var k in rowValues.Keys.Where(k => k.StartsWith(closed + "\u0001", StringComparison.Ordinal)).ToList()) { rowValues.Remove(k); rowChanged.Remove(k); }
             }
             else if (e.Act == Acts.Hint && win.Length > 0 && !string.IsNullOrWhiteSpace(e.Val) && e.Val != Masking.Masked)
             {
@@ -206,9 +233,10 @@ public static class LogicLearner
             }
             else if (e.Act == Acts.Menu)
             {
-                if (!string.IsNullOrEmpty(e.Name) && win.Length > 0) Count(s.Causes, LearnState.Key(win, "chose menu:" + e.Name));
-                foreach (var item in (e.Items ?? new()).Where(i => i.Trim().Length > 0))
-                    Add(s.MenuSeen, LearnState.Key(e.Name ?? "", item.Trim()), e.Source);
+                var menu = Titles.Name(e.Name);
+                if (menu.Length > 0 && win.Length > 0) Count(s.Causes, LearnState.Key(win, "chose menu:" + menu));
+                foreach (var item in (e.Items ?? new()).Select(Titles.Name).Where(i => i.Length > 0))
+                    Add(s.MenuSeen, LearnState.Key(menu, item), e.Source);
             }
         }
     }
@@ -218,13 +246,16 @@ public static class LogicLearner
     /// (the total arrives some milliseconds before the quantity that caused it). A fill that comes within half a second
     /// before a value the user typed in the same window is processed after it, so the cause comes first.
     /// </summary>
-    public static List<UiEvent> CauseFirst(List<UiEvent> session)
+    public static List<UiEvent> CauseFirst(List<UiEvent> session) => CauseFirst(session, Echoes(session));
+
+    /// <summary>Same; <paramref name="echoes"/> (the program's text replacing a typed code, see <see cref="Echoes"/>) are held like the program's fills.</summary>
+    public static List<UiEvent> CauseFirst(List<UiEvent> session, ISet<UiEvent> echoes)
     {
         var ordered = new List<UiEvent>(session.Count);
         var held = new List<UiEvent>();
         foreach (var e in session)
         {
-            if (e.Act == Acts.Value && e.By == ValueBy.App) { held.Add(e); continue; }
+            if (e.Act == Acts.Value && (e.By == ValueBy.App || echoes.Contains(e))) { held.Add(e); continue; }
             if (held.Count > 0)
             {
                 var typedRightAfter = e.Act == Acts.Value && e.By != ValueBy.App
@@ -236,6 +267,99 @@ public static class LogicLearner
         }
         ordered.AddRange(held);
         return ordered;
+    }
+
+    /// <summary>How soon after a grid row was read a value the user typed in the same window shows the row was read mid-typing.</summary>
+    public const double LateTypingSeconds = 2;
+
+    /// <summary>The times of the values the user typed, per window.</summary>
+    private static Dictionary<string, List<DateTime>> UserValueTimes(List<UiEvent> session)
+    {
+        var d = new Dictionary<string, List<DateTime>>(StringComparer.Ordinal);
+        foreach (var e in session)
+        {
+            if (e.Act != Acts.Value || e.By == ValueBy.App) continue;
+            var w = Titles.Key(e.Win);
+            if (!d.TryGetValue(w, out var list)) d[w] = list = new List<DateTime>();
+            list.Add(e.T);
+        }
+        return d;
+    }
+
+    /// <summary>
+    /// A row read while the user's typing had not reached it yet: the program shows a new result in the row, none of the
+    /// row's cells the user types on this screen changed since the result's last value (the ordered quantity still shows
+    /// the old number), and the user's value only arrives within <see cref="LateTypingSeconds"/> after the read (in the
+    /// grid's editor). The result is then computed from a value the row does not show: no observation of any formula.
+    /// </summary>
+    private static bool Unsettled(LearnState s, string win, string field, UiEvent e, Dictionary<string, string> row, Dictionary<string, string> batch,
+        Dictionary<string, DateTime> changed, Dictionary<string, List<DateTime>> userTimes)
+    {
+        if (!row.TryGetValue(field, out var before) || before == (e.Val ?? "") || !changed.TryGetValue(field, out var lastResult)) return false;
+        var typedCells = row.Keys.Where(c => c != field && s.Causes.ContainsKey(LearnState.Key(win, "typed:" + c))).ToList();
+        if (typedCells.Count == 0) return false;
+        foreach (var c in typedCells)
+        {
+            if (batch.TryGetValue(c, out var now) && now != row[c]) return false;                  // typed cell read anew in this batch
+            if (changed.TryGetValue(c, out var tc) && tc > lastResult) return false;              // typed cell changed since the result's last value
+        }
+        return userTimes.TryGetValue(Titles.Key(e.Win), out var times) && times.Any(t => t > e.T && (t - e.T).TotalSeconds <= LateTypingSeconds);
+    }
+
+    /// <summary>How soon after a typed code the program's text in the same box (the record's name for the code) is its echo.</summary>
+    public const double EchoSeconds = 1.5;
+
+    /// <summary>
+    /// Values read back from the box a code was just typed in, with another text (the program puts the customer's name where
+    /// its number was typed): the re-read reports them as typed, but the program wrote them. Same window, same field, within
+    /// <see cref="EchoSeconds"/> of the typed value. They are no new typing: the code stays the cause of what the program fills.
+    /// </summary>
+    public static HashSet<UiEvent> Echoes(List<UiEvent> session)
+    {
+        var echoes = new HashSet<UiEvent>(ReferenceEqualityComparer.Instance);
+        (string win, string field, string val, DateTime t)? typed = null;
+        foreach (var e in session)
+        {
+            if (e.Act != Acts.Value || e.By == ValueBy.App) continue;
+            var win = Titles.Key(e.Win); var f = e.FieldKey; var v = e.Val ?? "";
+            if (typed is { } ty && e.How == "read" && ty.win == win && ty.field == f && ty.val != v && (e.T - ty.t).TotalSeconds is >= 0 and <= EchoSeconds)
+            {
+                echoes.Add(e);
+                continue;
+            }
+            typed = (win, f, v, e.T);
+        }
+        // the grid cell showing the value just typed in the editor over it is the same typing
+        echoes.UnionWith(GridEditors.CellEchoes(session));
+        return echoes;
+    }
+
+    /// <summary>
+    /// Values typed in a top window just before one of its documents took its title: the program fills the document's fields
+    /// before the document has its own title, so the typing and its fills would land on the main window. The next open or
+    /// foreground of "&lt;the same window&gt; › X" within <see cref="RetitleLinkSeconds"/> (with no press in between, which
+    /// would be what opened it) names the document they belong to.
+    /// </summary>
+    public static Dictionary<UiEvent, string> TypedBeforeTitle(List<UiEvent> session)
+    {
+        var map = new Dictionary<UiEvent, string>(ReferenceEqualityComparer.Instance);
+        var sorted = session.OrderBy(e => e.T).ToList();
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var e = sorted[i];
+            if (e.Act != Acts.Value || e.By == ValueBy.App) continue;
+            var win = Titles.Key(e.Win);
+            if (win.Length == 0 || win.Contains(" › ", StringComparison.Ordinal)) continue;
+            for (var j = i + 1; j < sorted.Count && (sorted[j].T - e.T).TotalSeconds <= RetitleLinkSeconds; j++)
+            {
+                var o = sorted[j];
+                if (o.Act == Acts.Invoke) break;
+                if (o.Act is not (Acts.Open or Acts.Foreground) || o.Ct != "Window") continue;
+                var title = Titles.Key(string.IsNullOrEmpty(o.Name) ? o.Win : o.Name);
+                if (title.StartsWith(win + " › ", StringComparison.Ordinal)) { map[e] = title; break; }
+            }
+        }
+        return map;
     }
 
     /// <summary>On, Off, Indeterminate: the state of a tick box, never a value another field could be copied from.</summary>
@@ -260,7 +384,7 @@ public static class LogicLearner
         if (fits.Count == 0) return; // a text the program looked up (a name for a code) is a link, not a calculation
         Count(s.CalcTests, LearnState.Key(win, field));
         NoteValue(s, win, field, text, weak: true); // a copy is as weak as a cell: three distinct values before it is written
-        foreach (var f in fits.Distinct()) Add(s.CalcFits, LearnState.Key(win, field, f), src);
+        foreach (var f in fits.Distinct()) { Add(s.CalcFits, LearnState.Key(win, field, f), src); NoteInputs(s, LearnState.Key(win, field, f), text.ToLowerInvariant()); }
     }
 
     /// <summary>Remembers (as a hash) one more value the program showed in the field, and whether the field's evidence is weak (a grid cell, a picture, a copy).</summary>
@@ -288,47 +412,73 @@ public static class LogicLearner
         var xs = inputs.Where(x => x.v != 0 && x.n.Length > 0 && x.n != field).Take(MaxInputs).ToList();
         if (xs.Count == 0) return;
         NoteValue(s, win, field, t.ToString(CultureInfo.InvariantCulture), weak);
-        var fits = Formulas(t, xs);
+        var fits = FormulaFits(t, xs);
         if (fits.Count == 0)
         {
             // a constant factor (a tax or unit rate): only counts when the same factor keeps coming back; between 0.001 and 1000,
             // and never negative (a sign that is not on the screen is not a formula)
-            foreach (var x in xs)
+            for (var i = 0; i < xs.Count; i++)
             {
+                var x = xs[i];
                 var k = Calc(() => t / x.v);
                 if (k is not { } kk || kk == 1 || kk < 0.001m || kk > 1000m) continue;
                 var kr = Math.Round(kk, 4);
-                if (Close(t, x.v * kr)) fits.Add($"{x.n} × {kr.ToString("0.####", CultureInfo.InvariantCulture)}");
+                if (Close(t, x.v * kr)) fits.Add(($"{x.n} × {kr.ToString("0.####", CultureInfo.InvariantCulture)}", new[] { i }));
             }
         }
         Count(s.CalcTests, LearnState.Key(win, field));
-        foreach (var f in fits.Distinct()) Add(s.CalcFits, LearnState.Key(win, field, f), src);
+        var done = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (f, ops) in fits)
+        {
+            if (!done.Add(f)) continue;
+            Add(s.CalcFits, LearnState.Key(win, field, f), src);
+            NoteInputs(s, LearnState.Key(win, field, f), string.Join("|", ops.Select(o => xs[o].v.ToString(CultureInfo.InvariantCulture))));
+        }
     }
 
-    /// <summary>Every simple formula over the screen's other numbers that gives the target (sums, differences, products, ratios, percentages, discount and tax forms).</summary>
-    public static List<string> Formulas(decimal t, List<(string n, decimal v)> xs)
+    /// <summary>The most input combinations kept per formula (hashes); three are needed, the cap keeps the state small.</summary>
+    private const int MaxInputHashes = 20;
+
+    /// <summary>Remembers (as a hash) the operand values a formula fitted with, so a formula that only ever saw one set of inputs is not a rule.</summary>
+    private static void NoteInputs(LearnState s, string key, string inputs)
     {
-        var r = new List<string>();
-        void Try(decimal? v, string f) { if (v is { } d && Close(t, d) && !r.Contains(f)) r.Add(f); }
+        if (!s.CalcInputs.TryGetValue(key, out var set)) s.CalcInputs[key] = set = new HashSet<string>();
+        if (set.Count < MaxInputHashes) set.Add(LearnState.ValueHash(inputs));
+    }
+
+    /// <summary>Distinct sets of operand values a formula of a field fitted with.</summary>
+    public static int DistinctInputs(LearnState s, string win, string field, string formula) => s.CalcInputs.TryGetValue(LearnState.Key(win, field, formula), out var set) ? set.Count : 0;
+
+    /// <summary>A formula is a rule only when it fitted at least this many different sets of input values (a code read twice is one observation).</summary>
+    public const int MinDistinctInputs = 3;
+
+    /// <summary>Every simple formula over the screen's other numbers that gives the target (sums, differences, products, ratios, percentages, discount and tax forms).</summary>
+    public static List<string> Formulas(decimal t, List<(string n, decimal v)> xs) => FormulaFits(t, xs).Select(f => f.formula).ToList();
+
+    /// <summary>Same, with the inputs (indexes into <paramref name="xs"/>) each formula uses.</summary>
+    public static List<(string formula, int[] ops)> FormulaFits(decimal t, List<(string n, decimal v)> xs)
+    {
+        var r = new List<(string formula, int[] ops)>();
+        void Try(decimal? v, string f, params int[] ops) { if (v is { } d && Close(t, d) && !r.Any(x => x.formula == f)) r.Add((f, ops)); }
         var n = xs.Count;
-        for (var i = 0; i < n; i++) Try(xs[i].v, "= " + xs[i].n);
+        for (var i = 0; i < n; i++) Try(xs[i].v, "= " + xs[i].n, i);
         for (var i = 0; i < n; i++)
             for (var j = i + 1; j < n; j++)
             {
                 var (a, b) = (xs[i], xs[j]);
-                Try(Calc(() => a.v + b.v), $"{a.n} + {b.n}");
-                Try(Calc(() => a.v * b.v), $"{a.n} × {b.n}");
-                Try(Calc(() => a.v * b.v / 100), $"{a.n} × {b.n} / 100");
+                Try(Calc(() => a.v + b.v), $"{a.n} + {b.n}", i, j);
+                Try(Calc(() => a.v * b.v), $"{a.n} × {b.n}", i, j);
+                Try(Calc(() => a.v * b.v / 100), $"{a.n} × {b.n} / 100", i, j);
             }
         for (var i = 0; i < n; i++)
             for (var j = 0; j < n; j++)
             {
                 if (i == j) continue;
                 var (a, b) = (xs[i], xs[j]);
-                Try(Calc(() => a.v - b.v), $"{a.n} − {b.n}");
-                Try(Calc(() => a.v / b.v), $"{a.n} ÷ {b.n}");
-                Try(Calc(() => a.v * (1 - b.v / 100)), $"{a.n} × (1 − {b.n} / 100)");
-                Try(Calc(() => a.v * (1 + b.v / 100)), $"{a.n} × (1 + {b.n} / 100)");
+                Try(Calc(() => a.v - b.v), $"{a.n} − {b.n}", i, j);
+                Try(Calc(() => a.v / b.v), $"{a.n} ÷ {b.n}", i, j);
+                Try(Calc(() => a.v * (1 - b.v / 100)), $"{a.n} × (1 − {b.n} / 100)", i, j);
+                Try(Calc(() => a.v * (1 + b.v / 100)), $"{a.n} × (1 + {b.n} / 100)", i, j);
             }
         for (var i = 0; i < n; i++)
             for (var j = i + 1; j < n; j++)
@@ -336,11 +486,11 @@ public static class LogicLearner
                 {
                     if (k == i || k == j) continue;
                     var (a, b, c) = (xs[i], xs[j], xs[k]);
-                    Try(Calc(() => a.v * b.v * (1 - c.v / 100)), $"{a.n} × {b.n} × (1 − {c.n} / 100)");
-                    Try(Calc(() => a.v * b.v * (1 + c.v / 100)), $"{a.n} × {b.n} × (1 + {c.n} / 100)");
-                    Try(Calc(() => a.v * b.v + c.v), $"{a.n} × {b.n} + {c.n}");
-                    Try(Calc(() => a.v * b.v - c.v), $"{a.n} × {b.n} − {c.n}");
-                    if (k > j) Try(Calc(() => a.v + b.v + c.v), $"{a.n} + {b.n} + {c.n}");
+                    Try(Calc(() => a.v * b.v * (1 - c.v / 100)), $"{a.n} × {b.n} × (1 − {c.n} / 100)", i, j, k);
+                    Try(Calc(() => a.v * b.v * (1 + c.v / 100)), $"{a.n} × {b.n} × (1 + {c.n} / 100)", i, j, k);
+                    Try(Calc(() => a.v * b.v + c.v), $"{a.n} × {b.n} + {c.n}", i, j, k);
+                    Try(Calc(() => a.v * b.v - c.v), $"{a.n} × {b.n} − {c.n}", i, j, k);
+                    if (k > j) Try(Calc(() => a.v + b.v + c.v), $"{a.n} + {b.n} + {c.n}", i, j, k);
                 }
         return r;
     }
@@ -350,7 +500,42 @@ public static class LogicLearner
     /// <summary>Equal as shown on screen: within half a cent, or within a millionth for large numbers.</summary>
     public static bool Close(decimal t, decimal v) => Math.Abs(t - v) <= 0.005m + Math.Abs(t) * 0.000001m;
 
-    private static int Operands(string formula) => formula.StartsWith("= ", StringComparison.Ordinal) ? 1 : 1 + formula.Count(ch => ch is '×' or '+' or '−' or '÷');
+    /// <summary>The field names a formula is made of ("Quant Ordered × Net Price" → both names; numbers and operators left out).</summary>
+    public static List<string> FormulaOperands(string formula)
+    {
+        var f = formula.StartsWith("= ", StringComparison.Ordinal) ? formula[2..] : formula;
+        foreach (var token in new[] { "(1 − ", "(1 + ", " / 100)", " / 100" }) f = f.Replace(token, "\u0002", StringComparison.Ordinal);
+        foreach (var op in new[] { " × ", " + ", " − ", " ÷ " }) f = f.Replace(op, "\u0002", StringComparison.Ordinal);
+        return f.Split('\u0002', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => p.Length > 0 && !decimal.TryParse(p, NumberStyles.Number, CultureInfo.InvariantCulture, out _)).ToList();
+    }
+
+    /// <summary>How many of a formula's operands the user typed on the screen.</summary>
+    private static int TypedOperands(LearnState s, string screen, string formula) => FormulaOperands(formula).Count(o => s.Causes.ContainsKey(LearnState.Key(screen, "typed:" + o)));
+
+    /// <summary>
+    /// "Quant B/O = Price Extension ÷ Net Price" while "Price Extension = Net Price × Quant B/O" is a candidate of Price Extension:
+    /// one relation over the same three cells, read backwards. Of its rearrangements the product (or sum) is kept, the form whose
+    /// result the program computes; the quotient (or difference) stays only when the user types its dividend and not its result
+    /// (a unit price from a typed total and quantity). Pure over the state, so learning stays additive.
+    /// </summary>
+    public static bool Rearranged(LearnState s, string screen, string field, string formula, int seen)
+    {
+        var ops = FormulaOperands(formula);
+        if (ops.Count != 2) return false;
+        string inverse;
+        if (formula == $"{ops[0]} ÷ {ops[1]}") inverse = " × ";
+        else if (formula == $"{ops[0]} − {ops[1]}") inverse = " + ";
+        else return false;
+        var (a, b) = (ops[0], ops[1]);
+        bool Typed(string x) => s.Causes.ContainsKey(LearnState.Key(screen, "typed:" + x));
+        if (Typed(a) && !Typed(field)) return false;
+        foreach (var form in new[] { b + inverse + field, field + inverse + b })
+            if (s.CalcFits.TryGetValue(LearnState.Key(screen, a, form), out var ev) && ev.Seen * 2 >= seen) return true;
+        return false;
+    }
+
+    private static int Operands(string formula) =>formula.StartsWith("= ", StringComparison.Ordinal) ? 1 : 1 + formula.Count(ch => ch is '×' or '+' or '−' or '÷');
 
     public static string CauseText(string when)
     {
@@ -392,15 +577,21 @@ public static class LogicLearner
             var parts = tkey.Split(sep);
             if (parts.Length < 2) continue;
             var prefix = tkey + sep;
-            var cands = s.CalcFits.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal))
-                .Select(k => (f: k.Key[prefix.Length..], ev: k.Value))
-                .OrderByDescending(c => c.ev.Seen).ThenBy(c => Operands(c.f)).ThenBy(c => c.f, StringComparer.Ordinal).ToList();
+            // among formulas of the same shape that fit equally often, the one built on more of what the user typed on this screen
+            // wins (the ordered quantity over a back-order quantity the program derived from it); formulas of another shape stay
+            // alternatives, so a copy of a typed field never beats a product of two others
+            // a quotient or difference that is another field's product or sum rearranged is that relation, not a formula of this field
+            var cands = s.CalcFits.Where(k => k.Key.StartsWith(prefix, StringComparison.Ordinal) && !Rearranged(s, parts[0], parts[1], k.Key[prefix.Length..], k.Value.Seen))
+                .Select(k => (f: k.Key[prefix.Length..], ev: k.Value, typed: TypedOperands(s, parts[0], k.Key[prefix.Length..])))
+                .OrderByDescending(c => c.ev.Seen).ThenByDescending(c => c.typed).ThenBy(c => Operands(c.f)).ThenBy(c => c.f, StringComparer.Ordinal).ToList();
             var calc = new ScreenCalc { Screen = parts[0], Field = parts[1], Tested = tested };
             if (cands.Count > 0)
             {
                 calc.Formula = cands[0].f; calc.Fits = cands[0].ev.Seen; calc.Evidence = cands[0].ev;
-                calc.Alternatives = cands.Skip(1).Where(c => c.ev.Seen == calc.Fits).Select(c => c.f).Take(3).ToList();
+                calc.Alternatives = cands.Skip(1).Where(c => c.ev.Seen == calc.Fits && !(c.typed < cands[0].typed && Operands(c.f) == Operands(cands[0].f))).Select(c => c.f).Take(3).ToList();
             }
+            // the same inputs read again (a code shown twice) are one observation: a rule needs three different sets of inputs
+            if (cands.Count > 0 && calc.Fits >= 2 && DistinctInputs(s, parts[0], parts[1], calc.Formula) < MinDistinctInputs) { if (tested >= 2) rep.Unexplained.Add(calc); continue; }
             // a number from a grid cell, a picture or a copy: three distinct values and one formula that fits them all, else it is a question
             var weak = s.CalcWeak.Contains(tkey);
             var distinct = DistinctValues(s, parts[0], parts[1]);
@@ -475,25 +666,26 @@ public static class LogicLearner
                 if (parent is not null) controls = TabDocuments.WithoutParentControls(controls, parent.Controls);
             }
             var content = DialogDetector.Content(controls);
-            foreach (var m in content.Where(c => c.Type == "MenuItem" && c.Name.Trim().Length > 0)) menuItems.Add(m.Name.Trim());
+            // names of buttons, tabs and menu items masked like titles (a tab named after the record it shows): the same as the causes
+            foreach (var m in content.Where(c => c.Type == "MenuItem").Select(c => Titles.Name(c.Name)).Where(n => n.Length > 0)) menuItems.Add(m);
             if (rec.Kind is ScreenKinds.Dialog or ScreenKinds.Session or ScreenKinds.Menu || dialogs.Contains(key)) continue;
             s.Screens.TryGetValue(key, out var si);
             var listControls = !tabbed.Contains(key);
-            foreach (var b in !listControls ? Enumerable.Empty<string>() : content.Where(c => c.Type is "Button" or "SplitButton" && !PartOfAnotherControl(content, c)).Select(c => c.Name.Trim()).Where(n => n.Length > 0 && !WindowButtons.Contains(n)).Distinct().OrderBy(n => n, StringComparer.Ordinal))
+            foreach (var b in !listControls ? Enumerable.Empty<string>() : content.Where(c => c.Type is "Button" or "SplitButton" && !PartOfAnotherControl(content, c) && !WindowButtons.Contains(c.Name.Trim())).Select(c => Titles.Name(c.Name)).Where(n => n.Length > 0).Distinct().OrderBy(n => n, StringComparer.Ordinal))
                 if (!UsedOn(key, "pressed:" + b) && si?.Actions.Contains(b) != true) list.Add(new NotUsedItem { Screen = key, Kind = "button", Name = b });
-            foreach (var tab in content.Where(c => c.Type == "TabItem").Select(c => c.Name.Trim()).Where(n => n.Length > 0).Distinct().OrderBy(n => n, StringComparer.Ordinal))
-                if (!UsedOn(key, "chose:" + tab, "chose menu:" + tab) && !s.Screens.ContainsKey(key + " › " + tab) && !menuPaths.Contains(tab))
+            foreach (var tab in content.Where(c => c.Type == "TabItem").Select(c => Titles.Name(c.Name)).Where(n => n.Length > 0).Distinct().OrderBy(n => n, StringComparer.Ordinal))
+                if (!UsedOn(key, "chose:" + tab, "chose menu:" + tab) && !s.Screens.ContainsKey(Titles.Key(key + " › " + tab)) && !menuPaths.Contains(tab))
                     list.Add(new NotUsedItem { Screen = key, Kind = "tab", Name = tab });
             foreach (var row in content.Where(c => listControls && c.Type is "Edit" or "ComboBox" && c.IsReadOnly != true && !c.IsPassword))
             {
-                var label = Labels.Resolve(row, controls).Trim();
+                var label = Titles.OneLine(Labels.Resolve(row, controls)).Trim();
                 if (label.Length == 0) continue;
                 if (UsedOn(key, "typed:" + label, "chose:" + label) || si?.Fields.Contains(label) == true || filled.Contains(key + LearnState.Sep + label)) continue;
                 if (list.Any(x => x.Screen == key && x.Kind == "field" && x.Name == label)) continue;
                 list.Add(new NotUsedItem { Screen = key, Kind = "field", Name = label });
             }
         }
-        foreach (var k in s.MenuSeen.Keys) { var p = k.Split(LearnState.Sep); if (p.Length >= 2) menuItems.Add(p[1]); }
+        foreach (var k in s.MenuSeen.Keys) { var p = k.Split(LearnState.Sep); if (p.Length >= 2 && p[1].Length > 0) menuItems.Add(p[1]); }
         foreach (var m in menuItems)
             if (!UsedAnywhere("chose menu:" + m, "pressed:" + m, "chose:" + m) && !menuPaths.Contains(m))
                 list.Add(new NotUsedItem { Screen = "(menus)", Kind = "menu item", Name = m });

@@ -68,7 +68,7 @@ public sealed class ValueDebouncer
         var keys = _pending.Keys.Where(which).ToList();
         var taken = keys.Select(k => _pending[k]).ToList();
         foreach (var k in keys) _pending.Remove(k);
-        _recentCells.RemoveAll(c => now - c.at > CellWait + CellWait);
+        _recentCells.RemoveAll(c => now - c.at > CellWait * 4);
         var list = new List<UiEvent>();
         foreach (var (ev, at) in taken.OrderBy(p => p.ev.T))
         {
@@ -83,7 +83,10 @@ public sealed class ValueDebouncer
     /// <summary>A cell value the user typed, read with its column name within the wait, with the same value as the editor's.</summary>
     private bool SameCellRead(UiEvent editor, List<(UiEvent ev, DateTime at)> taken)
     {
-        bool Match(UiEvent c) => c.By is null && c.Ct == "DataItem" && c.Val == editor.Val && Math.Abs((c.T - editor.T).TotalMilliseconds) <= CellWait.TotalMilliseconds;
+        // the same value, or the cell already shows more of it (a late keystroke of the editor); within twice the wait (the row
+        // read can come 1.5 s after the editor's event when the program is busy)
+        bool Match(UiEvent c) => c.By is null && c.Ct == "DataItem" && (c.Val == editor.Val || c.Val is { Length: > 0 } && editor.Val is { Length: > 0 } && c.Val.StartsWith(editor.Val, StringComparison.Ordinal))
+                                 && Math.Abs((c.T - editor.T).TotalMilliseconds) <= 2 * CellWait.TotalMilliseconds;
         return taken.Any(t => Match(t.ev)) || _recentCells.Any(t => Match(t.ev)) || _pending.Values.Any(p => Match(p.ev));
     }
 }

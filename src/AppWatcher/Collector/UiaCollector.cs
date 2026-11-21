@@ -67,6 +67,8 @@ internal sealed class UiaCollector : IDisposable
     private readonly Dictionary<IntPtr, List<IDisposable>> _perWindow = new();
     private readonly HashSet<string> _dumpedTitles = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<IntPtr, List<ControlRow>> _rows = new();
+    // the newest on-screen read of a window, the surface clicks are resolved on (labels keep using the recorded tree in _rows)
+    private readonly Dictionary<IntPtr, List<ControlRow>> _clickRows = new();
     private readonly Dictionary<IntPtr, DateTime> _lastDump = new();
     private readonly Dictionary<IntPtr, string> _activeTab = new();
     private readonly Dictionary<IntPtr, AutomationElement> _tabStrips = new();
@@ -122,6 +124,18 @@ internal sealed class UiaCollector : IDisposable
     private (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) _lastField = ("", "", "", DateTime.MinValue, default);
     private (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) _previousField = ("", "", "", DateTime.MinValue, default);
     private readonly Dictionary<string, string> _lastTyped = new();
+    // when a key that types a character last went down (a read of the key state at events; which key is never kept)
+    private DateTime _typingAt = DateTime.MinValue;
+    // when the keyboard focus arrived in a field (by automation id and by label)
+    private readonly Dictionary<string, DateTime> _focusArrivedAt = new(StringComparer.Ordinal);
+    // when the keyboard focus last came to a window handle (GetGUIThreadInfo, sampled)
+    private readonly Dictionary<IntPtr, DateTime> _focusSince = new();
+    // character keys seen going down since the keyboard focus last moved (a lower bound: one per key per read)
+    private int _keysSinceFocus;
+    // the text box keys last went down in, and its text read then (WM_GETTEXT): the typed value as it was before Enter
+    private (IntPtr hwnd, string text, DateTime t) _boxText = (IntPtr.Zero, "", DateTime.MinValue);
+    // when the field's own value event last reported what the user typed (a later re-read that differs is the program's replacement)
+    private readonly Dictionary<string, DateTime> _ownTypedAt = new();
     private bool _firstWindow = true;
     // document re-reads (what the program filled in)
     private readonly Dictionary<string, List<FieldRead>> _fieldReads = new(StringComparer.Ordinal);
@@ -129,6 +143,14 @@ internal sealed class UiaCollector : IDisposable
     private readonly Dictionary<string, DateTime> _userKeysSinceRead = new(StringComparer.Ordinal);
     private System.Threading.Timer? _rereadTimer;
     private string _rereadWhy = "";
+    private IntPtr _rereadSurface;
+    private readonly Dictionary<string, DateTime> _slowReads = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> _closedTabs = new(StringComparer.Ordinal);
+    private (string key, DateTime t) _lastLookup = ("", DateTime.MinValue);
+    private volatile bool _mdiRepoll;
+    // record names quoted in window titles seen this session (never written anywhere: only to tell a label that is data)
+    private readonly HashSet<string> _quotedNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<System.Threading.Timer> _repollTimers = new();
     private int _rereadBusy;
 
     public UiaCollector(ChannelWriter<RawEvent> output, SynchronizationContext uiContext, CollectorSettings settings, PrivacySettings privacy, CollectorStatus status)
@@ -159,7 +181,7 @@ internal sealed class UiaCollector : IDisposable
         _hooks.Add(new WinEventHook(Win32.EVENT_SYSTEM_FOREGROUND, Win32.EVENT_SYSTEM_FOREGROUND, 0, OnForeground));
         _hooks.Add(new WinEventHook(Win32.EVENT_SYSTEM_MENUSTART, Win32.EVENT_SYSTEM_MENUPOPUPEND, pid, OnMenuEvent));
         _hooks.Add(new WinEventHook(Win32.EVENT_SYSTEM_CAPTURESTART, Win32.EVENT_SYSTEM_CAPTUREEND, pid, OnCapture));
-        _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_CREATE, Win32.EVENT_OBJECT_SHOW, pid, OnWindowEvent));
+        _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_CREATE, Win32.EVENT_OBJECT_HIDE, pid, OnWindowEvent));
         _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_NAMECHANGE, Win32.EVENT_OBJECT_NAMECHANGE, pid, OnWindowEvent));
         _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_INVOKED, Win32.EVENT_OBJECT_INVOKED, pid, OnMsaaInvoked));
         _hooks.Add(new WinEventHook(Win32.EVENT_OBJECT_FOCUS, Win32.EVENT_OBJECT_FOCUS, pid, OnMsaaFocus));
@@ -186,7 +208,7 @@ internal sealed class UiaCollector : IDisposable
         foreach (var list in _perWindow.Values) foreach (var d in list) { try { d.Dispose(); } catch { } }
         _perWindow.Clear();
         _knownWindows.Clear();
-        lock (_gate) { _rows.Clear(); _lastDump.Clear(); _activeTab.Clear(); _menuPopups.Clear(); _tabStrips.Clear(); _lastTabPoll.Clear(); _fieldReads.Clear(); _fieldRows.Clear(); _fieldReadAt.Clear(); _focusWindows.Clear(); _focusAids.Clear(); _lookupPopups.Clear(); _typedRow = null; _mdi.Clear(); _mdiChildren.Clear(); _mdiClients.Clear(); _mdiActiveChild.Clear(); _innerTabs.Clear(); }
+        lock (_gate) { _rows.Clear(); _clickRows.Clear(); _lastDump.Clear(); _activeTab.Clear(); _menuPopups.Clear(); _tabStrips.Clear(); _lastTabPoll.Clear(); _fieldReads.Clear(); _fieldRows.Clear(); _fieldReadAt.Clear(); _focusWindows.Clear(); _focusAids.Clear(); _lookupPopups.Clear(); _typedRow = null; _mdi.Clear(); _mdiChildren.Clear(); _mdiClients.Clear(); _mdiActiveChild.Clear(); _innerTabs.Clear(); }
         _pid = 0;
         SetInFront(false);
     }
@@ -195,8 +217,38 @@ internal sealed class UiaCollector : IDisposable
     {
         if (_inFront == v) return;
         _inFront = v;
+        // the pointer's moves are watched only while the program is in front (nothing at all is seen otherwise)
+        // a click with no event and no pointer move after it (a tab clicked, then the page read without moving) is heard by a
+        // read of the button's state every 50 ms, only while the program is in front: one key-state read, no UI Automation work
+        // (its own thread, never the thread pool: a slow read of a large grid can hold every pool thread for many seconds)
+        if (v && _sampler is null && _pid != 0 && _settings.PressInference)
+        {
+            var stop = new CancellationTokenSource(); _samplerStop = stop;
+            _sampler = new Thread(() => { while (!stop.IsCancellationRequested) { Thread.Sleep(ButtonTickMs); try { OnButtonTick(); } catch (Exception ex) { Log.Error("button read failed", ex); } } }) { IsBackground = true, Name = "button read", Priority = ThreadPriority.AboveNormal };
+            _sampler.Start();
+        }
+        else if (!v && _sampler is not null) { _samplerStop?.Cancel(); _sampler = null; _samplerStop = null; }
         InFrontChanged?.Invoke(v);
     }
+
+    private Thread? _sampler;
+    private CancellationTokenSource? _samplerStop;
+    private const int ButtonTickMs = 50;
+
+    /// <summary>The 50 ms read of the left button while the program is in front: a click that nothing else reported is heard here, at the pointer (it has not moved, or a move would have been heard first).</summary>
+    private void OnButtonTick()
+    {
+        if (!_inFront || _pid == 0) return;
+        // every 50 ms the left button (a press lasts about 100 ms, and some screens of the program read the "went down" bit
+        // themselves, so the button seen down is the reliable sign); every 200 ms the same sample as at an event: Enter, Tab and
+        // whether a character key went down (silent editors raise nothing while the user types)
+        if (++_ticks % 4 == 0) { NoteInput(IntPtr.Zero); return; }
+        var (wentDown, down) = Win32.KeyState(Win32.VK_LBUTTON);
+        bool inProgress; lock (_gate) inProgress = _tracker.ButtonDownSeen;
+        if (!wentDown && !down && !inProgress) return;
+        NoteInput(IntPtr.Zero, at: System.Windows.Forms.Cursor.Position, buttonState: (wentDown, down));
+    }
+    private int _ticks;
 
     private string ScreenTitle(IntPtr hwnd, string title)
     {
@@ -213,30 +265,107 @@ internal sealed class UiaCollector : IDisposable
     // ---- WinEvents (UI thread) ----
 
     /// <summary>
-    /// At every event the collector receives: a sample of the key state (GetAsyncKeyState, a read, never a hook) and of the
-    /// pointer, read together in this handler. A click is a down seen since the last sample and the button up now
-    /// (<see cref="ClickSampler"/>); its point is the pointer now, never a point kept from an earlier event. Enter or Tab
-    /// while a document is in front re-reads it, and the grid row typed in is read again by place.
+    /// At every event the collector receives, and every 50 ms while the program is in front: a sample of the key state
+    /// (GetAsyncKeyState, a read, never a hook) and of the pointer. A click is the button seen down (or a down since the last
+    /// sample) and then up (<see cref="ClickSampler"/>); its point is where the pointer was when the button was first seen
+    /// down. Enter or Tab while a document is in front re-reads it, and the grid row typed in is read again by place.
     /// </summary>
     private void NoteInput() => NoteInput(IntPtr.Zero);
 
     /// <summary>Same, from the destroy or hide of <paramref name="goingAway"/>: its tree is the first surface a click is resolved on.</summary>
-    private void NoteInput(IntPtr goingAway)
+    private void NoteInput(IntPtr goingAway, System.Drawing.Point? at = null, (bool wentDown, bool down)? buttonState = null)
     {
         if (!_inFront || _pid == 0) return;
-        var pt = System.Windows.Forms.Cursor.Position;
+        var pt = at ?? System.Windows.Forms.Cursor.Position;
         var front = FrontHwnd();
         var now = DateTime.Now;
-        ClickOutcome o; bool key;
+        ClickOutcome o; bool key, enterNow = false, typedNow = false; IntPtr typedBox = IntPtr.Zero;
         lock (_gate)
         {
-            var (wentDown, down) = Win32.KeyState(Win32.VK_LBUTTON); // one read: bit 0 and bit 15 together
-            key = Win32.WentDown(Win32.VK_RETURN) | Win32.WentDown(Win32.VK_TAB);
+            var (wentDown, down) = buttonState ?? Win32.KeyState(Win32.VK_LBUTTON); // one read: bit 0 and bit 15 together
+            // a pointer move reads only the button: the keys are left for the program's own events
+            bool enter = false, tab = false, space = false;
+            if (buttonState is null)
+            {
+                enter = Win32.WentDown(Win32.VK_RETURN); tab = Win32.WentDown(Win32.VK_TAB); space = Win32.WentDown(Win32.VK_SPACE);
+                var keys = Win32.TypingKeysWentDown() + (space ? 1 : 0);
+                if (keys > 0) { _typingAt = now; _keysSinceFocus += keys; typedNow = true; }
+            }
+            key = enter | tab; enterNow = enter;
             NoteFocusWindow(now);
-            o = _settings.PressInference ? _tracker.Observe(new InputSample(now, pt.X, pt.Y, down, wentDown, key, (long)front, (long)goingAway), _world) : ClickOutcome.None;
+            if (typedNow && _focusWindows.Count > 0) typedBox = _focusWindows[^1].hwnd;
+            o = _settings.PressInference ? _tracker.Observe(new InputSample(now, pt.X, pt.Y, down, wentDown, key, (long)front, (long)goingAway, PressKeyWentDown: enter | space), _world) : ClickOutcome.None;
         }
-        if (key) { NoteTypedRow(now); ScheduleReread("key"); }
-        if (o.Kind != ClickKind.None) OnClick(o, pt);
+        // keys went down in a text box: its text now (WM_GETTEXT, fast, no UI Automation) is what the keys wrote so far
+        if (typedBox != IntPtr.Zero && !enterNow) { var text = Win32.EditText(typedBox); if (text is not null) lock (_gate) _boxText = (typedBox, text, now); }
+        // the last keys and Enter came in the same read: the box is read once more, and taken only when it merely extends what
+        // was read before (the program has not answered yet: its answer is a name, not a few more characters of the code)
+        else if (typedBox != IntPtr.Zero && enterNow)
+        {
+            var text = Win32.EditText(typedBox);
+            lock (_gate) { if (text is not null && _boxText.hwnd == typedBox && text.StartsWith(_boxText.text, StringComparison.Ordinal) && text.Length <= _boxText.text.Length + 4) _boxText = (typedBox, text, now); }
+        }
+        if (key) { NoteTypedRow(now); ScheduleReread("key"); if (enterNow) ReadAtEnter(now); }
+        if (o.Kind != ClickKind.None) OnClick(o, new System.Drawing.Point(o.X, o.Y));
+    }
+
+    /// <summary>
+    /// Enter went down: the field the user was in is read at once (one UI Automation read of the focused element), before the
+    /// program answers. Inform puts the record's name where the code was typed half a second later, and a silent editor
+    /// reports nothing while the user types: this read is the only moment the typed code is on screen. Only the field the
+    /// user was in (same automation id), only a text field, only a value the last read did not already show.
+    /// </summary>
+    private void ReadAtEnter(DateTime now)
+    {
+        (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) field;
+        lock (_gate) field = _lastField;
+
+        // its own thread: the pool can be held by a slow document read, and this read must come before the program's answer
+        new Thread(() =>
+        {
+            try
+            {
+                // the text box the keys went into, read just before Enter (no UI Automation: on time even while the program works)
+                (IntPtr hwnd, string text, DateTime t) box; lock (_gate) box = _boxText;
+                AutomationElement? el = null; string? v = null;
+                if (box.hwnd != IntPtr.Zero && (now - box.t).TotalSeconds is >= 0 and <= 3 && box.text.Trim().Length > 0)
+                {
+                    try { el = _automation.FromHandle(box.hwnd); v = box.text; } catch { el = null; }
+                }
+                el ??= _automation.FocusedElement();
+                if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return;
+                var r = Describe(el, Acts.Value);
+                var late = (DateTime.Now - now).TotalMilliseconds;
+                Log.Info($"read at Enter: {r.Ct} '{r.Name}' {r.Aid} {(v is not null ? "from the text read before Enter" : $"after {late:0} ms")}");
+                if (r.Ct is not ("Edit" or "ComboBox") || r.IsPassword) return;
+                // a UI Automation read that came more than 700 ms after Enter shows the program's answer, not the keys
+                if (v is null && late > 700) return;
+                // the field the user was in; or, when its focus event came late or not at all, the field whose own value
+                // events reported keys in the last 10 s
+                bool ownRecent; lock (_gate) ownRecent = _ownTypedAt.TryGetValue(r.Aid.Length > 0 ? r.Aid : r.Name, out var oa) && (now - oa).TotalSeconds <= 10;
+                if (v is null && r.Aid != field.aid && !ownRecent) return;
+                v ??= el.Patterns.Value.PatternOrDefault?.Value.ValueOrDefault;
+                if (string.IsNullOrWhiteSpace(v)) return;
+                var key = r.Aid.Length > 0 ? r.Aid : r.Name;
+                lock (_gate)
+                {
+                    var known = _lastTyped.GetValueOrDefault(key);
+                    if (known == v || known is { Length: > 0 } && known.StartsWith(v, StringComparison.Ordinal)) return; // its own event already had it (or more)
+                    _lastTyped[key] = v; _ownTypedAt[key] = now; _userKeysSinceRead[r.Name] = DateTime.Now;
+                }
+                // the cell under an editor lying over a grid names its column itself: those values come from the row read
+                System.Drawing.Rectangle rect = default; try { rect = el.BoundingRectangle; } catch { }
+                var (rk, _, _, _, _) = ReadTarget();
+                List<FieldRead>? last; lock (_gate) _fieldReads.TryGetValue(rk, out last);
+                // an editor lying over a grid (its id is its window number, or the read finds a cell there): its value waits for the
+                // row read that names the column and is dropped when that read reports it (no duplicate)
+                if (r.Aid.Length == 0 && r.Name.Length == 0 || r.Aid.Length > 0 && r.Aid.All(char.IsDigit) || last is not null && rect.Width > 0 && FieldReads.AtRect(last, $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}") is { IsCell: true }) r.OverGridCell = true;
+                r.Val = Masking.ForEvent(v, r.Name, r.Aid, false); r.How = "read"; r.T = now;
+                _status.ValuesTyped++;
+                Emit(r);
+            }
+            catch { }
+        }) { IsBackground = true, Name = "read at Enter" }.Start();
     }
 
     /// <summary>The window with the keyboard focus in the program's GUI thread (GetGUIThreadInfo), remembered with the time. Call under the gate.</summary>
@@ -246,6 +375,11 @@ internal sealed class UiaCollector : IDisposable
         if (f == IntPtr.Zero) return;
         if (_focusWindows.Count > 0 && _focusWindows[^1].hwnd == f) { _focusWindows[^1] = (f, now); return; }
         _focusWindows.Add((f, now));
+        // when the keyboard focus came to this window, by the program's own GUI thread (read every 200 ms at most: unlike the
+        // UI Automation focus event, it is never seconds late when the watcher is busy)
+        if (_focusSince.Count > 300) _focusSince.Clear();
+        _focusSince[f] = now;
+        _keysSinceFocus = 0;
         if (_focusWindows.Count > 4) _focusWindows.RemoveAt(0);
     }
 
@@ -270,6 +404,8 @@ internal sealed class UiaCollector : IDisposable
                 var el = _automation.FromPoint(pt);
                 if (el is not null && el.Properties.ProcessId.ValueOrDefault == _pid)
                 {
+                    // a tab header drawn by a toolkit: the point may name a part of the item, or the strip itself
+                    el = TabItemAt(el, pt) ?? el;
                     var r = Describe(el, Acts.Invoke);
                     var at = _world.WindowAt(pt.X, pt.Y);
                     var surface = at == 0 ? 0 : (_world.DocumentOf(at) is var dd && dd != 0 ? dd : _world.RootOf(at));
@@ -278,13 +414,45 @@ internal sealed class UiaCollector : IDisposable
                 }
             }
             catch { }
+            if (o.Kind == ClickKind.NoTarget) Log.Info($"click at {pt.X},{pt.Y}: live {le?.Ct} '{le?.Name}'{(le is { SameSurface: false } ? " (another window)" : "")}");
             LiveResult res;
             lock (_gate) res = _tracker.LiveRead(clickedAt, le);
             if (res.Cancelled) Log.Info($"click at {pt.X},{pt.Y}: the recorded tree was stale ({le?.Ct} '{le?.Name}' is at the point now): no press");
             if (res.TabPage is { } page) { OnTabHit(page, le!.Screen, clickedAt); return; }
             if (res.Confirmed is { } c) EmitPress(new RawEvent { Act = Acts.Invoke, Ct = c.Ct, Name = c.Name, Aid = c.Aid, How = PressHow.Inferred, WindowTitle = c.Win.Length > 0 ? c.Win : CurrentTitle, FromPointer = true });
-            else if (!res.Cancelled && (o.Hit is not null || le is not null && PressDecider.IsActionable(le.Ct))) ScheduleReread("click " + (o.Hit?.Row.Name.Trim() ?? le!.Name)); // a click on a tick box or button changes the document: read it once
+            // any click in a window of the program changes what that window shows (a page of an inner tab strip, a tick box, a
+            // new grid line): the window under the click is read once, whichever window is in front (Inform's notes window
+            // stands beside a vendor document and keeps the foreground)
+            else if (!res.Cancelled) ScheduleReread("click " + (o.Hit?.Row.Name.Trim() ?? le?.Name ?? ""), new IntPtr(surfaceAtClick));
         });
+    }
+
+    /// <summary>The tab item at a point: the element itself, one of its parents (a part of the header), or the item of a tab strip under the point. Read only.</summary>
+    private AutomationElement? TabItemAt(AutomationElement el, System.Drawing.Point pt)
+    {
+        try
+        {
+            var walker = _automation.TreeWalkerFactory.GetControlViewWalker();
+            AutomationElement? e = el;
+            for (var i = 0; i < 3 && e is not null; i++)
+            {
+                var ct = e.Properties.ControlType.ValueOrDefault;
+                if (ct == ControlType.TabItem) return e;
+                if (ct == ControlType.Tab)
+                {
+                    foreach (var item in e.FindAllChildren().Where(c => c.Properties.ControlType.ValueOrDefault == ControlType.TabItem)) // a true condition, filtered here (conditions on a WinForms tab control hide items)
+                    {
+                        var r = item.BoundingRectangle;
+                        if (pt.X >= r.Left && pt.X < r.Right && pt.Y >= r.Top && pt.Y < r.Bottom) return item;
+                    }
+                    return null;
+                }
+                if (ct is ControlType.Window or ControlType.Pane && i > 0) return null;
+                e = walker.GetParent(e);
+            }
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>The window the user works in: the document in front of the workspace, else the window in front (a dialog, the main window).</summary>
@@ -328,7 +496,7 @@ internal sealed class UiaCollector : IDisposable
     {
         private readonly UiaCollector _c;
         public World(UiaCollector c) => _c = c;
-        public IReadOnlyList<ControlRow>? RowsOf(long hwnd) { lock (_c._gate) return _c._rows.TryGetValue(new IntPtr(hwnd), out var r) ? r : null; }
+        public IReadOnlyList<ControlRow>? RowsOf(long hwnd) { lock (_c._gate) return _c._clickRows.TryGetValue(new IntPtr(hwnd), out var c) ? c : _c._rows.TryGetValue(new IntPtr(hwnd), out var r) ? r : null; }
         public bool IsVisible(long hwnd) => Win32.IsWindow(new IntPtr(hwnd)) && Win32.IsWindowVisible(new IntPtr(hwnd));
         public long WindowAt(int x, int y)
         {
@@ -433,7 +601,7 @@ internal sealed class UiaCollector : IDisposable
                 if (ev == Win32.EVENT_OBJECT_HIDE && Win32.IsWindowVisible(hwnd)) return;
                 _knownWindows.Remove(hwnd);
                 if (_perWindow.Remove(hwnd, out var list)) foreach (var d in list) { try { d.Dispose(); } catch { } }
-                lock (_gate) { _rows.Remove(hwnd); _activeTab.Remove(hwnd); _tabStrips.Remove(hwnd); _lastTabPoll.Remove(hwnd); }
+                lock (_gate) { _rows.Remove(hwnd); _clickRows.Remove(hwnd); _activeTab.Remove(hwnd); _tabStrips.Remove(hwnd); _lastTabPoll.Remove(hwnd); }
                 if (title.Length == 0 || Excluded(title)) return; // helper windows (lookups, tips, drop-downs) are not screens; their close is noise
                 InferPress("window closed", from: title); // the button that closed it (OK, No, Cancel, Exit) is counted before the close
                 Emit(new RawEvent { Act = Acts.Close, Hwnd = hwnd, WindowTitle = title, Ct = "Window", Name = title });
@@ -608,35 +776,19 @@ internal sealed class UiaCollector : IDisposable
         }
         if (deferred) return;
         bool Fresh(DateTime t) { var age = (now - t).TotalMilliseconds; return age >= -50 && age <= maxAgeMs; }
-        // the focused button only after a click or Enter: a default button that gets the focus when a dialog opens is not pressed
-        if (mayFocused && a.name.Length > 0 && Fresh(a.t) && ClickTracker.ScreensRelated(a.win, from) && last.t < a.t.AddMilliseconds(-50))
+        // the focused button only when Enter or Space went down while it already had the focus: Enter in a field after which the
+        // program moves the focus to a button (Edit, after a record loads; Exit on a window it opened) does not press that button
+        DateTime keyAt; lock (_gate) keyAt = _tracker.PressKeyAt;
+        if (mayFocused && a.name.Length > 0 && Fresh(a.t) && a.t <= keyAt.AddMilliseconds(30) && ClickTracker.ScreensRelated(a.win, from) && last.t < a.t.AddMilliseconds(-50))
         {
             lock (_gate) _lastActionable = ("", "", "", "", DateTime.MinValue);
             EmitPress(new RawEvent { Act = Acts.Invoke, Ct = a.ct, Name = a.name, Aid = a.aid, How = PressHow.Inferred, WindowTitle = a.win.Length > 0 ? a.win : CurrentTitle });
             return;
         }
-        // a window, tab or message change right after a click that found no target: the pointer usually still rests on the toolbar
-        // button that caused it. Without a click nothing is credited, whatever the pointer rests on (a hovered button is not pressed).
-        if (mayPointer && why is "window opened" or "window closed" or "window changed" or "tab changed" or "dialog")
-        {
-            var pt = System.Windows.Forms.Cursor.Position;
-            System.Drawing.Point lastAt; lock (_gate) lastAt = _lastPointerPress;
-            if (Math.Abs(pt.X - lastAt.X) <= 3 && Math.Abs(pt.Y - lastAt.Y) <= 3) return;
-            var win = from.Length > 0 ? from : CurrentTitle;
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    var el = _automation.FromPoint(pt);
-                    if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return;
-                    var r = Describe(el, Acts.Invoke);
-                    if (r.Ct is not ("Button" or "SplitButton" or "MenuItem" or "Hyperlink") || r.Name.Length == 0) return;
-                    lock (_gate) _lastPointerPress = pt;
-                    EmitPress(new RawEvent { Act = Acts.Invoke, Ct = r.Ct, Name = r.Name, Aid = r.Aid, How = PressHow.Inferred, WindowTitle = win, FromPointer = true });
-                }
-                catch { }
-            });
-        }
+        // nothing else: the control under the pointer at the time of the change is never credited (v0.9 and v0.10 did; it gave
+        // "Rating" for a menu item whose document opened under the pointer, and Edit after a record loaded). A press comes from a
+        // click resolved at its own point, from Enter on the focused button, or from the program's own events.
+        _ = mayPointer;
     }
 
     /// <summary>
@@ -671,6 +823,8 @@ internal sealed class UiaCollector : IDisposable
             case PressHow.Inferred: _status.PressesInferred++; if (r.FromPointer) _status.PressesPointer++; break;
             default: _status.PressesUia++; break;
         }
+        bool clicked; lock (_gate) clicked = _tracker.ClickedWithin(DateTime.Now, PressDecider.DocumentOpenMs) || _tracker.MayCreditFocused(DateTime.Now);
+        if (!clicked && r.How is PressHow.Inferred) { _status.PressesWithoutClick++; Log.Info($"press without a click: {r.How} '{r.Name}' in {r.WindowTitle}"); }
         if (r.Ct == "MenuItem") lock (_gate) _lastMenuItem = (r.Name, DateTime.Now);
         Emit(r, press: true);
         ScheduleReread($"press {r.Name}");
@@ -705,7 +859,7 @@ internal sealed class UiaCollector : IDisposable
             if (!_mdiChildren.Remove(child, out top)) return;
             _mdi.Destroyed((long)child);
             if (_mdiActiveChild.TryGetValue(top, out var active) && active == child) _mdiActiveChild.Remove(top);
-            _rows.Remove(child);
+            _rows.Remove(child); _clickRows.Remove(child);
             var rk = "doc:" + child;
             _fieldReads.Remove(rk); _fieldRows.Remove(rk); _fieldReadAt.Remove(rk);
         }
@@ -737,7 +891,13 @@ internal sealed class UiaCollector : IDisposable
                     foreach (var (h, _) in children) _mdiChildren[h] = top;
                     foreach (var gone in _mdiChildren.Where(kv => kv.Value == top && !children.Any(c => c.hwnd == kv.Key) && !Win32.IsWindow(kv.Key)).Select(kv => kv.Key).ToList()) { _mdiChildren.Remove(gone); _mdi.Destroyed((long)gone); }
                     active = _mdi.Reorder(children.Select(c => ((long)c.hwnd, c.title)));
-                    if (active is { Length: 0 }) return; // a document without a title yet (just created): its name comes with the next event
+                    if (active is { Length: 0 })
+                    {
+                        // a document without a title yet (just created): looked at again in 1 s and 3 s, since an idle document
+                        // raises no event that would bring its title (Price Change was only seen when it closed)
+                        if (!_mdiRepoll) { _mdiRepoll = true; foreach (var ms in new[] { 1000, 3000 }) { var t = new System.Threading.Timer(_ => { _mdiRepoll = false; PollMdi(top, force: true); }); t.Change(ms, Timeout.Infinite); _repollTimers.Add(t); if (_repollTimers.Count > 8) { _repollTimers[0].Dispose(); _repollTimers.RemoveAt(0); } } }
+                        return;
+                    }
                     current = _activeTab.GetValueOrDefault(top);
                     if (active is not null) activeChild = children.First(c => c.title.Trim() == active).hwnd;
                     if (active is not null) _mdiActiveChild[top] = activeChild; else _mdiActiveChild.Remove(top);
@@ -821,7 +981,7 @@ internal sealed class UiaCollector : IDisposable
                 {
                     var el = _automation.FromHandle(hwnd);
                     var lib = _automation.EventLibrary;
-                    if (!excluded)
+                    if (!excluded && title.Length > 0) // an untitled popup (a lookup list) only needs its tree: registering events on a busy program times out
                     {
                         var invoke = el.RegisterAutomationEvent(lib.Invoke.InvokedEvent, TreeScope.Subtree, (e, _) => OnElementEvent(e, Acts.Invoke, hwnd));
                         var select = el.RegisterAutomationEvent(lib.SelectionItem.ElementSelectedEvent, TreeScope.Subtree, (e, _) => OnElementEvent(e, Acts.Select, hwnd));
@@ -852,7 +1012,7 @@ internal sealed class UiaCollector : IDisposable
                     // dump the control tree once per window title (after a short delay so the window is populated)
                     Thread.Sleep(initial ? 50 : 400);
                     var rec = DumpTree(el, hwnd, title.Length > 0 ? title : Win32.WindowText(hwnd));
-                    lock (_gate) { _rows[hwnd] = rec.Controls; _lastDump[hwnd] = DateTime.Now; }
+                    lock (_gate) { _rows[hwnd] = rec.Controls; _clickRows.Remove(hwnd); _lastDump[hwnd] = DateTime.Now; }
                     // a popup menu that is an ordinary window (toolkit menus, WinForms drop-downs): its items and access keys are kept, it is never a screen
                     if (DialogDetector.IsMenuWindow(rec.Controls) && rec.Controls.Count <= 120)
                     {
@@ -957,6 +1117,7 @@ internal sealed class UiaCollector : IDisposable
             Log.Info($"list window at {popupPos} is not under or beside '{field.name}{field.aid}' ({field.rect}): not a lookup");
             return false;
         }
+        if (!FieldReads.LookupMatchesTyped(typed, items)) { Log.Info($"list window under '{field.name}{field.aid}' has no row with what was typed: not a lookup"); return false; }
         var header = items[0];
         lock (_gate)
         {
@@ -964,6 +1125,10 @@ internal sealed class UiaCollector : IDisposable
             var open = _lookupPopups.Any(kv => kv.Key != hwnd && kv.Value == header && Win32.IsWindowVisible(kv.Key));
             _lookupPopups[hwnd] = header;
             if (open) return false;
+            // the same list for the same field again within 10 s (it reappears while the next cell is typed in): not a new lookup
+            var fieldKey = field.aid + "" + field.name + "" + header;
+            if (_lastLookup.key == fieldKey && (DateTime.Now - _lastLookup.t).TotalSeconds < 10) { _lastLookup = (fieldKey, DateTime.Now); return false; }
+            _lastLookup = (fieldKey, DateTime.Now);
         }
         _status.Dropdowns++;
         var pwd = Masking.IsSensitiveName(field.name) || Masking.IsSensitiveName(field.aid);
@@ -1136,7 +1301,7 @@ internal sealed class UiaCollector : IDisposable
     private void TabGone(IntPtr hwnd, string tab)
     {
         string windowTitle;
-        lock (_gate) { _activeTab.Remove(hwnd); windowTitle = _knownWindows.TryGetValue(hwnd, out var t) ? t : _currentTitle; }
+        lock (_gate) { _activeTab.Remove(hwnd); windowTitle = _knownWindows.TryGetValue(hwnd, out var t) ? t : _currentTitle; _closedTabs[tab] = DateTime.Now; }
         var screenTitle = TabDocuments.Title(windowTitle, tab);
         lock (_gate) { var rk = "win:" + hwnd + "|" + tab; _fieldReads.Remove(rk); _fieldRows.Remove(rk); _fieldReadAt.Remove(rk); _innerTabs.Remove(screenTitle); }
         InferPress("window closed", from: screenTitle); // Exit on the document is counted before its close
@@ -1147,6 +1312,9 @@ internal sealed class UiaCollector : IDisposable
     private void ApplyTab(IntPtr top, string tabName, AutomationElement? tabElement, bool viaEvent, IntPtr documentHwnd = default)
     {
         if (top == IntPtr.Zero) top = _foreground;
+        var applyAt = DateTime.Now;
+        // a document read again while it is being destroyed (its Exit was pressed a moment ago) is not opened again
+        lock (_gate) { if (_closedTabs.TryGetValue(tabName, out var gone) && (DateTime.Now - gone).TotalSeconds < 2 && (documentHwnd == IntPtr.Zero || !Win32.IsWindow(documentHwnd) || !Win32.IsWindowVisible(documentHwnd) || _tracker.PressedWithin(2000, DateTime.Now))) return; }
         string windowTitle;
         lock (_gate)
         {
@@ -1161,6 +1329,9 @@ internal sealed class UiaCollector : IDisposable
         InferPress(documentHwnd != IntPtr.Zero ? "window opened" : "tab changed", from: windowTitle);
         bool firstTime;
         lock (_dumpedTitles) firstTime = !_dumpedTitles.Contains(Core.Learning.Titles.Key(screenTitle));
+        // the document closed while this was being applied (a read during its destruction): it was not opened
+        bool ClosedSince() { lock (_gate) return _closedTabs.TryGetValue(tabName, out var c) && c >= applyAt || documentHwnd != IntPtr.Zero && !Win32.IsWindow(documentHwnd); }
+        if (ClosedSince()) return;
         if (!firstTime)
         {
             Emit(new RawEvent { Act = Acts.Open, Ct = "Window", Name = screenTitle, WindowTitle = screenTitle, Hwnd = top });
@@ -1185,6 +1356,9 @@ internal sealed class UiaCollector : IDisposable
             });
             return;
         }
+        // the document is open now: its open is written at once; its tree (a large grid can take Inform many seconds to give)
+        // follows as a record of its own, so a visit is never dated from when the reading finished
+        Emit(new RawEvent { Act = Acts.Open, Ct = "Window", Name = screenTitle, WindowTitle = screenTitle, Hwnd = top });
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try
@@ -1197,7 +1371,7 @@ internal sealed class UiaCollector : IDisposable
                 lock (_dumpedTitles) _dumpedTitles.Add(Core.Learning.Titles.Key(screenTitle));
                 if (rec.Controls.Count >= 5) { lock (_gate) _mdiTitlesDumped.Add(Core.Learning.Titles.Key(tabName)); UpdateMdiStatus(); }
                 _status.TabScreens++;
-                Emit(new RawEvent { Act = Acts.Open, Ct = "Window", Name = screenTitle, WindowTitle = screenTitle, Hwnd = top, Screen = rec });
+                Emit(new RawEvent { Act = Acts.Open, Ct = "Window", Name = screenTitle, WindowTitle = screenTitle, Hwnd = top, Screen = rec, ScreenOnly = true });
                 ScheduleReread("tab " + tabName);
             }
             catch (Exception ex) { Log.Warn($"tab dump failed for '{screenTitle}': {ex.Message}"); }
@@ -1237,10 +1411,13 @@ internal sealed class UiaCollector : IDisposable
     // ---- document re-reads: what the program filled in ----
 
     /// <summary>Once, 300 ms after the last user value or press, the on-screen fields of the focused document are read and compared with the previous read.</summary>
-    private void ScheduleReread(string why)
+    private void ScheduleReread(string why) => ScheduleReread(why, IntPtr.Zero);
+
+    /// <summary>Same, for the window a click landed in (<paramref name="surface"/>: a document or a top-level window of the program), when it is not the one in front.</summary>
+    private void ScheduleReread(string why, IntPtr surface)
     {
         if (!_inFront || _foreground == IntPtr.Zero) return;
-        lock (_gate) _rereadWhy = why;
+        lock (_gate) { _rereadWhy = why; _rereadSurface = surface; }
         _rereadTimer ??= new System.Threading.Timer(_ => Reread(), null, Timeout.Infinite, Timeout.Infinite);
         _rereadTimer.Change(300, Timeout.Infinite);
         // a typed value or a key in a grid: the program prices the line a second or more later, so the row is read again at 1.5 s
@@ -1259,9 +1436,10 @@ internal sealed class UiaCollector : IDisposable
             if (!_inFront || _foreground == IntPtr.Zero) return;
             // the document's own title, from the window it is read from (never the title of the moment, which a popup can flip);
             // the read is kept per window handle, so a document that takes its title keeps its baseline
-            var (readKey, screen, hwnd, tab, docHwnd) = ReadTarget();
+            var (readKey, screen, hwnd, tab, docHwnd) = ReadTarget(forClick: true);
             if (screen.Length == 0) return;
             var batchT = DateTime.Now;
+            lock (_gate) { if (_slowReads.TryGetValue(readKey, out var until) && DateTime.Now < until && !_rereadWhy.StartsWith("click", StringComparison.Ordinal) && !_rereadWhy.StartsWith("key", StringComparison.Ordinal)) return; }
             var rows = new List<ControlRow>();
             using (Cache(withFilter: true, withValues: true).Activate())
             {
@@ -1269,6 +1447,8 @@ internal sealed class UiaCollector : IDisposable
                 var cached = _automation.FromHandle(docHwnd != IntPtr.Zero && Win32.IsWindow(docHwnd) ? docHwnd : hwnd);
                 WalkCached(cached, 0, _settings.DumpDepth, rows, 1500, 12, onlyOnScreen: true, withValues: true, selectionReads: _settings.SelectionReads);
             }
+            var took = (DateTime.Now - batchT).TotalSeconds;
+            if (took > 2) { Log.Info($"document read of {screen} took {took:0.0} s ({rows.Count} rows): the next reads wait 15 s unless a click or key asks"); lock (_gate) _slowReads[readKey] = DateTime.Now.AddSeconds(15); }
             if (tab is not null && docHwnd == IntPtr.Zero)
             {
                 var doc = TabDocuments.Document(rows, tab);
@@ -1276,13 +1456,25 @@ internal sealed class UiaCollector : IDisposable
             }
             // inner tabs (Main | General | Credit): the page that says selected now, against the last read
             var inner = TabDocuments.InnerTabSelections(rows);
-            List<string> innerChanges; bool firstInner;
+            List<string> innerChanges; bool firstInner; List<ControlRow>? recordedAtOpen = null; var baselineFromRecord = false;
             lock (_gate)
             {
+                if (_rows.TryGetValue(docHwnd != IntPtr.Zero ? docHwnd : hwnd, out var rec0)) recordedAtOpen = rec0;
                 firstInner = !_innerTabs.TryGetValue(screen, out var prevInner);
+                // never read since it was recorded: the tree recorded when it opened is the page it showed before the first click
+                if (firstInner && _rows.TryGetValue(docHwnd != IntPtr.Zero ? docHwnd : hwnd, out var recorded) && recorded.Count > 0)
+                {
+                    var atOpen = TabDocuments.InnerTabSelections(recorded);
+                    // only the strips recorded then can have changed; a strip not in that tree keeps the page it shows now
+                    if (atOpen.Keys.Any(inner.ContainsKey)) { prevInner = inner.ToDictionary(kv => kv.Key, kv => atOpen.GetValueOrDefault(kv.Key, kv.Value)); firstInner = false; }
+                }
                 innerChanges = firstInner ? new List<string>() : TabDocuments.InnerTabChanges(prevInner, inner);
                 _innerTabs[screen] = inner;
             }
+            // the newest read of a window is its click surface too (a document whose first tree read failed has one now;
+            // only what is on screen is in it, so a page hidden behind another tab is never hit)
+            // (kept apart from the recorded trees: labels are still resolved on the tree recorded when the window opened)
+            if (rows.Count >= 5 && (docHwnd != IntPtr.Zero || tab is null)) lock (_gate) _clickRows[docHwnd != IntPtr.Zero ? docHwnd : hwnd] = rows;
             foreach (var page in innerChanges)
             {
                 bool fromClick; lock (_gate) fromClick = _recentPageSelects.TryGetValue(screen + "\u0001" + page, out var at) && (DateTime.Now - at).TotalSeconds <= 5;
@@ -1301,9 +1493,13 @@ internal sealed class UiaCollector : IDisposable
                 {
                     // the document was read under its window before it had a title of its own: that read is the baseline
                     var prefix = "win:" + hwnd + "|";
-                    var k = _fieldReadAt.Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal) && (DateTime.Now - kv.Value).TotalSeconds <= 10).OrderByDescending(kv => kv.Value).Select(kv => kv.Key).FirstOrDefault();
+                    var k = _fieldReadAt.Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal) && (DateTime.Now - kv.Value).TotalSeconds <= 30).OrderByDescending(kv => kv.Value).Select(kv => kv.Key).FirstOrDefault();
                     if (k is not null) { before = _fieldReads[k]; beforeRows = _fieldRows[k]; }
                 }
+                // never read since it opened: the tree recorded when it opened is the baseline (the user may have typed into it
+                // before the first read: Price Change and Projected PO lost their codes that way)
+                // (that tree holds no values: only what the user typed is taken from this first comparison, never a fill)
+                if (before is null && recordedAtOpen is { Count: >= 5 } && !ReferenceEquals(recordedAtOpen, rows)) { before = FieldReads.FromRows(recordedAtOpen); beforeRows = null; baselineFromRecord = true; }
                 focusWindows = _focusWindows.Where(f => (DateTime.Now - f.t).TotalSeconds <= 8).ToList();
                 foreach (var stale in _userKeysSinceRead.Where(k => (DateTime.Now - k.Value).TotalSeconds > 5).Select(k => k.Key).ToList()) _userKeysSinceRead.Remove(stale);
                 userKeys = new HashSet<string>(_userKeysSinceRead.Keys, StringComparer.Ordinal);
@@ -1327,6 +1523,10 @@ internal sealed class UiaCollector : IDisposable
             foreach (var k in typedKeys) userKeys.Add(k);
             if (before is null) return; // the first read of a document is the baseline
             var (typedNow, filled) = FieldReads.Diff(before, reads, typedKeys);
+            if (baselineFromRecord) { filled.Clear(); typedNow.RemoveAll(f => f.IsCell); }
+            // three or more fields outside a grid changed at once: a record loaded; a field among them is the user's only when
+            // the focus was seen arriving in it and a key went down after that
+            var recordLoad = filled.Count(f => !f.IsCell) >= 3;
             // the grid row the user typed in: read by its own cells (or by place when the focus moved to another line), and its
             // changes kept apart from the rest so a new empty line never stands in for the line being priced
             var rowDone = TypedRowChanges(readKey, screen, hwnd, reads, rows, batchT);
@@ -1340,6 +1540,18 @@ internal sealed class UiaCollector : IDisposable
                 // the field's own event already reported this value: nothing new
                 string? already; lock (_gate) already = _lastTyped.GetValueOrDefault(f.AutomationId.Length > 0 ? f.AutomationId : f.Label);
                 if (already == f.Value) continue;
+                // the field's own event reported what the keys put there a moment ago, and the text now is something else (Inform
+                // puts the record's name where its code was typed): the program replaced it; the keys stay the typed value
+                DateTime ownAt; lock (_gate) ownAt = _ownTypedAt.GetValueOrDefault(f.AutomationId.Length > 0 ? f.AutomationId : f.Label);
+                int keysTyped; lock (_gate) keysTyped = _keysSinceFocus;
+                if (FieldReads.IsReplacement(already, f.Value, (batchT - ownAt).TotalSeconds) || !UserChanged(f, batchT, strict: recordLoad)
+                    || recordLoad && !f.IsCell && FieldReads.LongerThanKeys(f.Value, keysTyped))
+                {
+                    lock (_gate) _lastTyped[f.AutomationId.Length > 0 ? f.AutomationId : f.Label] = f.Value;
+                    _status.ValuesFilled++; _status.ValuesReread++;
+                    Emit(new RawEvent { T = batchT, Act = Acts.Value, Ct = f.IsCell ? "DataItem" : f.Type, Name = f.Label, Aid = f.IsCell ? "" : f.AutomationId, Val = Masking.ForAppValue(f.Value, f.Label, f.AutomationId, f.IsPassword, f.Type), By = ValueBy.App, WindowTitle = screen, Hwnd = hwnd, Row = f.IsCell ? f.Row : null });
+                    continue;
+                }
                 lock (_gate) { _lastTyped[f.AutomationId.Length > 0 ? f.AutomationId : f.Label] = f.Value; _userKeysSinceRead[f.Label] = DateTime.Now; }
                 _status.ValuesTypedReread++;
                 Emit(new RawEvent { T = batchT, Act = Acts.Value, Ct = f.IsCell ? "DataItem" : f.Type, Name = f.Label, Aid = f.IsCell ? "" : f.AutomationId, Val = Masking.ForEvent(f.Value, f.Label, f.AutomationId, f.IsPassword), How = "read", WindowTitle = screen, Hwnd = hwnd, Row = f.IsCell ? f.Row : null });
@@ -1359,7 +1571,7 @@ internal sealed class UiaCollector : IDisposable
             {
                 var pos = $"{field.rect.Left},{field.rect.Top} {field.rect.Width}x{field.rect.Height}";
                 var lookup = FieldReads.NewLookup(beforeRows, rows, pos);
-                if (lookup is { } lk)
+                if (lookup is { } lk && FieldReads.LookupMatchesTyped(typed, lk.lines))
                 {
                     _status.Dropdowns++;
                     var pwd = Masking.IsSensitiveName(field.name) || Masking.IsSensitiveName(field.aid);
@@ -1371,12 +1583,57 @@ internal sealed class UiaCollector : IDisposable
         finally { Interlocked.Exchange(ref _rereadBusy, 0); }
     }
 
+    /// <summary>
+    /// A changed field the user was in is the user's only when the user did something to it: a character key went down after the
+    /// focus arrived in it (or within 3 s when its arrival was not seen), or, for a drop-down list or a tick box, a click landed on
+    /// it within 3 s. A page that shows its fields after a tab click, a program that moves the focus to the next field and fills
+    /// it, a combo it sets when a record loads: all the program's (v0.11 and r1 recorded them as typed).
+    /// </summary>
+    private bool UserChanged(FieldRead f, DateTime at, bool strict = false)
+    {
+        DateTime typing, arrival = DateTime.MinValue; (int x, int y, DateTime t) click;
+        lock (_gate)
+        {
+            typing = _typingAt; click = _tracker.LastClick;
+            foreach (var k in new[] { f.AutomationId, Labels.Clean(f.AutomationId), f.Label })
+                if (k.Length > 0 && _focusArrivedAt.TryGetValue(k, out var a) && a > arrival) arrival = a;
+            // the focus's arrival by the window handle whose automation id is this field's (sampled, never late)
+            if (f.AutomationId.Length > 0)
+                foreach (var (h, aid) in _focusAids)
+                    if ((aid == f.AutomationId || aid.Length > 0 && Labels.Clean(aid) == Labels.Clean(f.AutomationId)) && _focusSince.TryGetValue(h, out var since)) { arrival = since; break; }
+        }
+        if (typing == DateTime.MinValue && !strict) return true; // no key ever seen: the key test cannot be made (see KeyedInto)
+        if (strict && arrival == DateTime.MinValue && f.Type is not ("ComboBox" or "CheckBox" or "RadioButton")) return false;
+        return FieldReads.UserChanged(f.Type, f.Position, at, typing, arrival, click);
+    }
+
     /// <summary>Where the next document read comes from: its cache key (by window handle), its screen title, the window, the tab, the MDI document.</summary>
-    private (string key, string screen, IntPtr hwnd, string? tab, IntPtr docHwnd) ReadTarget()
+    private (string key, string screen, IntPtr hwnd, string? tab, IntPtr docHwnd) ReadTarget(bool forClick = false)
     {
         var hwnd = _foreground;
         string? tab; IntPtr docHwnd;
-        lock (_gate) { tab = _activeTab.GetValueOrDefault(hwnd); docHwnd = _mdiActiveChild.GetValueOrDefault(hwnd); }
+        lock (_gate)
+        {
+            // a click in a window other than the one in front: that window (or document) is read
+            var s = forClick ? _rereadSurface : IntPtr.Zero;
+            if (forClick) _rereadSurface = IntPtr.Zero;
+            if (s != IntPtr.Zero && Win32.IsWindow(s) && s != hwnd && s != _mdiActiveChild.GetValueOrDefault(hwnd))
+            {
+                if (_mdiChildren.TryGetValue(s, out var top))
+                {
+                    var screenOf = ScreenTitleOf(s);
+                    return ("doc:" + s, screenOf, top, _activeTab.GetValueOrDefault(top), s);
+                }
+                if (_knownWindows.TryGetValue(s, out var title) && title.Length > 0 && !Excluded(title))
+                {
+                    var d = _mdiActiveChild.GetValueOrDefault(s);
+                    if (d != IntPtr.Zero) return ("doc:" + d, ScreenTitleOf(d), s, _activeTab.GetValueOrDefault(s), d);
+                    var t = _activeTab.GetValueOrDefault(s);
+                    return ("win:" + s + "|" + (t ?? ""), t is not null && _settings.TabDocuments ? TabDocuments.Title(title, t) : title, s, t, IntPtr.Zero);
+                }
+            }
+            tab = _activeTab.GetValueOrDefault(hwnd); docHwnd = _mdiActiveChild.GetValueOrDefault(hwnd);
+        }
         var screen = docHwnd != IntPtr.Zero ? ScreenTitleOf(docHwnd) : CurrentTitle;
         var key = docHwnd != IntPtr.Zero ? "doc:" + docHwnd : "win:" + hwnd + "|" + (tab ?? "");
         return (key, screen, hwnd, tab, docHwnd);
@@ -1404,12 +1661,17 @@ internal sealed class UiaCollector : IDisposable
     private void NoteTypedRow(DateTime now)
     {
         var (readKey, _, _, _, _) = ReadTarget();
+        // the editor that has the keyboard focus now, by the program's GUI thread (on time even when the UI Automation focus
+        // event comes seconds late): its rectangle names the cell typed in
+        System.Drawing.Rectangle guiRect = default;
+        lock (_gate) { if (_focusWindows.Count > 0 && Win32.GetWindowRect(_focusWindows[^1].hwnd, out var wr)) guiRect = new System.Drawing.Rectangle(wr.Left, wr.Top, wr.Right - wr.Left, wr.Bottom - wr.Top); }
         lock (_gate)
         {
             var f = _lastField;
-            if (f.rect.Width <= 0 || (now - f.t).TotalSeconds > 30) return;
             if (!_fieldReads.TryGetValue(readKey, out var reads)) return;
-            var pos = $"{f.rect.Left},{f.rect.Top} {f.rect.Width}x{f.rect.Height}";
+            var rect = guiRect.Width > 0 && guiRect.Height is > 0 and < 60 ? guiRect : f.rect;
+            if (rect.Width <= 0 || rect == f.rect && (now - f.t).TotalSeconds > 30) return;
+            var pos = $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}";
             var cell = FieldReads.AtRect(reads, pos);
             if (cell is null || !cell.IsCell || cell.Row.Length == 0) return;
             // a second key on the same row keeps the snapshot of the first (the row's values before the user's change)
@@ -1498,7 +1760,13 @@ internal sealed class UiaCollector : IDisposable
                 try { rect = el.BoundingRectangle; } catch { }
                 lock (_gate)
                 {
-                    if (_lastField.name != r.Name || _lastField.aid != r.Aid) _previousField = _lastField; // the cell the user just left: what changed there was typed
+                    if (_lastField.name != r.Name || _lastField.aid != r.Aid)
+                    {
+                        _previousField = _lastField; // the cell the user just left: what changed there was typed
+                        if (_focusArrivedAt.Count > 500) _focusArrivedAt.Clear();
+                        if (r.Aid.Length > 0) { _focusArrivedAt[r.Aid] = DateTime.Now; _focusArrivedAt[Labels.Clean(r.Aid)] = DateTime.Now; }
+                        if (r.Name.Length > 0) _focusArrivedAt[r.Name] = DateTime.Now;
+                    }
                     _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now, rect); _userKeysSinceRead[r.Name] = DateTime.Now; if (r.Aid.Length > 0 && !Labels.IsWrapperId(r.Aid)) _userKeysSinceRead[r.Aid] = DateTime.Now;
                 }
                 ScheduleReread("focus " + r.Name); // a grid cell typed into reports no value change: the read after the focus moved on catches it
@@ -1556,7 +1824,7 @@ internal sealed class UiaCollector : IDisposable
             var r = Describe(el, Acts.Value);
             var v = newValue as string ?? newValue?.ToString();
             r.Val = Masking.ForEvent(v, r.Name, r.Aid, r.IsPassword);
-            if (!ChangedByUser(el, r))
+            if (!ChangedByUser(el, r) || !KeyedInto(r, el))
             {
                 // a total recalculated, a name looked up from a code: the program filled it in (personal fields keep their shape only)
                 r.By = ValueBy.App;
@@ -1569,6 +1837,7 @@ internal sealed class UiaCollector : IDisposable
             // an editor lying over a grid cell names the grid, not the column: its value waits for the cell read; the value the
             // cell already had (the default quantity shown when editing starts) is not typed
             System.Drawing.Rectangle box = default; try { box = el.BoundingRectangle; } catch { }
+            if (r.Aid.Length > 0 && r.Aid.All(char.IsDigit) && r.Ct == "Edit") r.OverGridCell = true; // a grid's embedded editor: the row read names its column
             if (box.Width > 0)
             {
                 var (rk, _, _, _, _) = ReadTarget();
@@ -1576,13 +1845,14 @@ internal sealed class UiaCollector : IDisposable
                 var cell = last is null ? null : FieldReads.AtRect(last, $"{box.Left},{box.Top} {box.Width}x{box.Height}");
                 if (cell is { IsCell: true })
                 {
-                    if (cell.Value == v) return;
+                    if (cell.Value == v || v is { Length: > 0 } && cell.Value.StartsWith(v, StringComparison.Ordinal)) return; // the cell shows it already (a late keystroke)
                     r.OverGridCell = true;
                 }
             }
             lock (_gate)
             {
                 _lastTyped[r.Aid.Length > 0 ? r.Aid : r.Name] = r.Val ?? "";
+                _ownTypedAt[r.Aid.Length > 0 ? r.Aid : r.Name] = DateTime.Now;
                 if (_lastField.name.Length == 0 || _lastField.aid != r.Aid) _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now, box);
                 else _lastField.t = DateTime.Now;
                 _userKeysSinceRead[r.Name] = DateTime.Now; if (r.Aid.Length > 0 && !Labels.IsWrapperId(r.Aid)) _userKeysSinceRead[r.Aid] = DateTime.Now;
@@ -1598,6 +1868,36 @@ internal sealed class UiaCollector : IDisposable
     /// True when the value changed in the field the user is in: the last focused field, the element with keyboard
     /// focus, or a field whose focused inner editor sits inside it (Infragistics, DevExpress editors).
     /// </summary>
+    /// <summary>A key that types (or picks in a list) went down after the focus arrived in the field, or a click landed on a drop-down or tick box: the same test the re-read uses.</summary>
+    private bool KeyedInto(RawEvent r, AutomationElement el)
+    {
+        string pos = ""; try { var b = el.BoundingRectangle; pos = $"{b.Left},{b.Top} {b.Width}x{b.Height}"; } catch { }
+        DateTime typing, arrival = DateTime.MinValue; (int x, int y, DateTime t) click;
+        lock (_gate)
+        {
+            typing = _typingAt; click = _tracker.LastClick;
+            foreach (var k in new[] { r.Aid, Labels.Clean(r.Aid), r.Name })
+                if (k.Length > 0 && _focusArrivedAt.TryGetValue(k, out var a) && a > arrival) arrival = a;
+        }
+        // the focus's arrival by the window handle, when the field has one (the UI Automation focus event can come late)
+        try
+        {
+            var h = el.Properties.NativeWindowHandle.ValueOrDefault;
+            if (h != IntPtr.Zero) lock (_gate) { if (_focusSince.TryGetValue(h, out var since)) arrival = since; }
+        }
+        catch { }
+        // no key ever seen since the watcher attached: the key state cannot be read here (a remote session, values set by
+        // automation): the test is not made, as before
+        if (typing == DateTime.MinValue) return true;
+        // a key read at this very event (the value changed as the key went down): the user's, whatever order the focus event
+        // and this event arrived in (they come on different threads)
+        if ((DateTime.Now - typing).TotalMilliseconds is >= 0 and <= 250) return true;
+        // the field's focus arrival was never seen and keys went down in the last 8 s: under load UI Automation delivers a
+        // value event seconds after the key (the second order of the r6 run lost its product code to the 3 s window)
+        if (arrival == DateTime.MinValue && (DateTime.Now - typing).TotalSeconds is >= 0 and <= 8) return true;
+        return FieldReads.UserChanged(r.Ct, pos, DateTime.Now, typing, arrival, click);
+    }
+
     private bool ChangedByUser(AutomationElement el, RawEvent r)
     {
         (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) lf;
@@ -1849,6 +2149,19 @@ internal sealed class UiaCollector : IDisposable
     private void Emit(RawEvent r, bool press = false)
     {
         r.WindowTitle ??= CurrentTitle;
+        // a field labelled with the record's name from the window's title (the vendor's name beside the notes box) is data:
+        // it goes by its cleaned automation id
+        // (the record's name is quoted in this window's title or in the title of any window seen before: Inform's notes window
+        // carries the vendor's name while the vendor document's label shows it beside the notes box)
+        if (r.WindowTitle is { Length: > 0 } wt && wt.Contains('"'))
+            lock (_quotedNames) foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(wt, "\"([^\"]{3,})\"")) { _quotedNames.Add(m.Groups[1].Value.Trim()); if (_quotedNames.Count > 500) _quotedNames.Clear(); }
+        if (r.Act is Acts.Value or Acts.Focus or Acts.Dropdown && r.Name.Trim().Length >= 3)
+        {
+            bool data; lock (_quotedNames) data = _quotedNames.Any(q => r.Name.Trim().Length >= 6 && q.Contains(r.Name.Trim(), StringComparison.OrdinalIgnoreCase) || r.Name.Contains(q, StringComparison.OrdinalIgnoreCase)); // a short label ("Main") inside a name stays a label
+            if (data || Core.Learning.Titles.IsQuotedInTitle(r.Name, r.WindowTitle)) r.Name = Labels.Clean(r.Aid);
+        }
+        // grid column headers carry line breaks ("Net\r\nPrice"): one line, one space
+        if (r.Name.IndexOfAny(new[] { '\r', '\n' }) >= 0) r.Name = string.Join(' ', r.Name.Split(new[] { '\r', '\n', ' ' }, StringSplitOptions.RemoveEmptyEntries));
         if (!press && r.Act != Acts.Focus) lock (_gate) _decider.EventEmitted();
         _out.TryWrite(r);
     }

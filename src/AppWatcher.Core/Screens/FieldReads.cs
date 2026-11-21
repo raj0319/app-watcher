@@ -181,6 +181,54 @@ public static class FieldReads
     }
 
     /// <summary>
+    /// True when a re-read value of a field is the program's replacement of what the user typed, not more typing: the field's
+    /// own value event reported <paramref name="ownTyped"/> within <paramref name="secondsSinceOwn"/> ≤ 10 s, and the text
+    /// now neither extends it nor is cut from it (Inform shows the customer's name where its code was typed). The typed
+    /// value stays the keys' value; the new text is filled by the program.
+    /// </summary>
+    public static bool IsReplacement(string? ownTyped, string now, double secondsSinceOwn)
+    {
+        if (string.IsNullOrWhiteSpace(ownTyped) || secondsSinceOwn is < 0 or > 10) return false;
+        var a = ownTyped.Trim(); var b = now.Trim();
+        if (b.Length == 0) return false; // cleared: the user's doing
+        // the code followed by the record's description ("100EX, LSP FLOOR DRAIN …"): the program wrote it
+        if (b.Length > a.Length + 3 && b.StartsWith(a, StringComparison.OrdinalIgnoreCase) && !char.IsLetterOrDigit(b[a.Length])) return true;
+        return !b.StartsWith(a, StringComparison.OrdinalIgnoreCase) && !a.StartsWith(b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether a field the user was in changed by the user's doing: a character key went down after the focus arrived in it
+    /// (<paramref name="focusArrived"/>; when its arrival was not seen, within 3 s of <paramref name="at"/>), or, for a drop-down
+    /// list or a tick box, a click landed inside its rectangle within 3 s. Otherwise the program changed it.
+    /// </summary>
+    public static bool UserChanged(string type, string position, DateTime at, DateTime typingAt, DateTime focusArrived, (int x, int y, DateTime t) click)
+    {
+        if (type is "ComboBox" or "CheckBox" or "RadioButton" && click.t != DateTime.MinValue && (at - click.t).TotalSeconds is >= -0.5 and <= 3
+            && Labels.TryRect(position, out var x, out var y, out var w, out var h) && click.x >= x - 2 && click.x <= x + w + 2 && click.y >= y - 2 && click.y <= y + h + 2) return true;
+        if (typingAt == DateTime.MinValue) return false;
+        return focusArrived != DateTime.MinValue ? typingAt >= focusArrived.AddMilliseconds(-50) : (at - typingAt).TotalSeconds is >= -0.5 and <= 3;
+    }
+
+    /// <summary>
+    /// A field's new text is far longer than the keys pressed in it could have written (at least one key read per two characters,
+    /// plus two): when a record loads, the program wrote it in place of the code (a vendor's name where "00283" was typed).
+    /// </summary>
+    public static bool LongerThanKeys(string value, int keysSeen) => keysSeen >= 0 && value.Trim().Length > 2 * keysSeen + 2;
+
+    /// <summary>
+    /// A suggestion list has something to choose from: a line other than its header. A search whose list shows only its header
+    /// (a code that loaded the record) is not a lookup; the same list again for the same field is caught by the collector.
+    /// </summary>
+    public static bool LookupMatchesTyped(string? typed, IReadOnlyList<string> lines)
+    {
+        if (lines.Count < 2) return false;
+        // a list showing only its header line (repeated) is a search that loaded the record, not a list to choose from; a
+        // toolkit grid often exposes no row text at all (only its bands of column names), so any second line counts
+        var header = lines[0];
+        return lines.Skip(1).Any(l => l != header && l.Replace("|", "").Trim().Length > 0);
+    }
+
+    /// <summary>
     /// A lookup list that opened inside the window under the field the user is typing in: a grid or list that is on screen now,
     /// was not before (by identity, not by size: a grid that grew a row is the same grid), sits below the editor and overlaps
     /// its columns, and does not hold the editor itself (a grid cell's own grid is never its lookup). Returns its name and first rows (header first).

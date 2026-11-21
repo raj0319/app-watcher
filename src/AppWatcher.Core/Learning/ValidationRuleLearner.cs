@@ -41,7 +41,7 @@ public static class ValidationRuleLearner
             if (cause is null) continue;
             var screen = Titles.Key(cause.Win);
             var isValue = ReferenceEquals(cause, value);
-            var field = isValue ? cause.FieldKey : "on " + cause.FieldKey;
+            var field = isValue ? cause.FieldKey : "on " + Titles.Name(cause.FieldKey); // an action's name masked like a title
             var pattern = isValue ? ValuePattern.Of(cause.Val) : cause.Ct == "MenuItem" ? "(menu)" : "(button)";
             var message = MessageKey(d);
             var key = LearnState.Key(screen, field, pattern, message);

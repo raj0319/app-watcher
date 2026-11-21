@@ -258,7 +258,7 @@ public class InformV11Tests
         // a default button that takes the focus when a dialog opens (08:38:09 OK, 08:38:31 Cancel) is not pressed without a click or Enter
         Assert.False(t.MayCreditFocused(t0.AddSeconds(34)));
         // Enter on a focused button is a press
-        t.Observe(new InputSample(t0.AddSeconds(40), nx, ny, false, false, KeyWentDown: true, Main), w);
+        t.Observe(new InputSample(t0.AddSeconds(40), nx, ny, false, false, KeyWentDown: true, Main, PressKeyWentDown: true), w);
         Assert.True(t.MayCreditFocused(t0.AddSeconds(40).AddMilliseconds(200)));
         // the brief's sequence: hover A at t, click B at t + 1 s, destroy at t + 1.2 s: B is pressed, A never
         var notes = Records().First(r => r.Title.EndsWith("Internal Notes", StringComparison.Ordinal));

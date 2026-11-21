@@ -27,6 +27,8 @@ public static class FlowLearner
     public static readonly TimeSpan LongFlow = TimeSpan.FromMinutes(20);
     /// <summary>A window that opens later than this after the user's last click, menu pick or selection was shown by the program (a notes popup when a record loads).</summary>
     public static readonly TimeSpan ProgramShown = TimeSpan.FromSeconds(2);
+    /// <summary>How long after a document's close a press credited to it still belongs to that visit (the press that closed it, written late).</summary>
+    public const double ClosedPressSeconds = 1.5;
     public const int LongFlowSteps = 40;
     private const int MaxDurations = 2000;
     private static readonly HashSet<string> LeaveButtons = new(StringComparer.OrdinalIgnoreCase) { "exit", "cancel", "close", "quit", "abandon", "discard" };
@@ -177,7 +179,7 @@ public static class FlowLearner
     /// <summary>"press Save", "type Customer", "pick Status": the step actions a flow is made of.</summary>
     public static string Verb(UiEvent e) => e.Act switch
     {
-        Acts.Invoke => (e.Ct == "MenuItem" ? "menu " : "press ") + e.FieldKey,
+        Acts.Invoke => (e.Ct == "MenuItem" ? "menu " : "press ") + Titles.Name(e.FieldKey), // masked like a title, as in screens.md
         Acts.Value => "type " + e.FieldKey,
         Acts.Select => (e.Ct == "TabItem" ? "tab " : "pick ") + e.FieldKey,
         _ => e.FieldKey,
@@ -188,13 +190,29 @@ public static class FlowLearner
         var visits = new List<Visit>();
         Visit? cur = null;
         var lastClick = DateTime.MinValue;
+        var closed = new Dictionary<string, Visit>(StringComparer.Ordinal); // documents whose close was seen, by key
         foreach (var e in session)
         {
             var key = Titles.Key(e.Win);
             var click = e.Act is Acts.Invoke or Acts.Select or Acts.Menu or Acts.Dropdown;
             if (key.Length == 0) { if (click) lastClick = e.T; continue; }
+            // the document's own tab selected (the strip read when the document comes in front) is the program's, not a person's click:
+            // a popup the program opens right after it (the vendor's notes when a vendor loads) is still shown by the program
+            var ownTab = e.Act == Acts.Select && e.Ct == "TabItem" && IsOwnTab(e, key, cur);
             // a value credited to the main window within two seconds of the document in front of it (the program's fills, a cell read late) stays with the document
             if (cur is not null && e.Act == Acts.Value && cur.Win.StartsWith(key + " › ", StringComparison.Ordinal) && (e.T - cur.End).TotalSeconds <= 2) key = cur.Win;
+            // the main window's strip selecting the tab of the document in front (the strip is read after the document opened) is that document
+            // (the tab's name keyed as the document's title would be, so both are masked alike)
+            if (cur is not null && e.Act == Acts.Select && !string.IsNullOrEmpty(e.Name) && cur.Win.StartsWith(key + " › ", StringComparison.Ordinal)
+                && cur.Win == Titles.Key(e.Win + " › " + e.Name)) key = cur.Win;
+            // a press on a document whose close was already seen (Exit is known only when the window is gone, and is written after
+            // the close): it ends that visit, it is not a new one
+            if (e.Act == Acts.Invoke && (cur is null || cur.Win != key) && closed.TryGetValue(key, out var gone) && (e.T - gone.End).TotalSeconds is >= -0.5 and <= ClosedPressSeconds)
+            {
+                if (e.FieldKey.Length > 0) gone.Controls.Add(Verb(e));
+                lastClick = e.T;
+                continue;
+            }
             if (cur is null || cur.Win != key)
             {
                 cur = new Visit { Win = key, Start = e.T, End = e.T, Source = e.Source };
@@ -202,17 +220,26 @@ public static class FlowLearner
                 cur.ShownByProgram = visits.Count > 0 && !click && e.T - lastClick > ProgramShown && !key.Contains(" › ", StringComparison.Ordinal);
                 visits.Add(cur);
             }
-            if (click) lastClick = e.T;
+            if (click && !ownTab) lastClick = e.T;
             cur.End = e.T;
             // what the program filled in is not a step a person took
             if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0 && !(e.Act == Acts.Value && e.By == ValueBy.App)) cur.Controls.Add(Verb(e));
-            if (e.Act == Acts.Close && e.Ct == "Window" && Titles.Key(e.Name) == key && key.Contains(" › ", StringComparison.Ordinal)) cur.ClosedDocument = true;
+            if (e.Act == Acts.Close && e.Ct == "Window" && Titles.Key(e.Name) == key && key.Contains(" › ", StringComparison.Ordinal)) { cur.ClosedDocument = true; closed[key] = cur; }
         }
         // a window the program showed once on its own is its popup every time it appears in the session (a flicker of focus
         // between it and the window behind it starts no visit either)
         var programWindows = new HashSet<string>(visits.Where(v => v.ShownByProgram).Select(v => v.Win), StringComparer.Ordinal);
         foreach (var v in visits.Skip(1)) if (programWindows.Contains(v.Win)) v.ShownByProgram = true;
         return visits;
+    }
+
+    /// <summary>A tab item named as the document it belongs to: on the document ("Main › Order" selecting "Order") or on the main window's strip while that document is in front.</summary>
+    private static bool IsOwnTab(UiEvent e, string key, Visit? cur)
+    {
+        if (string.IsNullOrEmpty(e.Name) || string.IsNullOrEmpty(e.Win)) return false;
+        var cut = e.Win.LastIndexOf(" › ", StringComparison.Ordinal);
+        if (cut > 0 && key.Contains(" › ", StringComparison.Ordinal) && Titles.Key(e.Win[..cut] + " › " + e.Name) == key) return true;
+        return cur is not null && cur.Win.StartsWith(key + " › ", StringComparison.Ordinal) && cur.Win == Titles.Key(e.Win + " › " + e.Name);
     }
 
     /// <summary>
@@ -222,14 +249,29 @@ public static class FlowLearner
     public static List<Visit> WithoutProgramShown(List<Visit> visits, Func<string, bool> isDialog, string? main = null)
     {
         var result = new List<Visit>();
+        bool Dropped(Visit x) => x.ShownByProgram && !isDialog(x.Win);
         for (var i = 0; i < visits.Count; i++)
         {
             var v = visits[i];
-            if (v.ShownByProgram && !isDialog(v.Win)) continue;
-            // the main window flickering in front for under a second with nothing done on it, between two visits of the same
-            // document (a prompt closing, a popup going): the document stayed open, its visit goes on
-            if (main is not null && v.Win == main && v.Controls.Count == 0 && (v.End - v.Start).TotalSeconds < 1 && result.Count > 0 && i + 1 < visits.Count
-                && result[^1].Win == visits[i + 1].Win && result[^1].Win != main && !result[^1].ClosedDocument) continue;
+            if (Dropped(v)) continue;
+            if (main is not null && v.Win == main && result.Count > 0 && result[^1].Win != main && !result[^1].ClosedDocument)
+            {
+                // the next visit that stays (a popup the program showed in between is not one)
+                var next = visits.Skip(i + 1).FirstOrDefault(x => !Dropped(x));
+                if (next is not null && next.Win == result[^1].Win)
+                {
+                    // the main window flickering in front for under a second with nothing done on it, between two visits of the same
+                    // document (a prompt closing, a popup going): the document stayed open, its visit goes on
+                    if (v.Controls.Count == 0 && (v.End - v.Start).TotalSeconds < 1) continue;
+                    // only tab selections credited to the main window between two visits of the same open document: the document's
+                    // own sub-tabs, read on the main window's tree; they are steps of that document's visit, which goes on
+                    if (v.Controls.Count > 0 && v.Controls.All(c => c.StartsWith("tab ", StringComparison.Ordinal)) && result[^1].Win.StartsWith(main + " › ", StringComparison.Ordinal))
+                    {
+                        result[^1].Controls.AddRange(v.Controls);
+                        continue;
+                    }
+                }
+            }
             if (result.Count > 0 && result[^1].Win == v.Win && !isDialog(v.Win))
             {
                 var prev = result[^1];

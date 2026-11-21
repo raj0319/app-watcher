@@ -24,6 +24,9 @@ internal static class Win32
     public const uint EVENT_OBJECT_STATECHANGE = 0x800A;
     public const uint EVENT_OBJECT_NAMECHANGE = 0x800C;
     public const uint EVENT_OBJECT_INVOKED = 0x8013;
+    /// <summary>Location changes; with OBJID_CURSOR the pointer moved (a WinEvent, not a mouse hook: no input is seen or held).</summary>
+    public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+    public const int OBJID_CURSOR = -9;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
     public const int OBJID_WINDOW = 0;
@@ -31,7 +34,7 @@ internal static class Win32
     public const int OBJID_MENU = -3;
     public const uint GA_ROOT = 2;
     public const uint GW_HWNDNEXT = 2;
-    public const int VK_LBUTTON = 0x01, VK_TAB = 0x09, VK_RETURN = 0x0D;
+    public const int VK_LBUTTON = 0x01, VK_TAB = 0x09, VK_RETURN = 0x0D, VK_SPACE = 0x20;
 
     /// <summary>A read of the key state (no hook): bit 0 says the key went down since the previous call, bit 15 that it is down now.</summary>
     [DllImport("user32.dll")]
@@ -49,6 +52,29 @@ internal static class Win32
     /// <summary>True when the key went down since the last time anyone asked (one read, consumed).</summary>
     public static bool WentDown(int vKey) { try { return (GetAsyncKeyState(vKey) & 1) != 0; } catch { return false; } }
 
+    private static readonly int[] TypingKeys = BuildTypingKeys();
+    private static int[] BuildTypingKeys()
+    {
+        var k = new List<int> { 0x08, 0x2E, 0x25, 0x26, 0x27, 0x28 }; // Backspace, Delete, the arrows (a pick in a list is the user's)
+        for (var v = 0x30; v <= 0x39; v++) k.Add(v);                 // digits
+        for (var v = 0x41; v <= 0x5A; v++) k.Add(v);                 // letters
+        for (var v = 0x60; v <= 0x6F; v++) k.Add(v);                 // number pad
+        for (var v = 0xBA; v <= 0xC0; v++) k.Add(v);                 // ; = , - . / `
+        for (var v = 0xDB; v <= 0xDF; v++) k.Add(v);                 // [ \ ] '
+        return k.ToArray();
+    }
+
+    /// <summary>True when a key that types a character (or deletes one) went down since the last read: a read of the key state, never a hook; which key is not kept.</summary>
+    public static bool TypingKeyWentDown() => TypingKeysWentDown() > 0;
+
+    /// <summary>How many different character keys went down since the last read (a lower bound on the characters typed).</summary>
+    public static int TypingKeysWentDown()
+    {
+        var n = 0;
+        try { foreach (var v in TypingKeys) if ((GetAsyncKeyState(v) & 1) != 0) n++; } catch { }
+        return n;
+    }
+
     /// <summary>One read of a key's state: whether it went down since the last read (bit 0) and whether it is down now (bit 15).</summary>
     public static (bool wentDown, bool down) KeyState(int vKey)
     {
@@ -56,6 +82,34 @@ internal static class Win32
     }
 
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageTimeoutW")]
+    private static extern IntPtr SendMessageTimeoutText(IntPtr hWnd, uint msg, IntPtr wParam, System.Text.StringBuilder lParam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW")]
+    private static extern IntPtr SendMessageTimeoutInt(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr hWnd, int index);
+
+    /// <summary>
+    /// The text of a text box of another program (WM_GETTEXT, a read; at most 100 ms, never when the program hangs), or null.
+    /// Never for a password box (ES_PASSWORD) and never more than 200 characters.
+    /// </summary>
+    public static string? EditText(IntPtr hwnd)
+    {
+        try
+        {
+            if (hwnd == IntPtr.Zero) return null;
+            var cls = ClassName(hwnd);
+            if (!cls.Contains("EDIT", StringComparison.OrdinalIgnoreCase)) return null;      // WinForms text boxes: WindowsForms10.EDIT.*
+            if ((GetWindowLong(hwnd, -16) & 0x20) != 0) return null;                          // ES_PASSWORD
+            const uint WM_GETTEXTLENGTH = 0x000E, WM_GETTEXT = 0x000D, SMTO_ABORTIFHUNG = 0x0002;
+            if (SendMessageTimeoutInt(hwnd, WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, 100, out var len) == IntPtr.Zero) return null;
+            var n = (int)len; if (n <= 0 || n > 200) return n == 0 ? "" : null;
+            var sb = new System.Text.StringBuilder(n + 1);
+            if (SendMessageTimeoutText(hwnd, WM_GETTEXT, (IntPtr)(n + 1), sb, SMTO_ABORTIFHUNG, 100, out _) == IntPtr.Zero) return null;
+            return sb.ToString();
+        }
+        catch { return null; }
+    }
 
     /// <summary>The deepest visible window at a screen point (a read).</summary>
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p);

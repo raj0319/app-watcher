@@ -22,7 +22,8 @@ internal sealed class WatchService : IDisposable
     private readonly EventWriter _events;
     private readonly SnapshotService _snapshots;
     private readonly EffectCapture _effects;
-    private readonly ValueDebouncer _debounce = new();
+    // a value is committed after 2 s of quiet: under load UI Automation delivers keystrokes a second or more apart
+    private readonly ValueDebouncer _debounce = new() { Quiet = TimeSpan.FromMilliseconds(2000), CellWait = TimeSpan.FromMilliseconds(3000) };
     private readonly CancellationTokenSource _cts = new();
     private readonly System.Windows.Forms.Timer _processTimer;
     private readonly System.Windows.Forms.Timer _idleTimer;
@@ -42,6 +43,7 @@ internal sealed class WatchService : IDisposable
     public WatchService(WatcherConfig config, SynchronizationContext ui)
     {
         _config = config;
+        AppWatcher.Core.Learning.Learner.ApplyTitleMasks(config); // screen and picture file names carry the masked title, never the company name
         _paths = Paths.ForApp(config.App!.DisplayName);
         _paths.EnsureDirectories();
         _status = CollectorStatus.Load(_paths.Root) ?? new CollectorStatus { Since = DateTime.Now };

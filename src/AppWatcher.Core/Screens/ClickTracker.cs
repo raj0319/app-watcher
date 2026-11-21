@@ -28,8 +28,9 @@ public interface IWindowWorld
 /// One sample of the input state, taken at an event the collector already receives: where the pointer is now, whether the
 /// left button is down now (bit 15 of GetAsyncKeyState) and went down since the last sample (bit 0), whether Enter or Tab
 /// went down, the window in front now, and the window being destroyed or hidden by this event (0 when none).
+/// <c>PressKeyWentDown</c>: Enter or Space went down (the keys that press the focused button; Tab only moves the focus).
 /// </summary>
-public sealed record InputSample(DateTime T, int X, int Y, bool ButtonDown, bool WentDown, bool KeyWentDown, long Front, long GoingAway = 0);
+public sealed record InputSample(DateTime T, int X, int Y, bool ButtonDown, bool WentDown, bool KeyWentDown, long Front, long GoingAway = 0, bool PressKeyWentDown = false);
 
 /// <summary>A click resolved on a recorded tree: the window, the row, and whether that window is still on screen (then a live read checks it).</summary>
 public sealed record ClickHit(long Hwnd, int Index, ControlRow Row, bool Live, string Screen);
@@ -37,7 +38,7 @@ public sealed record ClickHit(long Hwnd, int Index, ControlRow Row, bool Live, s
 public enum ClickKind { None, Menu, Tab, Target, NoTarget }
 
 /// <summary>What one sample meant: no click, a click on a menu, on a tab item, on a button (a target), or on nothing known.</summary>
-public sealed record ClickOutcome(ClickKind Kind, DateTime ClickedAt, ClickHit? Hit, bool NeedsLiveRead, string Trace)
+public sealed record ClickOutcome(ClickKind Kind, DateTime ClickedAt, ClickHit? Hit, bool NeedsLiveRead, string Trace, int X = 0, int Y = 0)
 {
     public static readonly ClickOutcome None = new(ClickKind.None, DateTime.MinValue, null, false, "");
 }
@@ -88,8 +89,8 @@ public static class ClickSurfaces
         {
             foreach (var s in new[] { h, w.RootOf(h) }.Where(s => s != 0).Distinct())
             {
-                var hit = HitIn(w, s, x, y, live: false, trace);
-                if (hit is not null) return hit;
+                var gone = HitIn(w, s, x, y, live: false, trace);
+                if (gone is not null) return gone;
             }
         }
         // 2. the window under the point now
@@ -99,7 +100,12 @@ public static class ClickSurfaces
         var surface = doc != 0 ? doc : w.RootOf(at);
         if (surface == 0) surface = at;
         if (doc != 0 && w.RowsOf(doc) is null) { trace?.Add($"{doc}: a document with no tree of its own (the top window's tree is not used inside it)"); return null; }
-        return HitIn(w, surface, x, y, live: true, trace);
+        var hit = HitIn(w, surface, x, y, live: true, trace);
+        // nothing there in the top window's tree: the document in front of it (whose own window the point may not report,
+        // a toolkit drawing the page in a pane) is tried next, as v0.10 did
+        if (hit is null && doc == 0 && front != 0 && front != surface && w.RootOf(front) == surface && w.DocumentOf(front) == front)
+            hit = HitIn(w, front, x, y, live: true, trace);
+        return hit;
     }
 
     private static ClickHit? HitIn(IWindowWorld w, long hwnd, int x, int y, bool live, List<string>? trace)
@@ -136,13 +142,21 @@ public sealed class ClickTracker
     public PressDecider Decider { get; } = new();
     private readonly ClickSampler _sampler = new();
     private DateTime _clickAt = DateTime.MinValue, _readDone = DateTime.MinValue, _keyAt = DateTime.MinValue;
+    private int _pressesWithoutClick;
     private ClickHit? _liveHit;
-    private int _clickX, _clickY;
+    private int _clickX, _clickY, _downX, _downY;
+    private DateTime _downAt = DateTime.MinValue;
     private (string why, string from, DateTime at)? _pendingConfirm;
     private long _prevFront;
     private bool _menuOpen;
     private DateTime _menuClosedAt = DateTime.MinValue;
     private (string name, string how, DateTime t) _lastPress = ("", "", DateTime.MinValue);
+
+    /// <summary>When Enter or Space last went down (MinValue when never).</summary>
+    public DateTime PressKeyAt => _keyAt;
+
+    /// <summary>Where and when the last click was heard (its point), MinValue when none.</summary>
+    public (int x, int y, DateTime t) LastClick => (_clickX, _clickY, _clickAt);
 
     /// <summary>The time of the last click, MinValue when none.</summary>
     public DateTime LastClickAt => _clickAt;
@@ -155,8 +169,16 @@ public sealed class ClickTracker
     {
         var prevFront = _prevFront;
         _prevFront = s.Front;
-        if (s.KeyWentDown) _keyAt = s.T;
+        if (s.PressKeyWentDown) _keyAt = s.T;
+        // the point of a click is where the pointer was when the button was first seen down (a sample taken later, when the
+        // button is up again, may come after the pointer moved on)
+        var wasDown = _sampler.DownSeen;
+        if (s.ButtonDown && !wasDown) { _downX = s.X; _downY = s.Y; _downAt = s.T; }
         if (!_sampler.Sample(s.ButtonDown, s.WentDown)) return ClickOutcome.None;
+        var useDown = wasDown && _downAt != DateTime.MinValue && (s.T - _downAt).TotalMilliseconds <= 1500;
+        var x = useDown ? _downX : s.X; var y = useDown ? _downY : s.Y;
+        _downAt = DateTime.MinValue;
+        s = s with { X = x, Y = y };
         _clickAt = s.T; _clickX = s.X; _clickY = s.Y; _pendingConfirm = null; _liveHit = null;
         // a click while a menu is open, a moment after it closed, or right after a menu item was counted belongs to the menu
         var menuClick = _menuOpen || (s.T - _menuClosedAt).TotalMilliseconds is >= 0 and < 300
@@ -166,7 +188,7 @@ public sealed class ClickTracker
         {
             Decider.Clicked(null, s.X, s.Y, s.T, overPopup: true);
             _readDone = s.T;
-            return new ClickOutcome(ClickKind.Menu, s.T, null, false, "a menu click: no target beneath the popup");
+            return new ClickOutcome(ClickKind.Menu, s.T, null, false, "a menu click: no target beneath the popup", s.X, s.Y);
         }
         var trace = new List<string>();
         var hit = ClickSurfaces.Resolve(w, s.X, s.Y, s.GoingAway, s.Front, prevFront, trace);
@@ -175,7 +197,7 @@ public sealed class ClickTracker
         {
             Decider.Clicked(null, s.X, s.Y, s.T);
             _readDone = s.T;
-            return new ClickOutcome(ClickKind.Tab, s.T, t, false, text);
+            return new ClickOutcome(ClickKind.Tab, s.T, t, false, text, s.X, s.Y);
         }
         var c = hit is null ? null : new PressCandidate(hit.Row.Name.Trim(), hit.Row.AutomationId, hit.Row.Type, hit.Screen);
         Decider.Clicked(c, s.X, s.Y, s.T);
@@ -183,7 +205,7 @@ public sealed class ClickTracker
         var needsRead = hit is null ? w.WindowAt(s.X, s.Y) != 0 : hit.Live;
         _readDone = needsRead ? DateTime.MinValue : s.T;
         _liveHit = hit is { Live: true } ? hit : null;
-        return new ClickOutcome(hit is null ? ClickKind.NoTarget : ClickKind.Target, s.T, hit, needsRead, text);
+        return new ClickOutcome(hit is null ? ClickKind.NoTarget : ClickKind.Target, s.T, hit, needsRead, text, s.X, s.Y);
     }
 
     /// <summary>
@@ -195,7 +217,7 @@ public sealed class ClickTracker
     {
         if (clickedAt != _clickAt) return new LiveResult(null, null, false);
         _readDone = clickedAt;
-        string? tab = null; var cancelled = false;
+        string? tab = null; var cancelled = false; var agreed = false;
         if (el is not null && el.SameSurface)
         {
             if (el.Ct == "TabItem" && el.Name.Length > 0 && _liveHit is null && Decider.Pending is null) { tab = el.Name; Decider.Clicked(null, _clickX, _clickY, clickedAt); }
@@ -203,6 +225,10 @@ public sealed class ClickTracker
             {
                 var c = new PressCandidate(el.Name, el.Aid, el.Ct, el.Screen);
                 if (Decider.Pending is null) Decider.Clicked(c, _clickX, _clickY, clickedAt); else Decider.Refine(c, clickedAt);
+                // the recorded tree and the live element agree on a button at the click point: the click itself is the evidence
+                // (Add Line Item changes nothing the re-read could compare: Inform already added the empty line after Enter)
+                if (el.Ct is "Button" or "SplitButton" or "Hyperlink" && _liveHit is { } lh && string.Equals(lh.Row.Name.Trim(), el.Name.Trim(), StringComparison.Ordinal))
+                    agreed = true;
             }
             else if (_liveHit is { } h && !ClickSurfaces.RectsAgree(h.Row.Position, el.Position))
             {
@@ -211,7 +237,8 @@ public sealed class ClickTracker
             }
         }
         PressCandidate? confirmed = null;
-        if (_pendingConfirm is { } p) { _pendingConfirm = null; confirmed = Decider.Confirm(p.at, win => ScreensRelated(win, p.from)); }
+        if (_pendingConfirm is { } p) { _pendingConfirm = null; confirmed = Decider.Confirm(p.at, win => ScreensRelated(win, p.from), MaxAgeFor(p.why, Decider.Pending)); }
+        if (confirmed is null && agreed) confirmed = Decider.Confirm(clickedAt);
         return new LiveResult(tab, confirmed, cancelled);
     }
 
@@ -228,8 +255,18 @@ public sealed class ClickTracker
         deferred = false;
         // while the live read is in flight the target may still be refined or found stale: the confirmation waits for it
         if (ReadInFlight(at)) { _pendingConfirm ??= (why, from, at); deferred = true; return null; }
-        return Decider.Confirm(at, win => ScreensRelated(win, from));
+        return Decider.Confirm(at, win => ScreensRelated(win, from), MaxAgeFor(why, Decider.Pending));
     }
+
+    /// <summary>
+    /// How old a click may be for this change to confirm it: a button of a main window (not inside a document) may take up to
+    /// <see cref="PressDecider.DocumentOpenMs"/> to open its document; every other change must come within
+    /// <see cref="PressDecider.ClickAgeMs"/>. Any later click replaces the target, so the long wait never spans two clicks.
+    /// </summary>
+    public static int MaxAgeFor(string why, PressCandidate? pending) =>
+        why is "tab changed" or "window opened" or "window changed" or "document opened"
+        && pending is { Ct: "Button" or "SplitButton" or "MenuItem" } p && !p.Win.Contains(" › ", StringComparison.Ordinal)
+            ? PressDecider.DocumentOpenMs : PressDecider.ClickAgeMs;
 
     /// <summary>A press was written (by any path): remembered for the menu rule and for "a window that opens right after a press is its doing".</summary>
     public void Pressed(string name, string how, DateTime now)
@@ -244,8 +281,12 @@ public sealed class ClickTracker
     /// <summary>A click completed within the last <paramref name="ms"/>.</summary>
     public bool ClickedWithin(DateTime now, int ms = PressDecider.ClickAgeMs) => _clickAt != DateTime.MinValue && (now - _clickAt).TotalMilliseconds is >= -50 && (now - _clickAt).TotalMilliseconds <= ms;
 
-    /// <summary>The focused button may be credited only after a click or Enter (a button that gets the focus when a dialog opens is not pressed).</summary>
-    public bool MayCreditFocused(DateTime now) => ClickedWithin(now) || (_keyAt != DateTime.MinValue && (now - _keyAt).TotalMilliseconds is >= -50 and <= PressDecider.ClickAgeMs);
+    /// <summary>
+    /// The focused button may be credited only after Enter or Space (the keys that press it). A click is never enough: the click
+    /// has its own point, and a button that merely holds the focus (Edit after a record loads, the default button of a
+    /// window the program opened) was not where the click went. All six wrong names of the v0.11 run came from that.
+    /// </summary>
+    public bool MayCreditFocused(DateTime now) => _keyAt != DateTime.MinValue && (now - _keyAt).TotalMilliseconds is >= -50 and <= PressDecider.ClickAgeMs;
 
     /// <summary>The control under the pointer may be credited for a window change only when a click came just before and found no target.</summary>
     public bool MayCreditPointer(DateTime now) => ClickedWithin(now) && Decider.Pending is null && !PressedWithin(1000, now);

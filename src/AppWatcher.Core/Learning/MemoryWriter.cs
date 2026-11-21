@@ -35,7 +35,8 @@ public static class MemoryWriter
             changes.Add($"{name}: +{added.Count} -{removed.Count}");
             log.AppendLine($"### {name}: +{added.Count} lines, -{removed.Count} lines");
             foreach (var l in added.Take(15)) log.AppendLine($"- added: {l.Trim()}");
-            foreach (var l in removed.Take(15)) log.AppendLine($"- removed: {l.Trim()}");
+            // a removed line comes from the memory an older learner wrote: masked like a title, so a name it held is not copied on
+            foreach (var l in removed.Take(15)) log.AppendLine($"- removed: {Titles.MaskLine(l.Trim(), json: name.EndsWith(".json", StringComparison.Ordinal))}");
             log.AppendLine();
         }
         foreach (var (name, text) in rendered) File.WriteAllText(Path.Combine(memoryDir, name), text);

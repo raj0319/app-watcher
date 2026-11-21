@@ -62,6 +62,31 @@ Status: **done** (code + unit test or live test), **partly** (what is missing is
 | E5 | not done | The settings window is English only; trigger words are multilingual (A5). |
 | E6 | partly | `tests/SampleApp` (WinForms: login, tabbed workspace, menu, dialog, message windows, JSON "database") and `scripts/live-test.ps1` drive it by UI Automation and check events, screens, pictures, effects and memory. Not wired into CI; no WPF or Infragistics sample. |
 
+## Version 0.12: the best of every version, then a measured fix loop on the test PC (2026-11-20)
+
+Built and tested on the PC that runs DDI Inform (no more prompt round trips): 15 driven rounds of the same workload, each
+scored row by row (`docs/test-v0.12-inform.md`). What changed, all read only, no hook, nothing clicked or typed by the watcher:
+
+- **Clicks** come from a 50 ms read of the left button while the program is in front (own thread), placed where the button went
+  down; message-box buttons and plain tab strips are no longer lost. Pointer-move WinEvents were tried and removed (late).
+- **Presses** need a click at their own point or Enter/Space on a button already focused; the "control under the pointer when a
+  window changed" fallback is gone (all wrong names came from it or from the focused-button credit). Tree and live read
+  agreeing on a button is a press (Add Line Item). Main-window toolbar presses wait up to 8 s for their document (v0.9's 23/23).
+- **Tabs**: every click re-reads the window under it (also Inform's notes window) against the tree recorded at open; a tab
+  header part or strip resolves to its tab item. The document in front is tried when the top tree has nothing (v0.10).
+- **Typed or filled**: a character key after the focus arrived (GUI-thread focus, never late), WM_GETTEXT of the text box while
+  keys go down (the typed code survives Inform's replacement on Enter), replacement and record-load rules, grid editor copies
+  merged with the cell read.
+- **Documents**: open written when the document opens, its record when the slow read ends; slow reads back off 15 s; untitled
+  documents polled again; documents being destroyed never reopened.
+- **Learner** (three workers): whole grid rows, typed operands win, re-read cells are no observations, three distinct input sets,
+  quotients read backwards dropped, one flow per document visit, a code typed before the document's title is that document's
+  cause, partial lookup codes are no typings, names on one line.
+- **Privacy**: tab, action and screen-file names masked like titles; a label that is a record name quoted in a window title is data.
+- **Test driver**: real mouse clicks held 90 ms, no clicks on tabs covered by another window, no codes typed into screens without a
+  code field. Scorer: `evidence/harness/scorecard.py` (out of git).
+- Tests: 187 (BestOfTests, LearnerV12Tests, LearnerR2Tests, FlowsR4Tests, FormulasR7Tests added).
+
 ## Version 0.11: the four red rows of the v0.10 run (2026-11-20)
 
 The v0.10 run on the real ERP met five pass marks and moved Exit to 12 of 17 and sub-tabs to 32 of 49. The brief named six

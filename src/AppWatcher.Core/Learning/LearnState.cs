@@ -40,8 +40,8 @@ public sealed class SeqAcc
 public sealed class LearnState
 {
     public const string Sep = "\u0001";
-    /// <summary>5: calculations from grid cells and pictures need three distinct values, fills follow the typed cell into its document, tab names masked (an older state is relearned from the events).</summary>
-    public const int CurrentVersion = 5;
+    /// <summary>7 (an older state is relearned from the events): names of tabs and actions masked like titles, partial codes for a lookup are no typing, a code typed before its document took its title belongs to the document.</summary>
+    public const int CurrentVersion = 7;
     public int Version { get; set; } = CurrentVersion;
     public DateTime? Watermark { get; set; }
     public HashSet<string> EffectFiles { get; set; } = new();
@@ -80,6 +80,8 @@ public sealed class LearnState
     public Dictionary<string, HashSet<string>> CalcValues { get; set; } = new();
     /// <summary>win, field of calculations whose number came from a grid cell or a picture: those need three distinct values and no alternative before they are written.</summary>
     public HashSet<string> CalcWeak { get; set; } = new();
+    /// <summary>win, field, formula: hashes (never the values) of the distinct operand values the formula fitted with; a rule needs three.</summary>
+    public Dictionary<string, HashSet<string>> CalcInputs { get; set; } = new();
     /// <summary>win, button, window or message it led to, "window" | "message".</summary>
     public Dictionary<string, Evidence> Leads { get; set; } = new();
     /// <summary>menu, item: menu items seen when a menu opened.</summary>

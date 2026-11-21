@@ -102,10 +102,20 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   Validation messages go to the settings window's status line. Export writes to a fixed path.
 - Dialogs are decided by structure (`DialogDetector`), never by a title pattern alone; a profile's `dialogWindows`
   pattern only helps when the structure allows it (`CouldBeNamedDialog`).
-- Click and press decisions live in `ClickTracker` (Core, pure): the collector feeds it one `InputSample` per event and the
-  fixture replay feeds it the live order of a recorded run. A click is a down seen (bit 0) and the button up at a sample;
-  without one nothing is pressed (no hovered button, no focused default button, no resting pointer). Trees are kept per
-  window handle; a document with no tree of its own is never resolved on its top window's tree.
+- Click and press decisions live in `ClickTracker` (Core, pure): the collector feeds it one `InputSample` per event and per
+  50 ms read of the button (its own thread, only while the program is in front), and the fixture replay feeds it the live order
+  of a recorded run. A click is the button seen down (bit 15, or bit 0 for a very fast click) and then up at a sample; its point
+  is where the pointer was when the button was first seen down. Without a click nothing is pressed (no hovered button, no
+  resting pointer, no control under the pointer when a window changes); the focused button is credited only for Enter or Space
+  pressed while it already had the focus. A tree hit and a live read that agree on a button are a press at once (Add Line
+  Item changes nothing to compare). Any click re-reads the window under it. Trees are kept per window handle; a document with
+  no tree of its own is never resolved on its top window's tree; the newest on-screen read is the click surface, the tree
+  recorded at open stays the label source. Pointer-move WinEvents are not used (they arrive late when the watcher is busy).
+- Typed or filled: a changed field is the user's only when a character key went down after the keyboard focus arrived in it
+  (arrival from the sampled GUI-thread focus, `GetGUIThreadInfo`), or a click landed on a drop-down or tick box
+  (`FieldReads.UserChanged`); a re-read that replaces what the field's own events reported is the program's
+  (`FieldReads.IsReplacement`); in a record load (three or more fields filled at once) text longer than the keys pressed is
+  the program's (`LongerThanKeys`). Which key went down is never kept, only that one did and how many.
 - Presses on toolkits whose buttons announce nothing come from the control under the pointer, read with
   ElementFromPoint at once when the left button went down (`GetAsyncKeyState` sampled at each event the collector
   already receives: a read, never a hook) or when a PRESSED state or mouse capture says so (a state change on hover
@@ -143,6 +153,9 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   counters); snapshot-based findings are recomputed each learn. A learn run twice must give identical memory,
   and an incremental run must equal a full rebuild (tests cover both). Keep new heuristics additive.
 - Keep idle memory under 60 MB and CPU near zero when the watched app is not in front. No polling loops
-  faster than a few seconds; everything is event driven.
+  faster than a few seconds, with one exception: while the watched program is in front, the button read every 50 ms
+  (one `GetAsyncKeyState` call; every fourth read also Enter, Tab and whether a character key went down). It stops when
+  the program leaves the front. Everything else is event driven; a document read that took over 2 s waits 15 s before the
+  next one unless a click or key asks.
 - Add a test in `tests/` for every new heuristic, with synthetic data; run `scripts\live-test.ps1` after
   touching the collector.

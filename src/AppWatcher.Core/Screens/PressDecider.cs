@@ -16,6 +16,8 @@ public sealed record PressCandidate(string Name, string Aid, string Ct, string W
 public sealed class PressDecider
 {
     public const int ClickAgeMs = 1500;
+    /// <summary>How long a toolbar button of the main window may take to open its document (Inform: 2 to 5 s).</summary>
+    public const int DocumentOpenMs = 8000;
     public const int DedupeSeconds = 10;
     public const int MovedPx = 20;
     private static readonly HashSet<string> Actionable = new(StringComparer.Ordinal) { "Button", "SplitButton", "MenuItem", "Hyperlink", "CheckBox", "RadioButton" };
@@ -87,12 +89,14 @@ public sealed class PressDecider
     /// Something that a click explains just happened: the control the click went to, if one is pending and fresh, else null.
     /// The candidate is cleared so a second confirmation (a window opened and a tab changed) counts it once.
     /// </summary>
-    public PressCandidate? Confirm(DateTime now, Func<string, bool>? sameWindow = null)
+    public PressCandidate? Confirm(DateTime now, Func<string, bool>? sameWindow = null, int maxAgeMs = ClickAgeMs)
     {
         var (c, t) = _click;
         if (c is null) return null;
         var age = (now - t).TotalMilliseconds;
-        if (age < -50 || age > ClickAgeMs) return null;
+        // a target nothing confirmed for longer than any document takes to open is forgotten (it would block the pointer fallback)
+        if (age > DocumentOpenMs) { _click = (null, t); return null; }
+        if (age < -50 || age > maxAgeMs) return null;
         if (sameWindow is not null && c.Win.Length > 0 && !sameWindow(c.Win)) return null;
         _click = (null, DateTime.MinValue);
         return c;

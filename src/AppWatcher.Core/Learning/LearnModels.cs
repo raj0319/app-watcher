@@ -370,6 +370,34 @@ public sealed class LearnResult
 /// <summary>Window titles vary by document name and counters; keys collapse those so flows line up.</summary>
 public static class Titles
 {
+    /// <summary>
+    /// A name on one line: line breaks and runs of white space become one space ("Net\r\nPrice" → "Net Price"). Grid column
+    /// headers wrap their text; a name with a line break would break the lines of the memory files.
+    /// </summary>
+    /// <summary>
+    /// A control name that is a quoted part of its own window's title (Vendor - 00283 "SOME SUPPLIER" Internal Notes): the
+    /// record's name shown as a label, i.e. data, never a field name. True when the name (trimmed, at least 3 characters)
+    /// equals or lies inside a quoted part of the title.
+    /// </summary>
+    public static bool IsQuotedInTitle(string? name, string? title)
+    {
+        var n = (name ?? "").Trim();
+        if (n.Length < 3 || string.IsNullOrEmpty(title) || !title.Contains('"')) return false;
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(title, "\"([^\"]+)\""))
+        {
+            var q = m.Groups[1].Value.Trim();
+            if (q.Length >= 3 && (q.Equals(n, StringComparison.OrdinalIgnoreCase) || q.Contains(n, StringComparison.OrdinalIgnoreCase) || n.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
+        }
+        return false;
+    }
+
+    public static string OneLine(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return name ?? "";
+        if (!name.Any(c => c is '\r' or '\n' or '\t') && !name.Contains("  ", StringComparison.Ordinal)) return name;
+        return System.Text.RegularExpressions.Regex.Replace(name, @"\s+", " ").Trim();
+    }
+
     /// <summary>When true (default), quoted parts of a title ("EVERFLOW SUPPLIES INC") become "…" so record names stay out of memory files.</summary>
     public static bool MaskQuoted { get; set; } = true;
 
@@ -378,6 +406,49 @@ public static class Titles
     /// window's title) becomes "…" in every key, so it never reaches the memory files. Set from the profile.
     /// </summary>
     public static List<string> MaskPatterns { get; set; } = new();
+
+    /// <summary>
+    /// The name of a tab, button, menu item or other action on its way to the memory files: the same masking as a title
+    /// (the title masks, quoted parts → "…", digits → #), so a tab named after a record (Customer - 0002776 "NAME") is
+    /// Customer - # "…". Every such name the learner keeps goes through this, the causes and the screens' lists alike, so
+    /// they still compare equal.
+    /// </summary>
+    public static string Name(string? name) => string.IsNullOrWhiteSpace(name) ? "" : Key(OneLine(name));
+
+    /// <summary>
+    /// A whole line of an older memory file (the changelog quotes the lines a learn removed, and an older learner may have
+    /// written a record's name in them): quoted parts become "…" (escaped quotes in a JSON line) and every title mask is
+    /// applied wherever it matches in the line, not only at its start.
+    /// </summary>
+    public static string MaskLine(string line, bool json = false)
+    {
+        if (string.IsNullOrEmpty(line)) return line;
+        var t = line;
+        // a table cell of screens.md holds a title's double quotes as single quotes
+        foreach (var p in MaskPatterns.Concat(MaskPatterns.Where(x => x.Contains('"')).Select(x => x.Replace('"', '\''))))
+        {
+            if (!p.Contains('*')) continue;
+            var parts = p.Split('*');
+            var rx = string.Join("(.*?)", parts.Select(System.Text.RegularExpressions.Regex.Escape)) + (p.EndsWith('*') ? "(?=$| › |[|,;)\\]])" : "");
+            if (json) rx = rx.Replace("\"", "\\\\\"");
+            t = System.Text.RegularExpressions.Regex.Replace(t, rx, m =>
+            {
+                var sb = new System.Text.StringBuilder();
+                var pos = m.Index;
+                for (var g = 1; g < m.Groups.Count; g++)
+                {
+                    var grp = m.Groups[g];
+                    sb.Append(t, pos, grp.Index - pos).Append(grp.Value.Any(char.IsLetter) ? "…" : grp.Value);
+                    pos = grp.Index + grp.Length;
+                }
+                return sb.Append(t, pos, m.Index + m.Length - pos).ToString();
+            }, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        if (MaskQuoted)
+            t = json ? System.Text.RegularExpressions.Regex.Replace(t, @"\\""[^""\\]*\\""", "\\\"…\\\"")
+                     : System.Text.RegularExpressions.Regex.Replace(t, "\"[^\"]*\"", "\"…\"");
+        return t;
+    }
 
     public static string Key(string? title)
     {
