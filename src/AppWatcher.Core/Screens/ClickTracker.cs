@@ -22,6 +22,8 @@ public interface IWindowWorld
     string ScreenOf(long hwnd);
     /// <summary>True when the point lies on a menu popup of the program that is open, or that is <paramref name="goingAway"/>.</summary>
     bool MenuPopupAt(int x, int y, long goingAway);
+    /// <summary>The newest on-screen read of this window (only what was on screen a moment ago), or null; never a recorded tree.</summary>
+    IReadOnlyList<ControlRow>? FreshRowsOf(long hwnd) => null;
 }
 
 /// <summary>
@@ -44,7 +46,7 @@ public sealed record ClickOutcome(ClickKind Kind, DateTime ClickedAt, ClickHit? 
 }
 
 /// <summary>The control a live read (ElementFromPoint) found under the click point, and whether it is in the window the click was resolved on.</summary>
-public sealed record LiveElement(string Name, string Aid, string Ct, string Position, string Screen, bool SameSurface);
+public sealed record LiveElement(string Name, string Aid, string Ct, string Position, string Screen, bool SameSurface, bool Enabled = true);
 
 /// <summary>What a live read changed: a tab page clicked, a press now confirmed by a change that waited for the read, or nothing.</summary>
 public sealed record LiveResult(string? TabPage, PressCandidate? Confirmed, bool Cancelled);
@@ -99,7 +101,19 @@ public static class ClickSurfaces
         var doc = w.DocumentOf(at);
         var surface = doc != 0 ? doc : w.RootOf(at);
         if (surface == 0) surface = at;
-        if (doc != 0 && w.RowsOf(doc) is null) { trace?.Add($"{doc}: a document with no tree of its own (the top window's tree is not used inside it)"); return null; }
+        if (doc != 0 && w.RowsOf(doc) is null)
+        {
+            // a document whose own window was never read (it had no title when it opened): the top window's newest on-screen read
+            // holds the document's controls as they are now; a tree recorded earlier (another layout under the same title) never
+            var root = w.RootOf(doc);
+            if (root != 0 && w.FreshRowsOf(root) is { Count: > 0 } fresh)
+            {
+                var i = TreeHitTest.HitAt(fresh, x, y);
+                trace?.Add($"{doc}: no tree of its own; {root} read just now: {(i is { } k ? fresh[k].Type + " " + fresh[k].Name : "nothing at the point")}");
+                return i is { } j ? new ClickHit(root, j, fresh[j], true, w.ScreenOf(doc)) : null;
+            }
+            trace?.Add($"{doc}: a document with no tree of its own (the top window's tree is not used inside it)"); return null;
+        }
         var hit = HitIn(w, surface, x, y, live: true, trace);
         // nothing there in the top window's tree: the document in front of it (whose own window the point may not report,
         // a toolkit drawing the page in a pane) is tried next, as v0.10 did
@@ -227,7 +241,7 @@ public sealed class ClickTracker
                 if (Decider.Pending is null) Decider.Clicked(c, _clickX, _clickY, clickedAt); else Decider.Refine(c, clickedAt);
                 // the recorded tree and the live element agree on a button at the click point: the click itself is the evidence
                 // (Add Line Item changes nothing the re-read could compare: Inform already added the empty line after Enter)
-                if (el.Ct is "Button" or "SplitButton" or "Hyperlink" && _liveHit is { } lh && string.Equals(lh.Row.Name.Trim(), el.Name.Trim(), StringComparison.Ordinal))
+                if (el.Enabled && el.Ct is "Button" or "SplitButton" or "Hyperlink" && _liveHit is { } lh && string.Equals(lh.Row.Name.Trim(), el.Name.Trim(), StringComparison.Ordinal))
                     agreed = true;
             }
             else if (_liveHit is { } h && !ClickSurfaces.RectsAgree(h.Row.Position, el.Position))

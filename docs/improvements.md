@@ -87,6 +87,13 @@ scored row by row (`docs/test-v0.12-inform.md`). What changed, all read only, no
   code field. Scorer: `evidence/harness/scorecard.py` (out of git).
 - Tests: 187 (BestOfTests, LearnerV12Tests, LearnerR2Tests, FlowsR4Tests, FormulasR7Tests added).
 
+### v0.12, day 2 (2026-11-23)
+
+The four open items fixed (lookups of a list that closes before it can be read, a document's visit dated from its tab or press,
+stray program fills and fragments, failed reads of popups that had already closed), plus 13 problems found by two independent
+code reviews. 19 more driven rounds; the last builds reach 100% on every row except a partial code typed while Inform is busy
+filling its lookup list (a limit of watching without a keyboard hook). Details: `docs/test-v0.12-inform.md`.
+
 ## Version 0.11: the four red rows of the v0.10 run (2026-11-20)
 
 The v0.10 run on the real ERP met five pass marks and moved Exit to 12 of 17 and sub-tabs to 32 of 49. The brief named six

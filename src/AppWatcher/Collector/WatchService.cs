@@ -22,8 +22,8 @@ internal sealed class WatchService : IDisposable
     private readonly EventWriter _events;
     private readonly SnapshotService _snapshots;
     private readonly EffectCapture _effects;
-    // a value is committed after 2 s of quiet: under load UI Automation delivers keystrokes a second or more apart
-    private readonly ValueDebouncer _debounce = new() { Quiet = TimeSpan.FromMilliseconds(2000), CellWait = TimeSpan.FromMilliseconds(3000) };
+    // a value is committed after 3 s of quiet (or at once on a focus move, press or Enter): under load UI Automation delivers keystrokes seconds apart
+    private readonly ValueDebouncer _debounce = new() { Quiet = TimeSpan.FromMilliseconds(3000), CellWait = TimeSpan.FromMilliseconds(3000) };
     private readonly CancellationTokenSource _cts = new();
     private readonly System.Windows.Forms.Timer _processTimer;
     private readonly System.Windows.Forms.Timer _idleTimer;
@@ -193,7 +193,7 @@ internal sealed class WatchService : IDisposable
         if (!inFront) return; // another program is in front: record nothing
         _lastActivity = DateTime.Now;
 
-        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How, By = raw.By, Row = raw.Row, OverGridCell = raw.OverGridCell };
+        var ev = new UiEvent { T = raw.T, Win = raw.WindowTitle ?? "", Ct = raw.Ct, Name = raw.Name, Aid = raw.Aid, Act = raw.Act, Val = raw.Val, How = raw.How, By = raw.By, Row = raw.Row, OverGridCell = raw.OverGridCell, KeysSeen = raw.KeysSeen };
         if (raw.Act == Acts.Value)
         {
             // one event per typed value: committed when focus moves on or after the quiet time

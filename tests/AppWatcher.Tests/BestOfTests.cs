@@ -180,6 +180,109 @@ public class BestOfTests
         Assert.False(AppWatcher.Core.Learning.Titles.IsQuotedInTitle("Ship To", "Main › New Sales Order"));
     }
 
+    // Lookups (r13–r15): the list window closed before its tree could be read; its shape and place decide.
+    [Fact]
+    public void A_list_window_under_the_field_shown_right_after_a_key_is_a_lookup_by_its_shape()
+    {
+        var field = "250,420 110x22";
+        Assert.True(FieldReads.LookupByShape(field, "250,444 600x300", secondsSinceKey: 0.4));
+        Assert.False(FieldReads.LookupByShape(field, "250,444 600x300", secondsSinceKey: 5));   // no key just before
+        Assert.False(FieldReads.LookupByShape(field, "250,444 90x20", secondsSinceKey: 0.4));    // tip-sized
+        Assert.False(FieldReads.LookupByShape(field, "1400,900 600x300", secondsSinceKey: 0.4)); // nowhere near the field
+    }
+
+    // Strays: "100" typed and "1000136890" read in the cell are two values (the cell is not a late keystroke of the editor);
+    // "000277" and "0002776" are one; a value is held while more keys went down than it has characters.
+    [Fact]
+    public void The_editor_and_cell_merge_only_for_a_late_keystroke_and_a_value_waits_for_its_keys()
+    {
+        var t0 = new DateTime(2026, 11, 20, 21, 40, 54);
+        var d = new ValueDebouncer();
+        var editor = Synthetic.Ev(t0, Acts.Value, "Main › New Sales Order", "Line Items", "100"); editor.OverGridCell = true;
+        var cell = Synthetic.Ev(t0.AddMilliseconds(800), Acts.Value, "Main › New Sales Order", "Product Number", "1000136890"); cell.Ct = "DataItem";
+        d.Push(editor, t0); d.Push(cell, t0.AddMilliseconds(800));
+        Assert.Equal(2, d.Flush(t0.AddSeconds(10), all: true).Count);
+
+        var d2 = new ValueDebouncer();
+        var partial = Synthetic.Ev(t0, Acts.Value, "Main", "Customer", "00027"); partial.KeysSeen = 7;
+        d2.Push(partial, t0);
+        Assert.Empty(d2.Flush(t0.AddMilliseconds(1200)));                       // 7 keys, 5 characters: the rest is on its way
+        var whole = Synthetic.Ev(t0.AddSeconds(2.2), Acts.Value, "Main", "Customer", "0002776"); whole.KeysSeen = 7;
+        d2.Push(whole, t0.AddSeconds(2.2));
+        Assert.Equal("0002776", Assert.Single(d2.Flush(t0.AddSeconds(4))).Val);
+    }
+
+    // Review findings: a short quoted record name never renames a real label; a greyed-out button is never pressed.
+    [Fact]
+    public void Short_record_names_rename_nothing_and_a_disabled_button_is_not_pressed()
+    {
+        Assert.False(AppWatcher.Core.Learning.Titles.NameIsRecordName("Net Price", "NET"));
+        Assert.False(AppWatcher.Core.Learning.Titles.NameIsRecordName("Product", "PRO"));
+        Assert.True(AppWatcher.Core.Learning.Titles.NameIsRecordName("ACME SUPPLIES INC", "ACME SUPPLIES INC"));
+        Assert.True(AppWatcher.Core.Learning.Titles.NameIsRecordName("Notes for ACME SUPPLIES", "ACME SUPPLIES"));
+
+        var w = new FakeWorld();
+        w.Trees[Doc] = new List<ControlRow> { new ControlRow { Depth = 0, Type = "Window", Name = "Order", Position = "0,0 800x600" }, new ControlRow { Depth = 1, Type = "Button", Name = "Save", Position = "10,10 60x24" } };
+        w.Screens[Doc] = "Main › Order"; w.At = (_, _) => Doc;
+        var t = new ClickTracker(); var t0 = new DateTime(2026, 11, 23, 9, 0, 0);
+        t.Observe(new InputSample(t0, 30, 20, true, true, false, Doc), w);
+        var o = t.Observe(new InputSample(t0.AddMilliseconds(90), 30, 20, false, false, false, Doc), w);
+        Assert.Null(t.LiveRead(o.ClickedAt, new LiveElement("Save", "cmdSave", "Button", "10,10 60x24", "Main › Order", true, Enabled: false)).Confirmed);
+    }
+
+    // Duplicates (r22): a nameless editor's copy of the value a named cell of the same window reports is dropped.
+    [Fact]
+    public void A_nameless_editors_copy_of_a_named_cells_value_is_dropped()
+    {
+        var t0 = new DateTime(2026, 11, 23, 11, 32, 15);
+        var d = new ValueDebouncer();
+        var editor = Synthetic.Ev(t0.AddMilliseconds(10), Acts.Value, "Main › New Sales Order", "", "1000136890");
+        var cell = Synthetic.Ev(t0, Acts.Value, "Main › New Sales Order", "Product Number", "1000136890"); cell.Ct = "DataItem";
+        d.Push(cell, t0); d.Push(editor, t0.AddMilliseconds(10));
+        Assert.Equal("Product Number", Assert.Single(d.Flush(t0.AddSeconds(10), all: true)).Name);
+    }
+
+    // Second review: a typed number the grid shows formatted is still the user's; only the box over this cell counts.
+    [Fact]
+    public void A_typed_number_shown_formatted_is_still_typed_and_only_the_box_over_the_cell_counts()
+    {
+        Assert.True(FieldReads.ShowsTyped("5.00", "5"));
+        Assert.True(FieldReads.ShowsTyped("$5.00", "5"));
+        Assert.True(FieldReads.ShowsTyped("100EX", "100EX"));
+        Assert.True(FieldReads.ShowsTyped("1000136890", "100"));
+        Assert.False(FieldReads.ShowsTyped("1", "100EX"));
+        Assert.True(FieldReads.Overlaps("600,400 80x22", "598,398 90x26"));
+        Assert.False(FieldReads.Overlaps("600,400 80x22", "300,400 200x26"));
+    }
+
+    // r27: the session's first document had no tree of its own; its Exit is found in the main window's read of a moment ago.
+    [Fact]
+    public void A_document_with_no_tree_of_its_own_is_hit_tested_on_the_main_windows_fresh_read()
+    {
+        const long main = 1, doc = 7;
+        var w = new FakeWorld();
+        w.At = (_, _) => doc; w.Doc = h => h == doc ? doc : 0;
+        w.Screens[doc] = "Main › Customer Master";
+        w.Fresh[main] = new List<ControlRow> { new ControlRow { Depth = 0, Type = "Window", Name = "Main", Position = "0,0 1920x1040" }, new ControlRow { Depth = 3, Type = "Button", Name = "Exit", AutomationId = "cmdExit", Position = "1830,970 64x26" } };
+        var rootOf = new Dictionary<long, long> { [doc] = main };
+        var hit = ClickSurfaces.Resolve(new RootWorld(w, rootOf), 1862, 983, 0, doc, 0);
+        Assert.Equal("Exit", hit?.Row.Name);
+    }
+
+    private sealed class RootWorld : IWindowWorld
+    {
+        private readonly FakeWorld _w; private readonly Dictionary<long, long> _root;
+        public RootWorld(FakeWorld w, Dictionary<long, long> root) { _w = w; _root = root; }
+        public IReadOnlyList<ControlRow>? RowsOf(long hwnd) => _w.RowsOf(hwnd);
+        public bool IsVisible(long hwnd) => true;
+        public long WindowAt(int x, int y) => _w.WindowAt(x, y);
+        public long RootOf(long hwnd) => _root.GetValueOrDefault(hwnd, hwnd);
+        public long DocumentOf(long hwnd) => ((IWindowWorld)_w).DocumentOf(hwnd);
+        public string ScreenOf(long hwnd) => _w.ScreenOf(hwnd);
+        public bool MenuPopupAt(int x, int y, long goingAway) => false;
+        public IReadOnlyList<ControlRow>? FreshRowsOf(long hwnd) => _w.FreshRowsOf(hwnd);
+    }
+
     private const long Box = 4, Doc = 2;
 
     private sealed class FakeWorld : IWindowWorld
@@ -191,8 +294,11 @@ public class BestOfTests
         public bool IsVisible(long hwnd) => Trees.ContainsKey(hwnd);
         public long WindowAt(int x, int y) => At(x, y);
         public long RootOf(long hwnd) => hwnd;
-        public long DocumentOf(long hwnd) => 0;
         public string ScreenOf(long hwnd) => Screens.GetValueOrDefault(hwnd, "");
         public bool MenuPopupAt(int x, int y, long goingAway) => false;
+        public readonly Dictionary<long, IReadOnlyList<ControlRow>> Fresh = new();
+        public Func<long, long> Doc = _ => 0;
+        public IReadOnlyList<ControlRow>? FreshRowsOf(long hwnd) => Fresh.GetValueOrDefault(hwnd);
+        long IWindowWorld.DocumentOf(long hwnd) => Doc(hwnd);
     }
 }

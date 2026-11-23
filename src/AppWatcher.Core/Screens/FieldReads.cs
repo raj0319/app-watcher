@@ -216,6 +216,27 @@ public static class FieldReads
     public static bool LongerThanKeys(string value, int keysSeen) => keysSeen >= 0 && value.Trim().Length > 2 * keysSeen + 2;
 
     /// <summary>
+    /// The cell's value is what was typed, as the program shows it: the same text, the typed text extended, or the same number
+    /// formatted ("5" shown as "5.00" or "$5.00").
+    /// </summary>
+    public static bool ShowsTyped(string cellValue, string typed)
+    {
+        var c = cellValue.Trim(); var t = typed.Trim();
+        if (t.Length == 0) return false;
+        if (c.StartsWith(t, StringComparison.OrdinalIgnoreCase)) return true;
+        static string Num(string x) => new string(x.Where(ch => char.IsDigit(ch) || ch is '.' or '-' or ',').ToArray()).Replace(",", "");
+        return decimal.TryParse(Num(c), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var a)
+            && decimal.TryParse(Num(t), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var b) && a == b;
+    }
+
+    /// <summary>True when two "x,y wxh" rectangles overlap (the box typed in lies over this cell).</summary>
+    public static bool Overlaps(string a, string b)
+    {
+        if (!Labels.TryRect(a, out var ax, out var ay, out var aw, out var ah) || !Labels.TryRect(b, out var bx, out var by, out var bw, out var bh)) return false;
+        return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+    }
+
+    /// <summary>
     /// A suggestion list has something to choose from: a line other than its header. A search whose list shows only its header
     /// (a code that loaded the record) is not a lookup; the same list again for the same field is caught by the collector.
     /// </summary>
@@ -275,6 +296,18 @@ public static class FieldReads
     }
 
     /// <summary>A popup window (a top window of its own) is a lookup for the field when it starts under or beside it.</summary>
+    /// <summary>
+    /// A lookup told by shape alone, for a list window that closes before its tree can be read (the program is busy filling it
+    /// and accepts its first row on Enter in under a second): an untitled window of the program, at least 100 x 60 pixels, under
+    /// or beside the field typed in, shown within 2 s after a character key went down.
+    /// </summary>
+    public static bool LookupByShape(string fieldPosition, string popupPosition, double secondsSinceKey)
+    {
+        if (secondsSinceKey is < 0 or > 2) return false;
+        if (!Labels.TryRect(popupPosition, out _, out _, out var w, out var h) || w < 100 || h < 60) return false;
+        return PopupServesField(fieldPosition, popupPosition);
+    }
+
     public static bool PopupServesField(string fieldPosition, string popupPosition)
     {
         if (!Labels.TryRect(fieldPosition, out var ex, out var ey, out var ew, out var eh) || ew <= 0) return false;

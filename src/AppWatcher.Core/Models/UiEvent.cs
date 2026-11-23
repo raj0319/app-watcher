@@ -33,6 +33,8 @@ public sealed class UiEvent
     [JsonIgnore] public string Source { get; set; } = "";
     /// <summary>Collector only, never written: a value from an editor lying over a grid cell (the editor names the grid, not the column).</summary>
     [JsonIgnore] public bool OverGridCell { get; set; }
+    /// <summary>Character keys seen going down since the focus came to the field (collector only; never written).</summary>
+    [JsonIgnore] public int KeysSeen { get; set; }
 
     /// <summary>
     /// The name a person would use for the control: its Name, else its cleaned AutomationId, else the control type. A Name

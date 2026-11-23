@@ -25,9 +25,12 @@ public static class Learner
     public static void ApplyTitleMasks(WatcherConfig? config)
     {
         if (config is null) return;
-        Titles.MaskQuoted = config.Privacy.MaskTitles; Titles.MaskPatterns = config.Privacy.TitleMasks.ToList();
+        // built aside and published once: collector threads read the list while a learn runs
+        var masks = config.Privacy.TitleMasks.ToList();
         var profile = config.Profile is { Length: > 0 } pn ? Discovery.ProfileStore.ByName(pn) : null;
-        if (profile is not null) foreach (var m in profile.TitleMasks) if (!Titles.MaskPatterns.Contains(m)) Titles.MaskPatterns.Add(m);
+        if (profile is not null) foreach (var m in profile.TitleMasks) if (!masks.Contains(m)) masks.Add(m);
+        Titles.MaskQuoted = config.Privacy.MaskTitles;
+        Titles.MaskPatterns = masks;
     }
 
     public static LearnInput LoadInput(AppPaths paths, string appName, WatcherConfig? config = null, DateTime? since = null)

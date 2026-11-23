@@ -16,6 +16,10 @@ public sealed class CollectorStatus
     public int WindowsSeen { get; set; }
     public int DumpsOk { get; set; }
     public int DumpsFailed { get; set; }
+    /// <summary>Reads of a popup (a lookup list) that had already closed: not a failure of the read.</summary>
+    public int PopupsGone { get; set; }
+    /// <summary>Lookups told by the list window's shape because it closed before its tree could be read.</summary>
+    public int LookupsByShape { get; set; }
     public int DumpsEmpty { get; set; }
     public int DumpsMsaa { get; set; }
     public int TabScreens { get; set; }

@@ -522,6 +522,14 @@ public class InformV09Tests
     [Fact]
     public void The_v08_session_learns_its_dialogs_menus_and_documents_the_same_way_with_the_new_rules()
     {
+        // no title masks for this test (another test that runs the command line in-process may have loaded a profile's)
+        var savedMasks = Titles.MaskPatterns;
+        Titles.MaskPatterns = new List<string>();
+        try { LearnsTheV08Session(); } finally { Titles.MaskPatterns = savedMasks; }
+    }
+
+    private void LearnsTheV08Session()
+    {
         var input = Input();
         var r = Learner.Learn(input);
         Assert.Equal("DDI System Inform - Sample Co", r.MainWindow);

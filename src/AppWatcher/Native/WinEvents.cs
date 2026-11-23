@@ -34,7 +34,7 @@ internal static class Win32
     public const int OBJID_MENU = -3;
     public const uint GA_ROOT = 2;
     public const uint GW_HWNDNEXT = 2;
-    public const int VK_LBUTTON = 0x01, VK_TAB = 0x09, VK_RETURN = 0x0D, VK_SPACE = 0x20;
+    public const int VK_LBUTTON = 0x01, VK_TAB = 0x09, VK_RETURN = 0x0D, VK_SPACE = 0x20, VK_ESCAPE = 0x1B;
 
     /// <summary>A read of the key state (no hook): bit 0 says the key went down since the previous call, bit 15 that it is down now.</summary>
     [DllImport("user32.dll")]
@@ -67,6 +67,10 @@ internal static class Win32
     /// <summary>True when a key that types a character (or deletes one) went down since the last read: a read of the key state, never a hook; which key is not kept.</summary>
     public static bool TypingKeyWentDown() => TypingKeysWentDown() > 0;
 
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point p);
+    /// <summary>True when the pointer can be read and is not at 0,0 (a failed read gives 0,0).</summary>
+    public static bool GetCursorPosOk() { try { return GetCursorPos(out var p) && (p.X != 0 || p.Y != 0); } catch { return false; } }
+
     /// <summary>How many different character keys went down since the last read (a lower bound on the characters typed).</summary>
     public static int TypingKeysWentDown()
     {
@@ -93,7 +97,7 @@ internal static class Win32
     /// The text of a text box of another program (WM_GETTEXT, a read; at most 100 ms, never when the program hangs), or null.
     /// Never for a password box (ES_PASSWORD) and never more than 200 characters.
     /// </summary>
-    public static string? EditText(IntPtr hwnd)
+    public static string? EditText(IntPtr hwnd, uint timeoutMs = 30)
     {
         try
         {
@@ -101,12 +105,11 @@ internal static class Win32
             var cls = ClassName(hwnd);
             if (!cls.Contains("EDIT", StringComparison.OrdinalIgnoreCase)) return null;      // WinForms text boxes: WindowsForms10.EDIT.*
             if ((GetWindowLong(hwnd, -16) & 0x20) != 0) return null;                          // ES_PASSWORD
-            const uint WM_GETTEXTLENGTH = 0x000E, WM_GETTEXT = 0x000D, SMTO_ABORTIFHUNG = 0x0002;
-            if (SendMessageTimeoutInt(hwnd, WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, 100, out var len) == IntPtr.Zero) return null;
-            var n = (int)len; if (n <= 0 || n > 200) return n == 0 ? "" : null;
-            var sb = new System.Text.StringBuilder(n + 1);
-            if (SendMessageTimeoutText(hwnd, WM_GETTEXT, (IntPtr)(n + 1), sb, SMTO_ABORTIFHUNG, 100, out _) == IntPtr.Zero) return null;
-            return sb.ToString();
+            // one message, at most 30 ms: a busy program costs the 50 ms button read little
+            const uint WM_GETTEXT = 0x000D, SMTO_ABORTIFHUNG = 0x0002;
+            var sb = new System.Text.StringBuilder(257);
+            if (SendMessageTimeoutText(hwnd, WM_GETTEXT, (IntPtr)257, sb, SMTO_ABORTIFHUNG, timeoutMs, out var got) == IntPtr.Zero) return null;
+            return (int)got > 200 ? null : sb.ToString();
         }
         catch { return null; }
     }

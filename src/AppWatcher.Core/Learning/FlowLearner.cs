@@ -29,6 +29,8 @@ public static class FlowLearner
     public static readonly TimeSpan ProgramShown = TimeSpan.FromSeconds(2);
     /// <summary>How long after a document's close a press credited to it still belongs to that visit (the press that closed it, written late).</summary>
     public const double ClosedPressSeconds = 1.5;
+    /// <summary>How far before a document's late open the press or tab select that opened it is looked for.</summary>
+    public static readonly TimeSpan LateOpen = TimeSpan.FromSeconds(30);
     public const int LongFlowSteps = 40;
     private const int MaxDurations = 2000;
     private static readonly HashSet<string> LeaveButtons = new(StringComparer.OrdinalIgnoreCase) { "exit", "cancel", "close", "quit", "abandon", "discard" };
@@ -191,14 +193,19 @@ public static class FlowLearner
         Visit? cur = null;
         var lastClick = DateTime.MinValue;
         var closed = new Dictionary<string, Visit>(StringComparer.Ordinal); // documents whose close was seen, by key
-        foreach (var e in session)
+        var (moved, startAt) = LateDocumentStarts(session);
+        for (var i = 0; i < session.Count; i++)
         {
+            var e = session[i];
             var key = Titles.Key(e.Win);
             var click = e.Act is Acts.Invoke or Acts.Select or Acts.Menu or Acts.Dropdown;
             if (key.Length == 0) { if (click) lastClick = e.T; continue; }
+            // an event on the main window between the press that opened a document and the document's late open is the document's
+            var movedHere = moved.TryGetValue(i, out var movedKey);
+            if (movedHere) key = movedKey!;
             // the document's own tab selected (the strip read when the document comes in front) is the program's, not a person's click:
             // a popup the program opens right after it (the vendor's notes when a vendor loads) is still shown by the program
-            var ownTab = e.Act == Acts.Select && e.Ct == "TabItem" && IsOwnTab(e, key, cur);
+            var ownTab = e.Act == Acts.Select && e.Ct == "TabItem" && (movedHere ? NamesDocument(e, key) : IsOwnTab(e, key, cur));
             // a value credited to the main window within two seconds of the document in front of it (the program's fills, a cell read late) stays with the document
             if (cur is not null && e.Act == Acts.Value && cur.Win.StartsWith(key + " › ", StringComparison.Ordinal) && (e.T - cur.End).TotalSeconds <= 2) key = cur.Win;
             // the main window's strip selecting the tab of the document in front (the strip is read after the document opened) is that document
@@ -215,7 +222,7 @@ public static class FlowLearner
             }
             if (cur is null || cur.Win != key)
             {
-                cur = new Visit { Win = key, Start = e.T, End = e.T, Source = e.Source };
+                cur = new Visit { Win = key, Start = startAt.TryGetValue(i, out var opened) ? opened : e.T, End = e.T, Source = e.Source };
                 // a window that appears (open, foreground) with no click, menu pick or selection in the two seconds before it was shown by the program
                 cur.ShownByProgram = visits.Count > 0 && !click && e.T - lastClick > ProgramShown && !key.Contains(" › ", StringComparison.Ordinal);
                 visits.Add(cur);
@@ -223,7 +230,8 @@ public static class FlowLearner
             if (click && !ownTab) lastClick = e.T;
             cur.End = e.T;
             // what the program filled in is not a step a person took
-            if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0 && !(e.Act == Acts.Value && e.By == ValueBy.App)) cur.Controls.Add(Verb(e));
+            // (nor is the main window's strip showing the new document's tab before the document had its title)
+            if (e.Act is Acts.Invoke or Acts.Value or Acts.Select && e.FieldKey.Length > 0 && !(e.Act == Acts.Value && e.By == ValueBy.App) && !(movedHere && ownTab)) cur.Controls.Add(Verb(e));
             if (e.Act == Acts.Close && e.Ct == "Window" && Titles.Key(e.Name) == key && key.Contains(" › ", StringComparison.Ordinal)) { cur.ClosedDocument = true; closed[key] = cur; }
         }
         // a window the program showed once on its own is its popup every time it appears in the session (a flicker of focus
@@ -232,6 +240,63 @@ public static class FlowLearner
         foreach (var v in visits.Skip(1)) if (programWindows.Contains(v.Win)) v.ShownByProgram = true;
         return visits;
     }
+
+    /// <summary>
+    /// A document of a tabbed workspace gets its title late, so its open is written at the first input inside it (or at its close
+    /// when the user only looked). What is seen on time is the main window's press or menu item that opened it and, within a
+    /// second, the main window's strip selecting the document's tab. For each document visit that begins right after main-window
+    /// events, this looks back up to <see cref="LateOpen"/> for that tab select or that press (named as the document), with only reads, fills, typing, selections and tips on the main window in between (no other
+    /// press, no menu, no other window). When found, the visit starts at that event, and the main-window events after it are the
+    /// document's. The anchor itself stays on the main window, so the return to the main window that ends the flow before is kept.
+    /// Returns the moved events (index to document key) and the start time of the visit, keyed by the index of its first event.
+    /// </summary>
+    private static (Dictionary<int, string> moved, Dictionary<int, DateTime> startAt) LateDocumentStarts(List<UiEvent> session)
+    {
+        var moved = new Dictionary<int, string>();
+        var startAt = new Dictionary<int, DateTime>();
+        var keys = session.Select(e => Titles.Key(e.Win)).ToList();
+        var prevKey = "";
+        for (var i = 0; i < session.Count; i++)
+        {
+            var key = keys[i];
+            if (key.Length == 0) continue;
+            var before = prevKey;
+            prevKey = key;
+            var cut = key.IndexOf(" › ", StringComparison.Ordinal);
+            if (cut <= 0 || before != key[..cut]) continue; // only a document that comes right after its main window
+            var main = before;
+            var anchor = -1;
+            for (var b = i - 1; b >= 0; b--)
+            {
+                var e = session[b];
+                if (session[i].T - e.T > LateOpen) break;
+                if (keys[b].Length == 0) { if (e.Act is Acts.Invoke or Acts.Menu) break; continue; }
+                if (keys[b] != main) break;
+                if (e.Act == Acts.Invoke)
+                {
+                    if (NamesDocument(e, key)) anchor = b;
+                    break; // a press of anything else: the user did something else before the document came
+                }
+                if (e.Act == Acts.Select)
+                {
+                    // the strip showing the document's tab; a press of it just before is looked for further back
+                    if (e.Ct == "TabItem" && NamesDocument(e, key)) anchor = b;
+                    continue;
+                }
+                if (e.Act is Acts.Value or Acts.Focus or Acts.Foreground or Acts.Open or Acts.Hint or Acts.Result or Acts.Dropdown) continue;
+                break; // a menu opened, a close, a prompt: not the way to this document
+            }
+            if (anchor < 0) continue;
+            var first = i;
+            for (var m = i - 1; m > anchor; m--)
+                if (keys[m] == main) { moved[m] = key; first = m; }
+            startAt[first] = session[anchor].T;
+        }
+        return (moved, startAt);
+    }
+
+    /// <summary>A control of the main window named as the document: its title keyed on the main window's title is the document's key.</summary>
+    private static bool NamesDocument(UiEvent e, string docKey) => !string.IsNullOrWhiteSpace(e.Name) && Titles.Key(e.Win + " › " + e.Name) == docKey;
 
     /// <summary>A tab item named as the document it belongs to: on the document ("Main › Order" selecting "Order") or on the main window's strip while that document is in front.</summary>
     private static bool IsOwnTab(UiEvent e, string key, Visit? cur)

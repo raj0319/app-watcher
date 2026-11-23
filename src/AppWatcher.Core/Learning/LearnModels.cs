@@ -381,14 +381,25 @@ public static class Titles
     /// </summary>
     public static bool IsQuotedInTitle(string? name, string? title)
     {
-        var n = (name ?? "").Trim();
-        if (n.Length < 3 || string.IsNullOrEmpty(title) || !title.Contains('"')) return false;
+        if (string.IsNullOrEmpty(title) || !title.Contains('"')) return false;
         foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(title, "\"([^\"]+)\""))
-        {
-            var q = m.Groups[1].Value.Trim();
-            if (q.Length >= 3 && (q.Equals(n, StringComparison.OrdinalIgnoreCase) || q.Contains(n, StringComparison.OrdinalIgnoreCase) || n.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
-        }
+            if (NameIsRecordName(name, m.Groups[1].Value)) return true;
         return false;
+    }
+
+    /// <summary>
+    /// True when a control name is (or holds, or is held in) a record's name: equal to it, or containing it as whole words when
+    /// the record name has 5 or more characters, or a whole-word part of it when the control name has 6 or more. A short quoted
+    /// name ("NET") never renames "Net Price".
+    /// </summary>
+    public static bool NameIsRecordName(string? name, string? recordName)
+    {
+        var n = (name ?? "").Trim(); var q = (recordName ?? "").Trim();
+        if (n.Length < 3 || q.Length < 3) return false;
+        if (n.Equals(q, StringComparison.OrdinalIgnoreCase)) return true;
+        static bool HasWords(string hay, string words) =>
+            System.Text.RegularExpressions.Regex.IsMatch(hay, @"(?<![\p{L}\p{N}])" + System.Text.RegularExpressions.Regex.Escape(words) + @"(?![\p{L}\p{N}])", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return q.Length >= 5 && HasWords(n, q) || n.Length >= 6 && HasWords(q, n);
     }
 
     public static string OneLine(string? name)

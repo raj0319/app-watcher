@@ -61,7 +61,13 @@ public sealed class ValueDebouncer
         }
     }
 
-    private bool Due((UiEvent ev, DateTime at) p, DateTime now) => now - p.at >= (p.ev.OverGridCell ? CellWait : Quiet);
+    private bool Due((UiEvent ev, DateTime at) p, DateTime now)
+    {
+        // more character keys went down in the field than the value has characters: the rest of its keystrokes are still on
+        // their way (the program is busy and UI Automation delivers them late): wait up to 4 s for them
+        if (p.ev.By is null && !p.ev.OverGridCell && p.ev.KeysSeen > (p.ev.Val?.Length ?? 0) && now - p.at < TimeSpan.FromSeconds(4)) return false;
+        return now - p.at >= (p.ev.OverGridCell ? CellWait : Quiet);
+    }
 
     private List<UiEvent> Take(DateTime now, Func<string, bool> which)
     {
@@ -74,6 +80,7 @@ public sealed class ValueDebouncer
         {
             if (ev.By is null && string.IsNullOrWhiteSpace(ev.Val)) continue; // never an empty typed value
             if (ev.OverGridCell && SameCellRead(ev, taken)) continue;          // the cell read names the column: the editor's copy goes
+            if (ev.By is null && ev.Ct == "Edit" && ev.Name.Length == 0 && SameCellRead(ev, taken)) continue; // a nameless editor's copy of a named cell's value
             if (ev.By is null && ev.Ct == "DataItem") _recentCells.Add((ev, at));
             list.Add(ev);
         }
@@ -85,7 +92,7 @@ public sealed class ValueDebouncer
     {
         // the same value, or the cell already shows more of it (a late keystroke of the editor); within twice the wait (the row
         // read can come 1.5 s after the editor's event when the program is busy)
-        bool Match(UiEvent c) => c.By is null && c.Ct == "DataItem" && (c.Val == editor.Val || c.Val is { Length: > 0 } && editor.Val is { Length: > 0 } && c.Val.StartsWith(editor.Val, StringComparison.Ordinal))
+        bool Match(UiEvent c) => c.By is null && c.Ct == "DataItem" && Learning.Titles.Key(c.Win) == Learning.Titles.Key(editor.Win) && (c.Val == editor.Val || c.Val is { Length: > 0 } && editor.Val is { Length: > 0 } && c.Val.StartsWith(editor.Val, StringComparison.Ordinal) && c.Val.Length <= editor.Val.Length + 2)
                                  && Math.Abs((c.T - editor.T).TotalMilliseconds) <= 2 * CellWait.TotalMilliseconds;
         return taken.Any(t => Match(t.ev)) || _recentCells.Any(t => Match(t.ev)) || _pending.Values.Any(p => Match(p.ev));
     }

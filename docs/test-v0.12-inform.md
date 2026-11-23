@@ -34,7 +34,7 @@ publish, install, drive Inform for 20 minutes) → **score** (every row against 
 2. **Price Change and Projected Purchase Order have no code field.** Earlier drivers typed a product and a vendor code into a
    date box and a grid cell there. Those two typings are no longer part of the workload.
 
-## Scorecard by round (r1 = first v0.12 build; "b" = the same run re-learned with a newer learner; r15 = final build)
+## Scorecard by round, day 1 (r1 = first v0.12 build; "b" = the same run re-learned with a newer learner)
 
 | Row | v0.11 | r1 | r2b | r4b | r7b | r10 | r12 | r13 | r14 | r15 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -83,19 +83,59 @@ clicks, 0 wrong press names, 0 wrong formulas, the price formula (every observat
   the document takes its title is that document's cause, tab and action names masked like titles.
 - **Privacy**: screen and picture file names use the masked title (the company name had been in them since v0.4).
 
+## Day 2 (2026-11-23): the four open items, two independent reviews, 19 more rounds (r16 to r34)
+
+The four items left on day 1 (the partial-code lookup, Price Change's visit time, stray values, failed tree reads) were
+traced to their causes in the run data, fixed with tests, and verified on Inform. Two independent code reviews (fresh reviewers
+reading only the code) found 13 further problems, all fixed: a document re-poll that could run in the background, the Enter read
+in excluded windows, one thread per Enter, disabled buttons counted as pressed, short record names renaming labels, a stale
+Escape cancelling menu choices, the box read blocking the button read, and others. Rounds disturbed from outside are not in the
+table: r17 and r18 (an Adobe Acrobat popup on this PC took the front and left a modal report window open in Inform), r32 and r33
+(Acrobat popups again). r33 also showed a real watcher bug, now fixed: a late "front changed" event left the watcher deaf for 70 s.
+
+| Row | r15 | r19 | r20 | r23 | r25 | r28 | r31 | r34 |
+|---|---|---|---|---|---|---|---|---|
+| Toolbar opens | 18/18 | 17/17 | 17/17 | 17/17 | 17/17 | 17/17 | 17/17 | 17/17 |
+| Menu items | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 |
+| Exit presses | 19/19 | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 | 18/18 |
+| Message-box buttons | 7/7 | 7/7 | 7/7 | 7/7 | 7/7 | 7/7 | 7/7 | 7/7 |
+| Add Line Item | 2/2 | 2/2 | 2/2 | 2/2 | 2/2 | 2/2 | 2/2 | 2/2 |
+| Presses with a wrong name | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Sub-tab clicks → select | 27/27 | 39/40 | 39/39 | 39/39 | 39/39 | 39/39 | 36/36 | 38/38 |
+| Typed codes | 16/16 | 15/15 | 15/15 | 15/15 | 15/15 | 15/15 | 15/15 | 15/15 |
+| Order-line entries (product, partial) | 4/6 | 6/6 | 6/6 | 6/6 | 6/6 | 6/6 | 6/6 | 5/6 |
+| Program fills recorded as typed | 1 | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
+| Fragments | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
+| Same value twice | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
+| Price formula (seen) | 10/10 | 6/6 | 6/6 | 6/6 | 6/6 | 6/6 | 6/6 | 8/8 |
+| "Typing Customer fills …" | yes | yes | yes | yes | yes | yes | yes | yes |
+| Wrong formulas | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Lookups right + false | 0 + 0 | 2 + 0 | 2 + 0 | 2 + 0 | 2 + 0 | 2 + 0 | 2 + 0 | 1 + 0 |
+| Flows counted wrong | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Tree reads failed | 21% | 0% | 0% | 0% | 0% | 0% | 0% | 0% |
+| Real names in memory | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+r15 is the last round of day 1, for comparison. Each later column is a separate install and a fresh 20-minute run with two sales
+orders. r25 and r28 were clean on every row.
+
+Also verified on day 2:
+- `scripts\scenario-run.ps1` (the repository's own driver and scorer on the sample program): 14 passed, 0 failed, 2 untested by
+  design; no press the steps do not explain. `scripts\live-test.ps1` after every collector change.
+- CPU and memory: 0.5% of one core while Inform is in front (the 50 ms button read), 0.00% while it is not; about 61 MB private
+  memory, tidied once a minute at most when the program leaves the front.
+- 199 tests; the whole suite twice in a row with no failure.
+
 ## Still not perfect, and why
 
-- **Tree reads fail about 25–30%** of the time on Inform (UI Automation timeouts on its large grids). The watcher now backs off
-  after a slow read, and clicks no longer depend on it, but some document reads still come late.
-- **The partial code "100" typed into the second order line and its lookup list** are caught in some runs and not in others
-  (0 to 2 per run): the list window is untitled and short-lived, and its tree read often times out on the busy program.
-- **Price Change** is counted as one visit but with a duration of about 0.1 s: Inform shows its tab at once, but its document
-  window only becomes visible to the watcher when it closes.
-- **One program fill or fragment per run** still slips through now and then (a grid cell read while Inform is still answering).
-- **Hover tips** depend on how long the driver hovers (2–4 per run; all correct).
+- **A partial code typed into a grid cell while Inform fills its lookup list** (the "100" of the second order line): in about one
+  run in three these three keystrokes are not seen. Inform is busy building the list at that moment: it answers neither UI
+  Automation nor WM_GETTEXT and raises no value event until it has already replaced the text. A read-only watcher without a
+  keyboard hook cannot see those keys; the lookup itself is still recorded in most runs, and the completed product code always.
+- **Other programs' popups** (Acrobat on this PC) can take the front in the middle of a run; the watcher now recovers at once,
+  but a driver's action during such a popup goes elsewhere.
 
 ## Files
 
-- Code: branch `best-of-v0.12` (commits from `000d42a` on); 187 tests; `scripts\live-test.ps1` passes.
-- Scorecards and driver logs of every round: `evidence/harness/runs/r1` … `r15` (git-ignored: they hold customer names).
+- Code: branch `best-of-v0.12`; 199 tests; `scripts\live-test.ps1` passes.
+- Scorecards and driver logs of every round: `evidence/harness/runs/r1` … `r34` (git-ignored: they hold customer names).
 - Evidence zip: `evidence/app-watcher-v0.12-inform-evidence-2026-11-20.zip` (for the user's own mail only).

@@ -41,6 +41,8 @@ internal sealed class RawEvent
     public bool ScreenOnly;
     /// <summary>A typed value from an editor lying over a grid cell: it waits for the cell read that names its column.</summary>
     public bool OverGridCell;
+    /// <summary>Character keys seen since the focus came to the field (holds a typed value whose keystrokes arrive late).</summary>
+    public int KeysSeen;
 }
 
 /// <summary>
@@ -124,6 +126,8 @@ internal sealed class UiaCollector : IDisposable
     private (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) _lastField = ("", "", "", DateTime.MinValue, default);
     private (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) _previousField = ("", "", "", DateTime.MinValue, default);
     private readonly Dictionary<string, string> _lastTyped = new();
+    // what the user's own keys last produced in a field (never the program's replacement)
+    private readonly Dictionary<string, string> _lastKeyed = new();
     // when a key that types a character last went down (a read of the key state at events; which key is never kept)
     private DateTime _typingAt = DateTime.MinValue;
     // when the keyboard focus arrived in a field (by automation id and by label)
@@ -134,6 +138,61 @@ internal sealed class UiaCollector : IDisposable
     private int _keysSinceFocus;
     // the text box keys last went down in, and its text read then (WM_GETTEXT): the typed value as it was before Enter
     private (IntPtr hwnd, string text, DateTime t) _boxText = (IntPtr.Zero, "", DateTime.MinValue);
+    // the box-read worker: one pending request (the newest wins), read with WM_GETTEXT off the button-read thread
+    private readonly object _boxReqGate = new();
+    private (IntPtr hwnd, System.Drawing.Rectangle place, DateTime t, bool enter)? _boxRequest;
+    private readonly AutoResetEvent _boxSignal = new(false);
+    private Thread? _boxWorker;
+    private void StartBoxWorker()
+    {
+        if (_boxWorker is not null) return;
+        _boxWorker = new Thread(() =>
+        {
+            while (true)
+            {
+                _boxSignal.WaitOne();
+                (IntPtr hwnd, System.Drawing.Rectangle place, DateTime t, bool enter)? req;
+                lock (_boxReqGate) { req = _boxRequest; _boxRequest = null; }
+                if (req is not { } r || _pid == 0) continue;
+                try { BoxRead(r.hwnd, r.place, r.t, r.enter); } catch (Exception ex) { Log.Error("box read failed", ex); }
+            }
+        }) { IsBackground = true, Name = "box read" };
+        _boxWorker.Start();
+    }
+
+    /// <summary>The text of the box the keys went into, kept with where it was and when (WM_GETTEXT, up to 150 ms).</summary>
+    private void BoxRead(IntPtr typedBox, System.Drawing.Rectangle place, DateTime now, bool enterNow)
+    {
+        var text = Win32.EditText(typedBox, 150);
+        if (text is null) return;
+        lock (_gate)
+        {
+            if (!enterNow)
+            {
+                if (_boxPlace != place) _keysSinceFocus = 0; // the one editor moved to another cell: its keys start again
+                _boxText = (typedBox, text, now); _boxPlace = place;
+                var same = _boxHistory.FindLastIndex(b => b.place == place && (now - b.t).TotalSeconds <= 10);
+                if (same >= 0) _boxHistory[same] = (typedBox, text, place, now);
+                else { _boxHistory.Add((typedBox, text, place, now)); if (_boxHistory.Count > 8) _boxHistory.RemoveAt(0); }
+                return;
+            }
+            // the last keys and Enter in the same read: taken when it extends what was read before, or when the editor moved to a
+            // new cell (its text is that cell's keys); never the program's answer (a name is not a few more characters of a code)
+            if (_boxText.hwnd == typedBox && text.StartsWith(_boxText.text, StringComparison.Ordinal) && text.Length <= _boxText.text.Length + 4) _boxText = (typedBox, text, now);
+            else if (text.Length > 0 && (_boxHistory.Count == 0 || _boxHistory[^1].place != place)) { _boxText = (typedBox, text, now); _boxPlace = place; }
+            if (text.Length > 0)
+            {
+                var same = _boxHistory.FindLastIndex(b => b.place == place && (now - b.t).TotalSeconds <= 10);
+                if (same >= 0) { if (text.StartsWith(_boxHistory[same].text, StringComparison.Ordinal)) _boxHistory[same] = (typedBox, text, place, now); }
+                else { _boxHistory.Add((typedBox, text, place, now)); if (_boxHistory.Count > 8) _boxHistory.RemoveAt(0); }
+            }
+        }
+    }
+
+    // where that box was when the keys went down (a toolkit grid moves its one editor to the next cell on Enter)
+    private System.Drawing.Rectangle _boxPlace;
+    // the last few boxes typed in: text, place, time (the next cell's typing must not hide what the last one held)
+    private readonly List<(IntPtr hwnd, string text, System.Drawing.Rectangle place, DateTime t)> _boxHistory = new();
     // when the field's own value event last reported what the user typed (a later re-read that differs is the program's replacement)
     private readonly Dictionary<string, DateTime> _ownTypedAt = new();
     private bool _firstWindow = true;
@@ -145,12 +204,28 @@ internal sealed class UiaCollector : IDisposable
     private string _rereadWhy = "";
     private IntPtr _rereadSurface;
     private readonly Dictionary<string, DateTime> _slowReads = new(StringComparer.Ordinal);
+    // a click or key asked for a read since the last one (a later request for another reason must not cancel it)
+    private bool _rereadAsked;
     private readonly Dictionary<string, DateTime> _closedTabs = new(StringComparer.Ordinal);
     private (string key, DateTime t) _lastLookup = ("", DateTime.MinValue);
-    private volatile bool _mdiRepoll;
+    // one re-poll timer per top window for a document with no title yet: at most two tries per set of documents, only in front
+    private readonly Dictionary<IntPtr, (System.Threading.Timer timer, int tries, string children)> _repoll = new();
+    // (called under the gate: it never asks the program anything, so the 50 ms button read never waits on a busy program)
+    private void RepollMdiLater(IntPtr top, string children)
+    {
+        if (!_inFront) return;
+        lock (_repoll)
+        {
+            if (!_repoll.TryGetValue(top, out var r)) r = (new System.Threading.Timer(_ => { if (_inFront) PollMdi(top, force: true); }), 0, "");
+            if (r.children != children) r = (r.timer, 0, children);
+            if (r.tries >= 2) { _repoll[top] = r; return; }
+            r.timer.Change(r.tries == 0 ? 1000 : 3000, Timeout.Infinite);
+            _repoll[top] = (r.timer, r.tries + 1, children);
+        }
+    }
     // record names quoted in window titles seen this session (never written anywhere: only to tell a label that is data)
     private readonly HashSet<string> _quotedNames = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<System.Threading.Timer> _repollTimers = new();
+
     private int _rereadBusy;
 
     public UiaCollector(ChannelWriter<RawEvent> output, SynchronizationContext uiContext, CollectorSettings settings, PrivacySettings privacy, CollectorStatus status)
@@ -177,6 +252,7 @@ internal sealed class UiaCollector : IDisposable
         Detach();
         _pid = pid;
         _firstWindow = true;
+        StartBoxWorker();
         Log.Info($"attaching to pid {pid}");
         _hooks.Add(new WinEventHook(Win32.EVENT_SYSTEM_FOREGROUND, Win32.EVENT_SYSTEM_FOREGROUND, 0, OnForeground));
         _hooks.Add(new WinEventHook(Win32.EVENT_SYSTEM_MENUSTART, Win32.EVENT_SYSTEM_MENUPOPUPEND, pid, OnMenuEvent));
@@ -209,6 +285,7 @@ internal sealed class UiaCollector : IDisposable
         _perWindow.Clear();
         _knownWindows.Clear();
         lock (_gate) { _rows.Clear(); _clickRows.Clear(); _lastDump.Clear(); _activeTab.Clear(); _menuPopups.Clear(); _tabStrips.Clear(); _lastTabPoll.Clear(); _fieldReads.Clear(); _fieldRows.Clear(); _fieldReadAt.Clear(); _focusWindows.Clear(); _focusAids.Clear(); _lookupPopups.Clear(); _typedRow = null; _mdi.Clear(); _mdiChildren.Clear(); _mdiClients.Clear(); _mdiActiveChild.Clear(); _innerTabs.Clear(); }
+        lock (_repoll) { foreach (var r in _repoll.Values) r.timer.Dispose(); _repoll.Clear(); }
         _pid = 0;
         SetInFront(false);
     }
@@ -217,6 +294,7 @@ internal sealed class UiaCollector : IDisposable
     {
         if (_inFront == v) return;
         _inFront = v;
+        try { var fg = Win32.GetForegroundWindow(); Log.Info($"program {(v ? "in front" : "not in front")}: foreground pid {Win32.ProcessIdOf(fg)} class {Win32.ClassName(fg)}"); } catch { }
         // the pointer's moves are watched only while the program is in front (nothing at all is seen otherwise)
         // a click with no event and no pointer move after it (a tab clicked, then the page read without moving) is heard by a
         // read of the button's state every 50 ms, only while the program is in front: one key-state read, no UI Automation work
@@ -224,14 +302,33 @@ internal sealed class UiaCollector : IDisposable
         if (v && _sampler is null && _pid != 0 && _settings.PressInference)
         {
             var stop = new CancellationTokenSource(); _samplerStop = stop;
-            _sampler = new Thread(() => { while (!stop.IsCancellationRequested) { Thread.Sleep(ButtonTickMs); try { OnButtonTick(); } catch (Exception ex) { Log.Error("button read failed", ex); } } }) { IsBackground = true, Name = "button read", Priority = ThreadPriority.AboveNormal };
+            _sampler = new Thread(() =>
+            {
+                var last = DateTime.Now;
+                while (!stop.IsCancellationRequested)
+                {
+                    Thread.Sleep(ButtonTickMs);
+                    var t0 = DateTime.Now;
+                    if ((t0 - last).TotalSeconds > 1) Log.Info($"button read: {(t0 - last).TotalSeconds:0.0} s since the last read");
+                    try { OnButtonTick(); } catch (Exception ex) { Log.Error("button read failed", ex); }
+                    last = DateTime.Now;
+                    if ((last - t0).TotalSeconds > 1) Log.Info($"button read: one read took {(last - t0).TotalSeconds:0.0} s");
+                }
+            }) { IsBackground = true, Name = "button read", Priority = ThreadPriority.AboveNormal };
             _sampler.Start();
         }
         else if (!v && _sampler is not null) { _samplerStop?.Cancel(); _sampler = null; _samplerStop = null; }
+        // the program left the front: memory is tidied once (at most once a minute), so the idle watcher stays small
+        if (!v && (DateTime.Now - _lastTidy).TotalSeconds > 60)
+        {
+            _lastTidy = DateTime.Now;
+            ThreadPool.QueueUserWorkItem(_ => { try { Thread.Sleep(3000); if (_inFront) return; System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce; GC.Collect(2, GCCollectionMode.Forced, true, true); } catch { } });
+        }
         InFrontChanged?.Invoke(v);
     }
 
     private Thread? _sampler;
+    private DateTime _lastTidy = DateTime.MinValue;
     private CancellationTokenSource? _samplerStop;
     private const int ButtonTickMs = 50;
 
@@ -277,6 +374,8 @@ internal sealed class UiaCollector : IDisposable
     {
         if (!_inFront || _pid == 0) return;
         var pt = at ?? System.Windows.Forms.Cursor.Position;
+        // a pointer that cannot be read comes back as 0,0 (another program's popup took the desktop's input): no sample
+        if (pt.X == 0 && pt.Y == 0 && !Win32.GetCursorPosOk()) return;
         var front = FrontHwnd();
         var now = DateTime.Now;
         ClickOutcome o; bool key, enterNow = false, typedNow = false; IntPtr typedBox = IntPtr.Zero;
@@ -288,6 +387,7 @@ internal sealed class UiaCollector : IDisposable
             if (buttonState is null)
             {
                 enter = Win32.WentDown(Win32.VK_RETURN); tab = Win32.WentDown(Win32.VK_TAB); space = Win32.WentDown(Win32.VK_SPACE);
+                if (Win32.WentDown(Win32.VK_ESCAPE)) _escapeAt = now;
                 var keys = Win32.TypingKeysWentDown() + (space ? 1 : 0);
                 if (keys > 0) { _typingAt = now; _keysSinceFocus += keys; typedNow = true; }
             }
@@ -297,13 +397,13 @@ internal sealed class UiaCollector : IDisposable
             o = _settings.PressInference ? _tracker.Observe(new InputSample(now, pt.X, pt.Y, down, wentDown, key, (long)front, (long)goingAway, PressKeyWentDown: enter | space), _world) : ClickOutcome.None;
         }
         // keys went down in a text box: its text now (WM_GETTEXT, fast, no UI Automation) is what the keys wrote so far
-        if (typedBox != IntPtr.Zero && !enterNow) { var text = Win32.EditText(typedBox); if (text is not null) lock (_gate) _boxText = (typedBox, text, now); }
-        // the last keys and Enter came in the same read: the box is read once more, and taken only when it merely extends what
-        // was read before (the program has not answered yet: its answer is a name, not a few more characters of the code)
-        else if (typedBox != IntPtr.Zero && enterNow)
+        if (typedBox != IntPtr.Zero && (Thread.CurrentThread != _sampler || Excluded(_currentTitle))) typedBox = IntPtr.Zero;
+        if (typedBox != IntPtr.Zero)
         {
-            var text = Win32.EditText(typedBox);
-            lock (_gate) { if (text is not null && _boxText.hwnd == typedBox && text.StartsWith(_boxText.text, StringComparison.Ordinal) && text.Length <= _boxText.text.Length + 4) _boxText = (typedBox, text, now); }
+            // the box's text is read by its own worker (WM_GETTEXT may wait while the program is busy; the button read never does)
+            System.Drawing.Rectangle place = default; if (Win32.GetWindowRect(typedBox, out var br)) place = new System.Drawing.Rectangle(br.Left, br.Top, br.Right - br.Left, br.Bottom - br.Top);
+            lock (_boxReqGate) _boxRequest = (typedBox, place, now, enterNow);
+            _boxSignal.Set();
         }
         if (key) { NoteTypedRow(now); ScheduleReread("key"); if (enterNow) ReadAtEnter(now); }
         if (o.Kind != ClickKind.None) OnClick(o, new System.Drawing.Point(o.X, o.Y));
@@ -315,8 +415,15 @@ internal sealed class UiaCollector : IDisposable
     /// reports nothing while the user types: this read is the only moment the typed code is on screen. Only the field the
     /// user was in (same automation id), only a text field, only a value the last read did not already show.
     /// </summary>
+    private int _enterReadBusy;
+    private DateTime _enterReadAt = DateTime.MinValue;
+
     private void ReadAtEnter(DateTime now)
     {
+        // one read at a time: Enter held down, or Enter through many cells while the program is busy, starts no pile of threads
+        // (a read stuck on the busy program for over 3 s no longer blocks the next one)
+        lock (_gate) { if (_enterReadBusy == 1 && (DateTime.Now - _enterReadAt).TotalSeconds < 3) return; _enterReadBusy = 1; _enterReadAt = DateTime.Now; }
+        if (Excluded(_currentTitle)) { Interlocked.Exchange(ref _enterReadBusy, 0); return; }
         (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) field;
         lock (_gate) field = _lastField;
 
@@ -326,6 +433,7 @@ internal sealed class UiaCollector : IDisposable
             try
             {
                 // the text box the keys went into, read just before Enter (no UI Automation: on time even while the program works)
+                Thread.Sleep(200); // the box-read worker's read of this very moment lands first
                 (IntPtr hwnd, string text, DateTime t) box; lock (_gate) box = _boxText;
                 AutomationElement? el = null; string? v = null;
                 if (box.hwnd != IntPtr.Zero && (now - box.t).TotalSeconds is >= 0 and <= 3 && box.text.Trim().Length > 0)
@@ -338,6 +446,7 @@ internal sealed class UiaCollector : IDisposable
                 var late = (DateTime.Now - now).TotalMilliseconds;
                 Log.Info($"read at Enter: {r.Ct} '{r.Name}' {r.Aid} {(v is not null ? "from the text read before Enter" : $"after {late:0} ms")}");
                 if (r.Ct is not ("Edit" or "ComboBox") || r.IsPassword) return;
+                if (el.Properties.NativeWindowHandle.ValueOrDefault is var eh && eh != IntPtr.Zero && Excluded(Win32.WindowText(Win32.GetAncestor(eh, Win32.GA_ROOT)))) return; // an excluded window (a login): nothing is kept
                 // a UI Automation read that came more than 700 ms after Enter shows the program's answer, not the keys
                 if (v is null && late > 700) return;
                 // the field the user was in; or, when its focus event came late or not at all, the field whose own value
@@ -346,10 +455,19 @@ internal sealed class UiaCollector : IDisposable
                 if (v is null && r.Aid != field.aid && !ownRecent) return;
                 v ??= el.Patterns.Value.PatternOrDefault?.Value.ValueOrDefault;
                 if (string.IsNullOrWhiteSpace(v)) return;
+                // a read-only box takes no keys; a box that shows what the last read of the window already showed was not typed in
+                try { if (el.Patterns.Value.PatternOrDefault?.IsReadOnly.ValueOrDefault == true) return; } catch { }
+                {
+                    var (rk0, _, _, _, _) = ReadTarget();
+                    List<FieldRead>? before; lock (_gate) _fieldReads.TryGetValue(rk0, out before);
+                    if (before is not null && r.Aid.Length > 0 && before.Any(f => f.AutomationId == r.Aid && f.Value.Trim() == v.Trim())) return;
+                }
                 var key = r.Aid.Length > 0 ? r.Aid : r.Name;
                 lock (_gate)
                 {
-                    var known = _lastTyped.GetValueOrDefault(key);
+                    var known = _lastKeyed.GetValueOrDefault(key) is { Length: > 0 } keyed ? keyed : _lastTyped.GetValueOrDefault(key);
+                    // (what the keys produced, not what a later read showed: the program's name in the box must not make an older,
+                    // shorter read of the keys look new)
                     if (known == v || known is { Length: > 0 } && known.StartsWith(v, StringComparison.Ordinal)) return; // its own event already had it (or more)
                     _lastTyped[key] = v; _ownTypedAt[key] = now; _userKeysSinceRead[r.Name] = DateTime.Now;
                 }
@@ -359,12 +477,13 @@ internal sealed class UiaCollector : IDisposable
                 List<FieldRead>? last; lock (_gate) _fieldReads.TryGetValue(rk, out last);
                 // an editor lying over a grid (its id is its window number, or the read finds a cell there): its value waits for the
                 // row read that names the column and is dropped when that read reports it (no duplicate)
-                if (r.Aid.Length == 0 && r.Name.Length == 0 || r.Aid.Length > 0 && r.Aid.All(char.IsDigit) || last is not null && rect.Width > 0 && FieldReads.AtRect(last, $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}") is { IsCell: true }) r.OverGridCell = true;
+                if (last is not null && rect.Width > 0 && FieldReads.AtRect(last, $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}") is { IsCell: true }) r.OverGridCell = true;
                 r.Val = Masking.ForEvent(v, r.Name, r.Aid, false); r.How = "read"; r.T = now;
                 _status.ValuesTyped++;
                 Emit(r);
             }
             catch { }
+            finally { Interlocked.Exchange(ref _enterReadBusy, 0); }
         }) { IsBackground = true, Name = "read at Enter" }.Start();
     }
 
@@ -410,10 +529,15 @@ internal sealed class UiaCollector : IDisposable
                     var at = _world.WindowAt(pt.X, pt.Y);
                     var surface = at == 0 ? 0 : (_world.DocumentOf(at) is var dd && dd != 0 ? dd : _world.RootOf(at));
                     string pos = ""; try { var rc = el.BoundingRectangle; pos = $"{rc.Left},{rc.Top} {rc.Width}x{rc.Height}"; } catch { }
-                    le = new LiveElement(r.Name, r.Aid, r.Ct, pos, surface != 0 ? _world.ScreenOf(surface) : CurrentTitle, surface != 0 && surface == surfaceAtClick);
+                    var enabled = true; try { enabled = el.Properties.IsEnabled.ValueOrDefault; } catch { }
+                    le = new LiveElement(r.Name, r.Aid, r.Ct, pos, surface != 0 ? _world.ScreenOf(surface) : CurrentTitle, surface != 0 && surface == surfaceAtClick, enabled);
                 }
             }
             catch { }
+            // the window the click hit has closed meanwhile (an Exit on a small window): what is at the point now is the window
+            // behind it and says nothing about the click; its closing confirms the press
+            if (o.Hit is { } hitNow && !(Win32.IsWindow(new IntPtr(hitNow.Hwnd)) && Win32.IsWindowVisible(new IntPtr(hitNow.Hwnd)))) le = null;
+            try {
             if (o.Kind == ClickKind.NoTarget) Log.Info($"click at {pt.X},{pt.Y}: live {le?.Ct} '{le?.Name}'{(le is { SameSurface: false } ? " (another window)" : "")}");
             LiveResult res;
             lock (_gate) res = _tracker.LiveRead(clickedAt, le);
@@ -424,6 +548,7 @@ internal sealed class UiaCollector : IDisposable
             // new grid line): the window under the click is read once, whichever window is in front (Inform's notes window
             // stands beside a vendor document and keeps the foreground)
             else if (!res.Cancelled) ScheduleReread("click " + (o.Hit?.Row.Name.Trim() ?? le?.Name ?? ""), new IntPtr(surfaceAtClick));
+            } catch (Exception ex) { Log.Error("click handling failed", ex); }
         });
     }
 
@@ -518,6 +643,7 @@ internal sealed class UiaCollector : IDisposable
         }
         public string ScreenOf(long hwnd) => _c.HitWindowOf(new IntPtr(hwnd));
         public bool MenuPopupAt(int x, int y, long goingAway) => _c.OverMenuPopup(new System.Drawing.Point(x, y), new IntPtr(goingAway));
+        public IReadOnlyList<ControlRow>? FreshRowsOf(long hwnd) { lock (_c._gate) return _c._clickRows.TryGetValue(new IntPtr(hwnd), out var r) ? r : null; }
     }
 
     /// <summary>A click landed on a page of a document's inner tab control: the page is selected (recorded once), and the document is read again.</summary>
@@ -540,6 +666,10 @@ internal sealed class UiaCollector : IDisposable
 
     private void OnForeground(uint ev, IntPtr hwnd, int idObject, int idChild)
     {
+        // the event can arrive after the foreground moved on (another program's popup took it for a moment and the program got it
+        // back): what is in front now decides, never the late event alone (r16 and r33 were deaf for 70 s that way)
+        var current = Win32.GetForegroundWindow();
+        if (current != IntPtr.Zero && current != hwnd && _pid != 0 && Win32.ProcessIdOf(current) == _pid) hwnd = current;
         if (hwnd == IntPtr.Zero) { SetInFront(false); return; }
         var pid = Win32.ProcessIdOf(hwnd);
         var mine = pid == _pid && _pid != 0;
@@ -548,9 +678,9 @@ internal sealed class UiaCollector : IDisposable
             // the event may name a child control (a WinForms button has its own hwnd): always work with the top-level window
             var top = Win32.GetAncestor(hwnd, Win32.GA_ROOT);
             if (top != IntPtr.Zero) hwnd = top;
+            SetInFront(true); // a menu popup of the program is the program in front too
             lock (_gate) { if (_menuPopups.Contains(hwnd)) return; }
             var title = Win32.WindowText(hwnd);
-            SetInFront(true);
             NoteInput();
             // untitled helper windows (parking windows, drop-downs) do not change which screen the user is on
             if (title.Length == 0) { if (!_perWindow.ContainsKey(hwnd) && Win32.IsTopLevel(hwnd)) RegisterWindow(hwnd, initial: false); return; }
@@ -655,11 +785,15 @@ internal sealed class UiaCollector : IDisposable
 
     /// <summary>A menu closed: if an item was highlighted or focused just before, that item was chosen (unless a real press already said so).</summary>
     private void MenuOpened() { lock (_gate) { _menuOpenedAt = DateTime.Now; _tracker.MenuOpened(); } }
+    private DateTime _escapeAt = DateTime.MinValue;
 
     private void MenuClosed()
     {
         (string name, DateTime t) item;
         lock (_gate) { item = _lastMenuItem; _tracker.MenuClosed(DateTime.Now); }
+        if (Win32.WentDown(Win32.VK_ESCAPE)) lock (_gate) _escapeAt = DateTime.Now; // read here too: it may have been the key that closed it
+        bool escaped; lock (_gate) escaped = (DateTime.Now - _escapeAt).TotalMilliseconds is >= 0 and < 500 && _escapeAt > _menuOpenedAt;
+        if (escaped) { lock (_gate) _lastMenuItem = ("", DateTime.MinValue); return; } // closed with Escape: nothing was chosen
         if (item.name.Length == 0 || (DateTime.Now - item.t).TotalMilliseconds > 1500) return;
         // the menu-bar item ("File", "View") is highlighted before its popup opens; a chosen item is highlighted after
         if (_menuOpenedAt != DateTime.MinValue && item.t < _menuOpenedAt) { lock (_gate) _lastMenuItem = ("", DateTime.MinValue); return; }
@@ -895,7 +1029,7 @@ internal sealed class UiaCollector : IDisposable
                     {
                         // a document without a title yet (just created): looked at again in 1 s and 3 s, since an idle document
                         // raises no event that would bring its title (Price Change was only seen when it closed)
-                        if (!_mdiRepoll) { _mdiRepoll = true; foreach (var ms in new[] { 1000, 3000 }) { var t = new System.Threading.Timer(_ => { _mdiRepoll = false; PollMdi(top, force: true); }); t.Change(ms, Timeout.Infinite); _repollTimers.Add(t); if (_repollTimers.Count > 8) { _repollTimers[0].Dispose(); _repollTimers.RemoveAt(0); } } }
+                        RepollMdiLater(top, string.Join(",", children.Select(c => (long)c.hwnd)));
                         return;
                     }
                     current = _activeTab.GetValueOrDefault(top);
@@ -972,6 +1106,15 @@ internal sealed class UiaCollector : IDisposable
         // an untitled window that is small: a custom-drawn hover tip (Infragistics draws its tips in a plain window). Read it as a hint, never as a screen.
         if (title.Length == 0 && !initial && IsTipSized(hwnd)) { _knownWindows.Remove(hwnd); _perWindow.Remove(hwnd); OnTooltip(hwnd, pointerAtShow); return; }
 
+        // an untitled popup shown while the user types under a field: a lookup by its shape, decided now with Win32 reads only
+        // (the program may be too busy to answer UI Automation before the list closes)
+        var shapeLookup = title.Length == 0 && !initial && _inFront ? ShapeLookupCandidate(hwnd) : null;
+        if (shapeLookup is not null) lock (_gate) _pendingShape = (shapeLookup, hwnd, DateTime.Now); // a list was seen under the field
+        var shapeDone = 0;
+        // (the shape alone is not enough: a search list flashes for full codes too; the shape is kept as the field's pending
+        // lookup and becomes one only when the program completes a partial code there, see LookupCompleted)
+        void ShapeFallback() { if (shapeLookup is { } sl && Interlocked.Exchange(ref shapeDone, 1) == 0) lock (_gate) _pendingShape = (sl, hwnd, DateTime.Now); }
+
         // UIA subscriptions scoped to this window's subtree only
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -1010,7 +1153,9 @@ internal sealed class UiaCollector : IDisposable
                     }
 
                     // dump the control tree once per window title (after a short delay so the window is populated)
-                    Thread.Sleep(initial ? 50 : 400);
+                    // (an untitled popup is read at once: a lookup list may close within the second)
+                    Thread.Sleep(initial || title.Length == 0 ? 50 : 400);
+                    if (title.Length == 0 && !Win32.IsWindowVisible(hwnd)) { _status.PopupsGone++; _knownWindows.Remove(hwnd); ShapeFallback(); return; }
                     var rec = DumpTree(el, hwnd, title.Length > 0 ? title : Win32.WindowText(hwnd));
                     lock (_gate) { _rows[hwnd] = rec.Controls; _clickRows.Remove(hwnd); _lastDump[hwnd] = DateTime.Now; }
                     // a popup menu that is an ordinary window (toolkit menus, WinForms drop-downs): its items and access keys are kept, it is never a screen
@@ -1036,6 +1181,7 @@ internal sealed class UiaCollector : IDisposable
                     {
                         // a suggestion list or lookup (autocomplete, a search's result list) that opened while the user was typing: its rows are the evidence
                         if (_inFront && LookupFromWindow(rec, hwnd)) { _knownWindows.Remove(hwnd); return; }
+                        if (rec.Controls.Count < 3) ShapeFallback(); // its tree could not be read: its shape decides
                         // untitled helper windows (parking windows, drop-downs, tips) are not screens either
                         _knownWindows.Remove(hwnd);
                         return;
@@ -1072,6 +1218,7 @@ internal sealed class UiaCollector : IDisposable
                     lock (handlers) { foreach (var d in handlers) { try { d.Dispose(); } catch { } } handlers.Clear(); }
                     if (attempt >= 3 || !Win32.IsWindowVisible(hwnd))
                     {
+                        if (title.Length == 0 && !Win32.IsWindowVisible(hwnd)) { _status.PopupsGone++; ShapeFallback(); return; } // a list that closed: not a failed read
                         Log.Warn($"window registration failed for '{title}': {ex.Message} (attempt {attempt}, giving up)");
                         return;
                     }
@@ -1080,6 +1227,52 @@ internal sealed class UiaCollector : IDisposable
                 }
             }
         });
+    }
+
+    private sealed record ShapeLookup(string Name, string Aid, string Ct, string Typed, string Screen);
+
+    /// <summary>The field typed in and the typed text when an untitled popup of a lookup's shape appears under it; null otherwise.</summary>
+    private ShapeLookup? ShapeLookupCandidate(IntPtr popup)
+    {
+        if (!Win32.GetWindowRect(popup, out var pr)) return null;
+        var popupPos = $"{pr.Left},{pr.Top} {pr.Right - pr.Left}x{pr.Bottom - pr.Top}";
+        lock (_gate)
+        {
+            var since = _typingAt == DateTime.MinValue ? double.MaxValue : (DateTime.Now - _typingAt).TotalSeconds;
+            // the field: the window with the keyboard focus (on time) else the last focused field
+            var fieldPos = "";
+            if (_focusWindows.Count > 0 && Win32.GetWindowRect(_focusWindows[^1].hwnd, out var fr) && fr.Bottom - fr.Top is > 0 and < 60) fieldPos = $"{fr.Left},{fr.Top} {fr.Right - fr.Left}x{fr.Bottom - fr.Top}";
+            else if (_lastField.rect.Width > 0) fieldPos = $"{_lastField.rect.Left},{_lastField.rect.Top} {_lastField.rect.Width}x{_lastField.rect.Height}";
+            if (fieldPos.Length == 0 || !FieldReads.LookupByShape(fieldPos, popupPos, since)) return null;
+            var typed = _boxText.text is { Length: > 0 } bt && (DateTime.Now - _boxText.t).TotalSeconds <= 3 ? bt : _lastTyped.GetValueOrDefault(_lastField.aid.Length > 0 ? _lastField.aid : _lastField.name, "");
+            return new ShapeLookup(_lastField.name, _lastField.aid, _lastField.ct.Length > 0 ? _lastField.ct : "Edit", typed, CurrentTitle);
+        }
+    }
+
+    private (ShapeLookup? sl, IntPtr hwnd, DateTime t) _pendingShape = (null, IntPtr.Zero, DateTime.MinValue);
+
+    /// <summary>
+    /// The program completed a partial code the user typed ("100" became "1000136890" after a list was shown under the field and
+    /// its first row taken): that is a lookup. Emitted once per field within 10 s, with the typed partial.
+    /// </summary>
+    private void LookupCompleted(string name, string aid, string ct, string partial, string screen)
+    {
+        IntPtr popup; lock (_gate) { popup = _pendingShape.sl is not null && (DateTime.Now - _pendingShape.t).TotalSeconds <= 10 ? _pendingShape.hwnd : IntPtr.Zero; _pendingShape = (null, IntPtr.Zero, DateTime.MinValue); }
+        EmitShapeLookup(new ShapeLookup(name, aid, ct, partial, screen), popup);
+    }
+
+    private void EmitShapeLookup(ShapeLookup sl, IntPtr hwnd)
+    {
+        lock (_gate)
+        {
+            var fieldKey = sl.Aid + "\u0001" + sl.Name + "\u0001shape";
+            if (_lastLookup.key.StartsWith(sl.Aid + "\u0001" + sl.Name + "\u0001", StringComparison.Ordinal) && (DateTime.Now - _lastLookup.t).TotalSeconds < 10) return;
+            _lastLookup = (fieldKey, DateTime.Now);
+        }
+        _status.Dropdowns++; _status.LookupsByShape++;
+        var pwd = Masking.IsSensitiveName(sl.Name) || Masking.IsSensitiveName(sl.Aid);
+        Log.Info($"lookup under '{sl.Name}{sl.Aid}': the program completed the partial code typed there");
+        Emit(new RawEvent { Act = Acts.Dropdown, Ct = sl.Ct, Name = sl.Name, Aid = sl.Aid, Val = pwd ? Masking.Masked : sl.Typed, Hwnd = hwnd, WindowTitle = sl.Screen, Items = new List<string>() });
     }
 
     /// <summary>A window the size of a hover tip: under 40 px high and under 400 px wide.</summary>
@@ -1301,7 +1494,12 @@ internal sealed class UiaCollector : IDisposable
     private void TabGone(IntPtr hwnd, string tab)
     {
         string windowTitle;
-        lock (_gate) { _activeTab.Remove(hwnd); windowTitle = _knownWindows.TryGetValue(hwnd, out var t) ? t : _currentTitle; _closedTabs[tab] = DateTime.Now; }
+        lock (_gate)
+        {
+            _activeTab.Remove(hwnd); windowTitle = _knownWindows.TryGetValue(hwnd, out var t) ? t : _currentTitle; _closedTabs[tab] = DateTime.Now;
+            foreach (var k in _closedTabs.Where(kv => (DateTime.Now - kv.Value).TotalMinutes > 1).Select(kv => kv.Key).ToList()) _closedTabs.Remove(k);
+            foreach (var k in _slowReads.Where(kv => DateTime.Now > kv.Value).Select(kv => kv.Key).ToList()) _slowReads.Remove(k);
+        }
         var screenTitle = TabDocuments.Title(windowTitle, tab);
         lock (_gate) { var rk = "win:" + hwnd + "|" + tab; _fieldReads.Remove(rk); _fieldRows.Remove(rk); _fieldReadAt.Remove(rk); _innerTabs.Remove(screenTitle); }
         InferPress("window closed", from: screenTitle); // Exit on the document is counted before its close
@@ -1417,7 +1615,7 @@ internal sealed class UiaCollector : IDisposable
     private void ScheduleReread(string why, IntPtr surface)
     {
         if (!_inFront || _foreground == IntPtr.Zero) return;
-        lock (_gate) { _rereadWhy = why; _rereadSurface = surface; }
+        lock (_gate) { _rereadWhy = why; _rereadSurface = surface; if (why.StartsWith("click", StringComparison.Ordinal) || why.StartsWith("key", StringComparison.Ordinal)) _rereadAsked = true; }
         _rereadTimer ??= new System.Threading.Timer(_ => Reread(), null, Timeout.Infinite, Timeout.Infinite);
         _rereadTimer.Change(300, Timeout.Infinite);
         // a typed value or a key in a grid: the program prices the line a second or more later, so the row is read again at 1.5 s
@@ -1439,7 +1637,13 @@ internal sealed class UiaCollector : IDisposable
             var (readKey, screen, hwnd, tab, docHwnd) = ReadTarget(forClick: true);
             if (screen.Length == 0) return;
             var batchT = DateTime.Now;
-            lock (_gate) { if (_slowReads.TryGetValue(readKey, out var until) && DateTime.Now < until && !_rereadWhy.StartsWith("click", StringComparison.Ordinal) && !_rereadWhy.StartsWith("key", StringComparison.Ordinal)) return; }
+            // the grid row typed in, as it was when this read began (a Tab during a slow read moves it to the next column)
+            TypedRow? typedAtStart; lock (_gate) typedAtStart = _typedRow;
+            lock (_gate)
+            {
+                if (_slowReads.TryGetValue(readKey, out var until) && DateTime.Now < until && !_rereadAsked) return;
+                _rereadAsked = false; // this read answers the click or key that asked for it
+            }
             var rows = new List<ControlRow>();
             using (Cache(withFilter: true, withValues: true).Activate())
             {
@@ -1529,7 +1733,7 @@ internal sealed class UiaCollector : IDisposable
             var recordLoad = filled.Count(f => !f.IsCell) >= 3;
             // the grid row the user typed in: read by its own cells (or by place when the focus moved to another line), and its
             // changes kept apart from the rest so a new empty line never stands in for the line being priced
-            var rowDone = TypedRowChanges(readKey, screen, hwnd, reads, rows, batchT);
+            var rowDone = TypedRowChanges(readKey, screen, hwnd, reads, rows, batchT, typedAtStart);
             if (rowDone.row is not null)
             {
                 typedNow.RemoveAll(f => f.IsCell && f.Row == rowDone.row);
@@ -1602,8 +1806,11 @@ internal sealed class UiaCollector : IDisposable
                 foreach (var (h, aid) in _focusAids)
                     if ((aid == f.AutomationId || aid.Length > 0 && Labels.Clean(aid) == Labels.Clean(f.AutomationId)) && _focusSince.TryGetValue(h, out var since)) { arrival = since; break; }
         }
+        // an arrival long ago (the same field name in an earlier document) says nothing about this change
+        if (arrival != DateTime.MinValue && (at - arrival).TotalSeconds > 30) arrival = DateTime.MinValue;
         if (typing == DateTime.MinValue && !strict) return true; // no key ever seen: the key test cannot be made (see KeyedInto)
         if (strict && arrival == DateTime.MinValue && f.Type is not ("ComboBox" or "CheckBox" or "RadioButton")) return false;
+        if (strict && f.Type is "ComboBox" or "CheckBox" or "RadioButton") typing = DateTime.MinValue; // a record load: only a click on it makes it the user's
         return FieldReads.UserChanged(f.Type, f.Position, at, typing, arrival, click);
     }
 
@@ -1664,7 +1871,17 @@ internal sealed class UiaCollector : IDisposable
         // the editor that has the keyboard focus now, by the program's GUI thread (on time even when the UI Automation focus
         // event comes seconds late): its rectangle names the cell typed in
         System.Drawing.Rectangle guiRect = default;
-        lock (_gate) { if (_focusWindows.Count > 0 && Win32.GetWindowRect(_focusWindows[^1].hwnd, out var wr)) guiRect = new System.Drawing.Rectangle(wr.Left, wr.Top, wr.Right - wr.Left, wr.Bottom - wr.Top); }
+        lock (_gate)
+        {
+            // the text box the character keys went into (Enter may already have moved the focus to the next cell)
+            var typedBox = _boxText.hwnd != IntPtr.Zero && (now - _boxText.t).TotalSeconds is >= 0 and <= 3 ? _boxText.hwnd : IntPtr.Zero;
+            if (typedBox != IntPtr.Zero && _boxPlace.Width > 0) guiRect = _boxPlace; // where the keys went, not where the editor moved to
+            else
+            {
+                var h = typedBox != IntPtr.Zero ? typedBox : _focusWindows.Count > 0 ? _focusWindows[^1].hwnd : IntPtr.Zero;
+                if (h != IntPtr.Zero && Win32.GetWindowRect(h, out var wr)) guiRect = new System.Drawing.Rectangle(wr.Left, wr.Top, wr.Right - wr.Left, wr.Bottom - wr.Top);
+            }
+        }
         lock (_gate)
         {
             var f = _lastField;
@@ -1685,14 +1902,36 @@ internal sealed class UiaCollector : IDisposable
     /// The row is taken from the full read when its cells are still where the typed cell was, else read on its own by place.
     /// Emits the values (with the row) and moves the snapshot on. Returns the row handled and whether the program filled a cell.
     /// </summary>
-    private (string? row, bool filled) TypedRowChanges(string readKey, string screen, IntPtr hwnd, List<FieldRead> reads, List<ControlRow> rows, DateTime batchT)
+    private (string? row, bool filled) TypedRowChanges(string readKey, string screen, IntPtr hwnd, List<FieldRead> reads, List<ControlRow> rows, DateTime batchT, TypedRow? atStart)
     {
-        TypedRow? tr; lock (_gate) tr = _typedRow;
+        var tr = atStart;
         if (tr is null || tr.ReadKey != readKey || (DateTime.Now - tr.T).TotalSeconds > 5) return (null, false);
         var now = FieldReads.RowCells(reads, tr.Row);
         if (!now.Any(c => SameBand(c.Position, tr.CellPosition))) now = ReadRowAt(tr.CellPosition, rows);
         if (now.Count == 0) return (null, false);
         var (typed, filledCells) = FieldReads.RowDiff(tr.Snapshot, now, tr.Column);
+        // the typed cell now holds far more than the keys could write (a partial code that a lookup completed: "100" became
+        // "1000136890"): the keys' text, read from the text box before Enter, is the user's; the completed value is the program's
+        int keys; List<(IntPtr hwnd, string text, System.Drawing.Rectangle place, DateTime t)> hist; lock (_gate) { keys = _keysSinceFocus; hist = _boxHistory.ToList(); }
+        // texts typed on this grid line in the last 10 s (a code typed in another field never counts)
+        bool listSeen; lock (_gate) listSeen = _pendingShape.sl is not null && (DateTime.Now - _pendingShape.t).TotalSeconds <= 10;
+        foreach (var f in typed.ToList())
+        {
+            // what the keys wrote in this very cell (the box typed in lay over it) in the last 10 s; nothing captured: unchanged
+            var here = hist.Where(b => b.text.Trim().Length > 0 && (batchT - b.t).TotalSeconds is >= -1 and <= 10 && b.place.Width > 0
+                                       && FieldReads.Overlaps($"{b.place.Left},{b.place.Top} {b.place.Width}x{b.place.Height}", f.Position)).OrderBy(b => b.t).ToList();
+            if (here.Count == 0) continue;
+            // keys went into this cell, and its value is none of what they wrote (nor that number formatted): the program's (its default)
+            if (!here.Any(b => FieldReads.ShowsTyped(f.Value, b.text))) { typed.Remove(f); filledCells.Add(f); continue; }
+            // the cell holds far more than the keys wrote (a partial code a lookup completed): the partial is the user's
+            var box = here.LastOrDefault(b => f.Value.Trim().StartsWith(b.text.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (box.text is null || !FieldReads.LongerThanKeys(f.Value, Math.Max(keys, box.text.Length))) continue;
+            if (FieldReads.ShowsTyped(f.Value, box.text) && !f.Value.Trim().StartsWith(box.text.Trim(), StringComparison.OrdinalIgnoreCase)) continue; // a number formatted
+            typed.Remove(f);
+            filledCells.Add(f);
+            typed.Add(new FieldRead { Label = f.Label, Type = f.Type, Value = box.text.Trim(), IsCell = true, Row = f.Row, Position = f.Position });
+            if (listSeen) LookupCompleted(f.Label, "", "DataItem", box.text.Trim(), screen);
+        }
         foreach (var f in typed)
         {
             lock (_gate) { _lastTyped[f.Label] = f.Value; _userKeysSinceRead[f.Label] = DateTime.Now; }
@@ -1705,7 +1944,16 @@ internal sealed class UiaCollector : IDisposable
             _status.ValuesFilled++; _status.ValuesReread++;
             Emit(new RawEvent { T = batchT, Act = Acts.Value, Ct = "DataItem", Name = f.Label, Val = Masking.ForAppValue(f.Value, f.Label, "", false, "DataItem"), By = ValueBy.App, WindowTitle = screen, Hwnd = hwnd, Row = tr.Row });
         }
-        lock (_gate) { if (ReferenceEquals(_typedRow, tr)) _typedRow = tr with { Snapshot = now }; }
+        // the row's snapshot moves on to this read (also when the typed column changed while it was taken)
+        // (a column typed into while this read ran keeps its cell's old snapshot, so the next read still finds it typed)
+        lock (_gate)
+        {
+            if (_typedRow is { } cur && cur.ReadKey == tr.ReadKey && cur.Row == tr.Row)
+            {
+                var snap = cur.Column == tr.Column ? now : now.Select(c => c.Label == cur.Column ? (cur.Snapshot.FirstOrDefault(o => o.Label == c.Label) ?? c) : c).ToList();
+                _typedRow = cur with { Snapshot = snap };
+            }
+        }
         if (typed.Count + filledCells.Count > 0) Log.Info($"typed row {tr.Row} of {screen}: {typed.Count} typed, {filledCells.Count} filled");
         return (tr.Row, filledCells.Count > 0);
     }
@@ -1765,6 +2013,7 @@ internal sealed class UiaCollector : IDisposable
                         _previousField = _lastField; // the cell the user just left: what changed there was typed
                         if (_focusArrivedAt.Count > 500) _focusArrivedAt.Clear();
                         if (r.Aid.Length > 0) { _focusArrivedAt[r.Aid] = DateTime.Now; _focusArrivedAt[Labels.Clean(r.Aid)] = DateTime.Now; }
+                        _lastActionable = ("", "", "", "", DateTime.MinValue); // the focus left the button for a field: Space here types
                         if (r.Name.Length > 0) _focusArrivedAt[r.Name] = DateTime.Now;
                     }
                     _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now, rect); _userKeysSinceRead[r.Name] = DateTime.Now; if (r.Aid.Length > 0 && !Labels.IsWrapperId(r.Aid)) _userKeysSinceRead[r.Aid] = DateTime.Now;
@@ -1837,12 +2086,17 @@ internal sealed class UiaCollector : IDisposable
             // an editor lying over a grid cell names the grid, not the column: its value waits for the cell read; the value the
             // cell already had (the default quantity shown when editing starts) is not typed
             System.Drawing.Rectangle box = default; try { box = el.BoundingRectangle; } catch { }
-            if (r.Aid.Length > 0 && r.Aid.All(char.IsDigit) && r.Ct == "Edit") r.OverGridCell = true; // a grid's embedded editor: the row read names its column
             if (box.Width > 0)
             {
                 var (rk, _, _, _, _) = ReadTarget();
                 List<FieldRead>? last; lock (_gate) _fieldReads.TryGetValue(rk, out last);
                 var cell = last is null ? null : FieldReads.AtRect(last, $"{box.Left},{box.Top} {box.Width}x{box.Height}");
+                if (cell is null)
+                {
+                    List<ControlRow>? gridRows; lock (_gate) _fieldRows.TryGetValue(rk, out gridRows);
+                    if (gridRows is not null && gridRows.Any(g => (g.Type is "DataGrid" or "Table" || g.AutomationId.StartsWith("grid", StringComparison.OrdinalIgnoreCase)) && Labels.TryRect(g.Position, out var gx, out var gy, out var gw, out var gh) && box.Left >= gx && box.Top >= gy && box.Right <= gx + gw && box.Bottom <= gy + gh))
+                        r.OverGridCell = true; // its value waits for the row read that names the column
+                }
                 if (cell is { IsCell: true })
                 {
                     if (cell.Value == v || v is { Length: > 0 } && cell.Value.StartsWith(v, StringComparison.Ordinal)) return; // the cell shows it already (a late keystroke)
@@ -1851,7 +2105,17 @@ internal sealed class UiaCollector : IDisposable
             }
             lock (_gate)
             {
+                // (keystrokes in the same box replace each other: "1", "10", "100EX" leave one entry, never a "1" to match)
+                if (box.Width > 0 && r.Val is { Length: > 0 } tv)
+                {
+                    // (a jump of many characters at once is a lookup's completion, kept beside the typed partial, never over it)
+                    var same = _boxHistory.FindLastIndex(b => b.place == box && (DateTime.Now - b.t).TotalSeconds <= 10 && tv.Length <= b.text.Length + 2);
+                    if (same >= 0) _boxHistory[same] = (_boxHistory[same].hwnd, tv, box, DateTime.Now);
+                    else { _boxHistory.Add((IntPtr.Zero, tv, box, DateTime.Now)); if (_boxHistory.Count > 8) _boxHistory.RemoveAt(0); }
+                }
+                r.KeysSeen = _keysSinceFocus;
                 _lastTyped[r.Aid.Length > 0 ? r.Aid : r.Name] = r.Val ?? "";
+                _lastKeyed[r.Aid.Length > 0 ? r.Aid : r.Name] = r.Val ?? "";
                 _ownTypedAt[r.Aid.Length > 0 ? r.Aid : r.Name] = DateTime.Now;
                 if (_lastField.name.Length == 0 || _lastField.aid != r.Aid) _lastField = (r.Name, r.Aid, r.Ct, DateTime.Now, box);
                 else _lastField.t = DateTime.Now;
@@ -1886,6 +2150,7 @@ internal sealed class UiaCollector : IDisposable
             if (h != IntPtr.Zero) lock (_gate) { if (_focusSince.TryGetValue(h, out var since)) arrival = since; }
         }
         catch { }
+        if (arrival != DateTime.MinValue && (DateTime.Now - arrival).TotalSeconds > 30) arrival = DateTime.MinValue; // long ago: says nothing
         // no key ever seen since the watcher attached: the key state cannot be read here (a remote session, values set by
         // automation): the test is not made, as before
         if (typing == DateTime.MinValue) return true;
@@ -2157,7 +2422,7 @@ internal sealed class UiaCollector : IDisposable
             lock (_quotedNames) foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(wt, "\"([^\"]{3,})\"")) { _quotedNames.Add(m.Groups[1].Value.Trim()); if (_quotedNames.Count > 500) _quotedNames.Clear(); }
         if (r.Act is Acts.Value or Acts.Focus or Acts.Dropdown && r.Name.Trim().Length >= 3)
         {
-            bool data; lock (_quotedNames) data = _quotedNames.Any(q => r.Name.Trim().Length >= 6 && q.Contains(r.Name.Trim(), StringComparison.OrdinalIgnoreCase) || r.Name.Contains(q, StringComparison.OrdinalIgnoreCase)); // a short label ("Main") inside a name stays a label
+            bool data; lock (_quotedNames) data = _quotedNames.Any(q => Core.Learning.Titles.NameIsRecordName(r.Name, q));
             if (data || Core.Learning.Titles.IsQuotedInTitle(r.Name, r.WindowTitle)) r.Name = Labels.Clean(r.Aid);
         }
         // grid column headers carry line breaks ("Net\r\nPrice"): one line, one space
@@ -2273,7 +2538,11 @@ internal sealed class UiaCollector : IDisposable
                 Consider(rows, withFilter ? "uia-cached" : "uia-cached-raw");
                 if (rows.Count >= 10) break;
             }
-            catch (Exception ex) { Log.Warn($"cached tree dump failed ('{title}', filter {withFilter}): {ex.Message}"); _status.DumpsFailed++; }
+            catch (Exception ex)
+            {
+                if (!Win32.IsWindowVisible(hwnd)) { _status.PopupsGone++; break; } // the window closed while it was read (a lookup list): not a failed read
+                Log.Warn($"cached tree dump failed ('{title}', filter {withFilter}): {ex.Message}"); _status.DumpsFailed++;
+            }
         }
         if (best.Count < 10)
         {
