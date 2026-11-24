@@ -121,6 +121,33 @@ public static class DialogDetector
         return (true, body);
     }
 
+    /// <summary>
+    /// Dialogs drawn inside a web page (an HTML dialog, an ARIA dialog): a Window element below a Document, with buttons, that
+    /// has no window of its own. A message (the same structure test as a message box) is a dialog; a small named form inside
+    /// the page ("New Customer") is a screen of its own. Returned in reading order: title, body (messages only), is a message.
+    /// </summary>
+    public static List<(string title, string? body, bool message)> InPage(IList<ControlRow> rows)
+    {
+        var found = new List<(string, string?, bool)>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var r = rows[i];
+            if (r.Type != "Window" || r.Depth == 0) continue;
+            var inDocument = false; var d = r.Depth;
+            for (var j = i - 1; j >= 0 && d > 0; j--)
+                if (rows[j].Depth < d) { d = rows[j].Depth; if (rows[j].Type == "Document") { inDocument = true; break; } }
+            if (!inDocument) continue;
+            var sub = new List<ControlRow>();
+            for (var k = i + 1; k < rows.Count && rows[k].Depth > r.Depth; k++) sub.Add(rows[k]);
+            if (sub.Count == 0 || sub.Count > 40 || !sub.Any(x => x.Type == "Button" && x.Name.Trim().Length > 0)) continue;
+            var title = r.Name.Trim();
+            var (isMessage, body) = Detect("", sub);
+            if (isMessage) found.Add((title.Length > 0 ? title : body ?? "Message", body, true));
+            else if (title.Length > 0 && CouldBeNamedDialog(sub)) found.Add((title, null, false));
+        }
+        return found;
+    }
+
     private static readonly string[] PromptWords = { "close?", "confirm", "warning", "error", "specified", "question", "alert", "attention", "notice", "are you sure", "information" };
 
     /// <summary>A title that reads like a prompt ("Close?", "Confirm Delete", "Warning", "No Selection Specified"): a hint for the health page, never proof.</summary>

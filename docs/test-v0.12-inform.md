@@ -155,6 +155,14 @@ The picture read did not fire in r36 or r37 (Inform answered every text read in 
 | Inform r38 (after all v0.13 changes) | 26 of 26 rows at 100% (no regression) |
 | Web page (tests/SampleWeb, WebView2) | presses 9, typed 15, tabs 7, `Line total = Quantity × Unit price` seen 12× of 12, `Typing Customer code fills Name` learned; in-page HTML dialogs are not dialogs (0) |
 | WPF (tests/SampleWpf) | screens 4, presses 20, typed 13, dialogs 5; grid formula not learned (template cells with their own text boxes read as "(empty)") |
+| v0.13.1, the same day | WPF 6 of 6 (screens 6, formula `Line total = Quantity × Unit price`, code fills Name); web 7 of 7 (3 in-page dialogs recorded, presses 13); Inform r39 and r40 26 of 26 |
+
+v0.13.1 fixes: a WPF tab's page was cut out of the window as "the largest neighbour of the tab strip", which was the menu
+(it holds items named like the tabs): now the tab item itself is the page, and Menu counts as window chrome. Grid dumps read
+cell values (WPF template cells). Dialogs drawn inside a web page are found in the read after a click or key
+(`DialogDetector.InPage`). A field's old focus arrival stops counting once the focus moved to another field (the second
+code's looked-up name had been taken for typed). Tried and taken back: letting the read follow Windows' front window
+(r39 filed Inform's lookup under the main window instead of New Sales Order; r40 after the revert is right again).
 | Office scale (5 users × 30 days, 328,796 events) | full rebuild 9.3 s warm, one more day 3.4 s, peak 233 MB managed; incremental = rebuild; merge order-independent |
 | Idle watcher on this PC | 51 MB private, 12 MB in RAM, 0% CPU with Inform in the background |
 

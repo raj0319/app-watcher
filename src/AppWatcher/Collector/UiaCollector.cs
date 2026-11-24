@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using AppWatcher.Core;
 using AppWatcher.Core.Models;
 using AppWatcher.Core.Screens;
@@ -1780,6 +1780,7 @@ internal sealed class UiaCollector : IDisposable
                 field = _lastField; previous = _previousField; typed = _lastTyped.GetValueOrDefault(field.aid.Length > 0 ? field.aid : field.name, ""); why = _rereadWhy;
                 _fieldReads[readKey] = reads; _fieldRows[readKey] = rows; _fieldReadAt[readKey] = DateTime.Now;
             }
+            InPageDialogs(readKey, rows, screen, hwnd);
             // the field that has the focus and the one that just had it: what changed there was typed by the user
             var typedKeys = new HashSet<string>(StringComparer.Ordinal);
             void AddKeys(ISet<string> set, (string name, string aid, string ct, DateTime t, System.Drawing.Rectangle rect) f)
@@ -1869,8 +1870,10 @@ internal sealed class UiaCollector : IDisposable
         lock (_gate)
         {
             typing = _typingAt; click = _tracker.LastClick;
-            foreach (var k in new[] { f.AutomationId, Labels.Clean(f.AutomationId), f.Label })
+            var mine = new[] { f.AutomationId, Labels.Clean(f.AutomationId), f.Label };
+            foreach (var k in mine)
                 if (k.Length > 0 && _focusArrivedAt.TryGetValue(k, out var a) && a > arrival) arrival = a;
+            arrival = StillHere(arrival, mine);
             // the focus's arrival by the window handle whose automation id is this field's (sampled, never late)
             if (f.AutomationId.Length > 0)
                 foreach (var (h, aid) in _focusAids)
@@ -2234,8 +2237,10 @@ internal sealed class UiaCollector : IDisposable
         lock (_gate)
         {
             typing = _typingAt; click = _tracker.LastClick;
-            foreach (var k in new[] { r.Aid, Labels.Clean(r.Aid), r.Name })
+            var mine = new[] { r.Aid, Labels.Clean(r.Aid), r.Name };
+            foreach (var k in mine)
                 if (k.Length > 0 && _focusArrivedAt.TryGetValue(k, out var a) && a > arrival) arrival = a;
+            arrival = StillHere(arrival, mine);
         }
         // the focus's arrival by the window handle, when the field has one (the UI Automation focus event can come late)
         var ownWindow = false;
@@ -2265,6 +2270,50 @@ internal sealed class UiaCollector : IDisposable
         if (arrival == DateTime.MinValue && !ownWindow && FieldReads.FilledOnTabArrival(typing, tabAt, DateTime.Now) && HasFocus(el)) return false;
         if (arrival == DateTime.MinValue && (DateTime.Now - typing).TotalSeconds is >= 0 and <= 8) return true;
         return FieldReads.UserChanged(r.Ct, pos, DateTime.Now, typing, arrival, click);
+    }
+
+    // the dialogs drawn inside a page that the last read of each window showed (title -> is a message)
+    private readonly Dictionary<string, Dictionary<string, bool>> _inPageOpen = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A dialog drawn inside a web page has no window of its own, so no window event: the read after a click or key shows it.
+    /// A message is recorded like a message box (with its text), a small named form like a window opened; each is closed when
+    /// a later read no longer shows it.
+    /// </summary>
+    private void InPageDialogs(string readKey, IList<ControlRow> rows, string screen, IntPtr hwnd)
+    {
+        var now = DialogDetector.InPage(rows).GroupBy(d => d.title).Select(g => g.First()).ToList();
+        List<(string title, string? body, bool message)> opened; List<(string title, bool message)> closed;
+        lock (_gate)
+        {
+            var before = _inPageOpen.GetValueOrDefault(readKey) ?? new Dictionary<string, bool>();
+            opened = now.Where(d => !before.ContainsKey(d.title)).ToList();
+            closed = before.Where(kv => !now.Any(d => d.title == kv.Key)).Select(kv => (kv.Key, kv.Value)).ToList();
+            if (now.Count == 0) _inPageOpen.Remove(readKey); else _inPageOpen[readKey] = now.ToDictionary(d => d.title, d => d.message);
+        }
+        foreach (var (title, message) in closed)
+        {
+            InferPress("window closed", from: message ? screen : title);
+            Emit(new RawEvent { Act = Acts.Close, Ct = "Window", Name = title, WindowTitle = message ? screen : title, Hwnd = hwnd });
+        }
+        foreach (var (title, body, message) in opened)
+        {
+            if (message) _status.Dialogs++;
+            Emit(new RawEvent { Act = message ? Acts.Dialog : Acts.Open, Ct = "Window", Name = title, WindowTitle = message ? title : title, Val = message ? body : null, IsDialog = message, Hwnd = hwnd });
+            InferPress(message ? "dialog" : "window opened", from: screen);
+        }
+    }
+
+    /// <summary>
+    /// A field's focus arrival says nothing once the focus has arrived in another field since (it left this one): the keys typed
+    /// after that went elsewhere. Call under the gate.
+    /// </summary>
+    private DateTime StillHere(DateTime arrival, string[] keys)
+    {
+        if (arrival == DateTime.MinValue) return arrival;
+        foreach (var kv in _focusArrivedAt)
+            if (kv.Value > arrival && kv.Key.Length > 0 && !keys.Contains(kv.Key)) return DateTime.MinValue;
+        return arrival;
     }
 
     private static bool HasFocus(AutomationElement el) { try { return el.Properties.HasKeyboardFocus.ValueOrDefault; } catch { return false; } }
@@ -2546,10 +2595,11 @@ internal sealed class UiaCollector : IDisposable
         try
         {
             var rows = new List<ControlRow>();
-            using (Cache(true).Activate())
+            using (Cache(true, withValues: true).Activate())
             {
                 var cached = _automation.FromHandle(hwnd);
-                WalkCached(cached, 0, _settings.DumpDepth, rows, _settings.DumpRowCap, maxRows, onlyOnScreen: true);
+                // with values: a cell that holds its own editor (WPF template columns) shows its text only through that editor
+                WalkCached(cached, 0, _settings.DumpDepth, rows, _settings.DumpRowCap, maxRows, onlyOnScreen: true, withValues: true);
             }
             for (var i = 0; i < rows.Count && result.Count < maxGrids; i++)
             {
@@ -2712,7 +2762,7 @@ internal sealed class UiaCollector : IDisposable
                     // the selected page: the cached selection flag where the profile allows it, else the page content on screen under the tab item
                     var selected = false;
                     if (selectionReads) { try { selected = el.Patterns.SelectionItem.PatternOrDefault?.IsSelected.ValueOrDefault ?? false; } catch { } }
-                    if (!selected && !selectionReads)
+                    if (!selected) // (a cached selection flag that says no, or none: the page on screen decides)
                     {
                         try
                         {
@@ -2722,6 +2772,7 @@ internal sealed class UiaCollector : IDisposable
                                 if (cct == "Button") continue;
                                 bool off = true; try { off = c.Properties.IsOffscreen.ValueOrDefault; } catch { }
                                 var cr = c.Properties.BoundingRectangle.ValueOrDefault;
+                                if (rect.Width > 0 && rect.Contains(cr)) continue; // the tab's own label (WPF): says nothing about its page
                                 if (!off && cr.Width > 0 && cr.Height > 0) { selected = true; break; }
                             }
                         }

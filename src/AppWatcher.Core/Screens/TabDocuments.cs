@@ -101,7 +101,7 @@ public static class TabDocuments
     }
 
     private static readonly HashSet<string> Chrome = new(StringComparer.OrdinalIgnoreCase)
-        { "ToolBar", "MenuBar", "StatusBar", "TitleBar", "Tab", "ScrollBar", "ToolTip" };
+        { "ToolBar", "MenuBar", "Menu", "StatusBar", "TitleBar", "Tab", "ScrollBar", "ToolTip" };
 
     /// <summary>
     /// The subtree of one tab document out of a window's tree: the Window or Pane named like the tab (an MDI child form), else
@@ -117,6 +117,12 @@ public static class TabDocuments
             var r = rows[i];
             if (r.Type is "Window" or "Pane" or "Custom" && r.Name.Length > 0 && Learning.Titles.Key(r.Name) == key && !Offscreen(r))
                 return Subtree(rows, i);
+        }
+        // 1b. the tab item itself holds its page (WPF): the selected item named like the tab, when it has more than its label
+        for (var i = 1; i < rows.Count; i++)
+        {
+            var r = rows[i];
+            if (r.Type == "TabItem" && Learning.Titles.Key(r.Name) == key && Subtree(rows, i).Count >= 5) return Subtree(rows, i);
         }
         // 2. the siblings of the tab strip: the document is the on-screen one with the most controls that is not window chrome
         var tabIndex = -1;
