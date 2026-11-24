@@ -125,17 +125,40 @@ Also verified on day 2:
   memory, tidied once a minute at most when the program leaves the front.
 - 199 tests; the whole suite twice in a row with no failure.
 
+## Day 3 (2026-11-24, v0.12.2): tools researched, the busy box read from its picture
+
+Tools weighed against the open limits: pywinauto and Windows-MCP click controls, so they can only ever drive tests, never sit in
+the watcher (our own driver already does that); deepdiff and hypothesis are Python, so their C# counterparts were used:
+**CsCheck** property tests (18: learn twice = same memory, incremental = rebuild on random sessions, memory never holds a typed
+value, no press without a click, debouncer and field-read invariants). They found one gap: letters without case (Chinese,
+Japanese, Arabic) passed through `Masking.Shape`; fixed.
+
+The busy grid box: measured on a test window whose program thread sleeps like Inform building a list. WM_GETTEXT timed out
+(155 ms), PrintWindow waited 3.3 s for the program, a copy of the box's own pixels took 1-18 ms and the Windows OCR read the
+typed code. The watcher now does that only when the text read times out (`BoxPicture`, rules in CLAUDE.md).
+
+Two more fixes from round r36: a code typed fast and then Enter was read before the program drew its last keys ("100EX" read
+as "100"): the box is read once more 150 ms later and at Enter alone; and a late "program in front" event while another program
+(Chrome) was already in front no longer puts the watcher in front.
+
+| Round | Result |
+|---|---|
+| r36 (first v0.12.2) | 23 of 26 rows at 100%; misses: one toolbar open and one code (Chrome took the front, the click went there), "100EX" (the read-too-early above) |
+| r37 (fixes) | **26 of 26 rows at 100%**: 16/16 opens, 17/17 Exit, 31/31 sub-tabs, 14/14 codes, 3/3 order lines, lookup 1 right 0 false, 0 strays, 0 failed tree reads; Acrobat took the front twice and was handled |
+
+The picture read did not fire in r36 or r37 (Inform answered every text read in time); it waits for the run where it does not.
+
 ## Still not perfect, and why
 
-- **A partial code typed into a grid cell while Inform fills its lookup list** (the "100" of the second order line): in about one
-  run in three these three keystrokes are not seen. Inform is busy building the list at that moment: it answers neither UI
-  Automation nor WM_GETTEXT and raises no value event until it has already replaced the text. A read-only watcher without a
-  keyboard hook cannot see those keys; the lookup itself is still recorded in most runs, and the completed product code always.
+- **A partial code typed into a grid cell while Inform fills its lookup list** (the "100" of the second order line): before
+  v0.12.2, in about one run in three these keystrokes were not seen, because Inform answers neither UI Automation nor WM_GETTEXT
+  while it builds the list. v0.12.2 reads the box from its own picture in that moment; it has not yet been needed in a measured
+  run, so its effect on Inform is still to be seen.
 - **Other programs' popups** (Acrobat on this PC) can take the front in the middle of a run; the watcher now recovers at once,
   but a driver's action during such a popup goes elsewhere.
 
 ## Files
 
-- Code: branch `best-of-v0.12`; 199 tests; `scripts\live-test.ps1` passes.
-- Scorecards and driver logs of every round: `evidence/harness/runs/r1` … `r34` (git-ignored: they hold customer names).
+- Code: branch `best-of-v0.12`; 239 tests (v0.12.2); `scripts\live-test.ps1` passes.
+- Scorecards and driver logs of every round: `evidence/harness/runs/r1` … `r37` (git-ignored: they hold customer names).
 - Evidence zip: `evidence/app-watcher-v0.12-inform-evidence-2026-11-20.zip` (for the user's own mail only).

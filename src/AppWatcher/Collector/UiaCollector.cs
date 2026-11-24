@@ -155,9 +155,33 @@ internal sealed class UiaCollector : IDisposable
                 lock (_boxReqGate) { req = _boxRequest; _boxRequest = null; }
                 if (req is not { } r || _pid == 0) continue;
                 try { BoxRead(r.hwnd, r.place, r.t, r.enter); } catch (Exception ex) { Log.Error("box read failed", ex); }
+                // keys are seen going down before the program has drawn them ("100EX" typed fast was read as "100"): one more read
+                // a moment later, unless a newer request came, keeps the box's text up with the keys
+                if (r.enter) continue;
+                if (_boxSignal.WaitOne(150)) { _boxSignal.Set(); continue; }
+                try { BoxFollowUp(r.hwnd, r.place); } catch (Exception ex) { Log.Error("box read failed", ex); }
             }
         }) { IsBackground = true, Name = "box read" };
         _boxWorker.Start();
+    }
+
+    /// <summary>
+    /// The second read of a box, 150 ms after the keys: taken only when it extends what the first read showed by a few characters
+    /// (the keys the program had not drawn yet), never the program's own answer (a name is not a few more characters of a code).
+    /// </summary>
+    private void BoxFollowUp(IntPtr typedBox, System.Drawing.Rectangle place)
+    {
+        var text = Win32.EditText(typedBox, 150);
+        if (text is null) return;
+        var now = DateTime.Now;
+        lock (_gate)
+        {
+            var prev = _boxText.text;
+            if (_boxText.hwnd != typedBox || _boxPlace != place || !FieldReads.ExtendsByKeys(prev, text)) return;
+            _boxText = (typedBox, text, now);
+            var same = _boxHistory.FindLastIndex(b => b.place == place && b.text == prev);
+            if (same >= 0) _boxHistory[same] = (typedBox, text, place, now);
+        }
     }
 
     /// <summary>The text of the box the keys went into, kept with where it was and when (WM_GETTEXT, up to 150 ms).</summary>
@@ -408,6 +432,8 @@ internal sealed class UiaCollector : IDisposable
             key = enter | tab; enterNow = enter;
             NoteFocusWindow(now);
             if (typedNow && _focusWindows.Count > 0) typedBox = _focusWindows[^1].hwnd;
+            // Enter alone in this read (the last keys were seen in an earlier one): the box typed in is read once more before Enter's answer
+            else if (enter && _boxText.hwnd != IntPtr.Zero && (now - _boxText.t).TotalSeconds is >= 0 and <= 3) typedBox = _boxText.hwnd;
             o = _settings.PressInference ? _tracker.Observe(new InputSample(now, pt.X, pt.Y, down, wentDown, key, (long)front, (long)goingAway, PressKeyWentDown: enter | space), _world) : ClickOutcome.None;
         }
         // keys went down in a text box: its text now (WM_GETTEXT, fast, no UI Automation) is what the keys wrote so far
@@ -683,7 +709,8 @@ internal sealed class UiaCollector : IDisposable
         // the event can arrive after the foreground moved on (another program's popup took it for a moment and the program got it
         // back): what is in front now decides, never the late event alone (r16 and r33 were deaf for 70 s that way)
         var current = Win32.GetForegroundWindow();
-        if (current != IntPtr.Zero && current != hwnd && _pid != 0 && Win32.ProcessIdOf(current) == _pid) hwnd = current;
+        // (both ways: a late event naming the program while another program is already in front does not put it in front)
+        if (current != IntPtr.Zero && current != hwnd) hwnd = current;
         if (hwnd == IntPtr.Zero) { SetInFront(false); return; }
         var pid = Win32.ProcessIdOf(hwnd);
         var mine = pid == _pid && _pid != 0;

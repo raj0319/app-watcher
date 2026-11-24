@@ -23,6 +23,15 @@ public class PixelTextTests
         => Assert.Null(FieldReads.PixelTextFits(picture, keys));
 
     [Theory]
+    [InlineData("100", "100EX", true)]               // the last two keys drawn after the first read
+    [InlineData("100", "100", false)]                // nothing new
+    [InlineData("100", "Some Product Name", false)]  // the program's answer
+    [InlineData("100", "100ABCDEFG", false)]         // far more than a few keys
+    [InlineData("", "100", false)]
+    public void A_second_read_counts_only_the_keys_not_yet_drawn(string earlier, string later, bool expected)
+        => Assert.Equal(expected, FieldReads.ExtendsByKeys(earlier, later));
+
+    [Theory]
     [InlineData("客户名称", "aaaa")]   // letters without case
     [InlineData("مرحبا", "aaaaa")]
     [InlineData("Ⅻ½", "##")]           // number signs that are not digits

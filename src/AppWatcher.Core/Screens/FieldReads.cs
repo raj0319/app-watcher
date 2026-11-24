@@ -230,6 +230,13 @@ public static class FieldReads
     }
 
     /// <summary>
+    /// A later read of the same box shows the keys the program had not drawn yet at the first read: the earlier text plus one
+    /// to four more characters. The program's own answer (a name in place of a code) never passes.
+    /// </summary>
+    public static bool ExtendsByKeys(string earlier, string later) =>
+        earlier.Length > 0 && later.Length > earlier.Length && later.Length <= earlier.Length + 4 && later.StartsWith(earlier, StringComparison.Ordinal);
+
+    /// <summary>
     /// A box's text read from its picture (the program was too busy to answer a text read): kept only when it is one short word
     /// the keys pressed in it could have written. Anything longer is the program's own text or a misread; null when not kept.
     /// </summary>
