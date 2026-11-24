@@ -148,6 +148,16 @@ as "100"): the box is read once more 150 ms later and at Enter alone; and a late
 
 The picture read did not fire in r36 or r37 (Inform answered every text read in time); it waits for the run where it does not.
 
+## v0.13 (2026-11-24): beyond WinForms, office scale
+
+| Test | Result |
+|---|---|
+| Inform r38 (after all v0.13 changes) | 26 of 26 rows at 100% (no regression) |
+| Web page (tests/SampleWeb, WebView2) | presses 9, typed 15, tabs 7, `Line total = Quantity × Unit price` seen 12× of 12, `Typing Customer code fills Name` learned; in-page HTML dialogs are not dialogs (0) |
+| WPF (tests/SampleWpf) | screens 4, presses 20, typed 13, dialogs 5; grid formula not learned (template cells with their own text boxes read as "(empty)") |
+| Office scale (5 users × 30 days, 328,796 events) | full rebuild 9.3 s warm, one more day 3.4 s, peak 233 MB managed; incremental = rebuild; merge order-independent |
+| Idle watcher on this PC | 51 MB private, 12 MB in RAM, 0% CPU with Inform in the background |
+
 ## Still not perfect, and why
 
 - **A partial code typed into a grid cell while Inform fills its lookup list** (the "100" of the second order line): before
