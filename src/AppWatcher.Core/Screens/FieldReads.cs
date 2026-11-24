@@ -229,6 +229,34 @@ public static class FieldReads
             && decimal.TryParse(Num(t), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var b) && a == b;
     }
 
+    /// <summary>
+    /// A box's text read from its picture (the program was too busy to answer a text read): kept only when it is one short word
+    /// the keys pressed in it could have written. Anything longer is the program's own text or a misread; null when not kept.
+    /// </summary>
+    public static string? PixelTextFits(string? pictureText, int keysSeen)
+    {
+        if (pictureText is null || keysSeen <= 0) return null;
+        var t = pictureText.Trim();
+        if (t.Length == 0 || t.Length > 40 || t.Any(char.IsWhiteSpace) || t.Any(char.IsControl)) return null;
+        return LongerThanKeys(t, keysSeen) ? null : t;
+    }
+
+    /// <summary>
+    /// A text read from a picture, set against the value the program showed later (a lookup completed the partial code): when
+    /// the value starts with the same characters, letters and digits that look alike folded (O and 0, I, l and 1, S and 5, B
+    /// and 8, Z and 2), those characters of the value are what was typed. Otherwise the picture's text stays.
+    /// </summary>
+    public static string ReconcilePixelText(string pictureText, string? laterValue)
+    {
+        var t = pictureText.Trim();
+        if (laterValue is null) return t;
+        var v = laterValue.Trim();
+        if (v.Length < t.Length || t.Length == 0) return t;
+        static char Fold(char c) => char.ToUpperInvariant(c) switch { 'O' => '0', 'I' or 'L' or '|' or '!' => '1', 'S' => '5', 'B' => '8', 'Z' => '2', var u => u };
+        for (var i = 0; i < t.Length; i++) if (Fold(t[i]) != Fold(v[i])) return t;
+        return v[..t.Length];
+    }
+
     /// <summary>True when two "x,y wxh" rectangles overlap (the box typed in lies over this cell).</summary>
     public static bool Overlaps(string a, string b)
     {

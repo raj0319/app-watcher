@@ -132,6 +132,11 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   clicks and focus moves. Values the program fills in come from the field's own change event or from one re-read of the
   document 300 ms after a typed value, press, Enter, Tab or focus move (`FieldReads.Diff`: the cell that had the focus
   is the typed value). Keep all of that read-only.
+- When the program is too busy to answer WM_GETTEXT for the text box the keys went into (it builds a lookup list), that box's
+  own picture is copied (BitBlt of the box alone, `BoxPicture`, never saved, never when another window lies over it, never a
+  password box) and read with the Windows OCR; the text is kept only when the keys pressed could have written it
+  (`FieldReads.PixelTextFits`), and look-alike characters (O/0, I/1) are settled by the value the program shows later
+  (`FieldReads.ReconcilePixelText`). It goes to events as a typed value; memory still holds only its shape.
 - Text read from pictures reaches memory only as a field or column name the screen record knows (`OcrLogic.KnownFields`);
   personal fields the program fills (phone, e-mail, address, name) are shapes in the events; the profile's `titleMasks`
   hide the company name in the main title. A window the program opens by itself (no click in the 2 s before) is not a

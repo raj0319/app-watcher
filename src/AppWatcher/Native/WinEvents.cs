@@ -97,6 +97,13 @@ internal static class Win32
     /// The text of a text box of another program (WM_GETTEXT, a read; at most 100 ms, never when the program hangs), or null.
     /// Never for a password box (ES_PASSWORD) and never more than 200 characters.
     /// </summary>
+    /// <summary>A plain text box (an EDIT window) that is not a password box: the only kind whose text the watcher reads.</summary>
+    public static bool IsPlainEdit(IntPtr hwnd)
+    {
+        try { return hwnd != IntPtr.Zero && ClassName(hwnd).Contains("EDIT", StringComparison.OrdinalIgnoreCase) && (GetWindowLong(hwnd, -16) & 0x20) == 0; }
+        catch { return false; }
+    }
+
     public static string? EditText(IntPtr hwnd, uint timeoutMs = 30)
     {
         try

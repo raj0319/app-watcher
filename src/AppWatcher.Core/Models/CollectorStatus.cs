@@ -20,6 +20,8 @@ public sealed class CollectorStatus
     public int PopupsGone { get; set; }
     /// <summary>Lookups told by the list window's shape because it closed before its tree could be read.</summary>
     public int LookupsByShape { get; set; }
+    /// <summary>Texts of a box read from its picture because the program was too busy to answer a text read.</summary>
+    public int BoxReadsFromPicture { get; set; }
     public int DumpsEmpty { get; set; }
     public int DumpsMsaa { get; set; }
     public int TabScreens { get; set; }

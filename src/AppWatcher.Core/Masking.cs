@@ -88,7 +88,8 @@ public static partial class Masking
         if (value is null) return "null";
         if (value.Length == 0) return "(empty)";
         var chars = value.Take(24).Select(c =>
-            char.IsDigit(c) ? '#' : char.IsUpper(c) ? 'A' : char.IsLower(c) ? 'a' : c).ToArray();
+            // every letter, also those with no case (Chinese, Japanese, Arabic), and every number sign are hidden
+            char.IsDigit(c) || char.IsNumber(c) ? '#' : char.IsUpper(c) ? 'A' : char.IsLetter(c) ? 'a' : c).ToArray();
         return new string(chars) + (value.Length > 24 ? "..." : "");
     }
 }

@@ -164,6 +164,18 @@ internal sealed class UiaCollector : IDisposable
     private void BoxRead(IntPtr typedBox, System.Drawing.Rectangle place, DateTime now, bool enterNow)
     {
         var text = Win32.EditText(typedBox, 150);
+        if (text is null && Win32.IsPlainEdit(typedBox))
+        {
+            // the program is too busy to answer (it builds a lookup list): the box's own picture shows what the keys wrote
+            int keys; lock (_gate) keys = _keysSinceFocus;
+            text = FieldReads.PixelTextFits(Native.BoxPicture.Text(typedBox), keys);
+            if (text is not null)
+            {
+                lock (_gate) { _fromPicture[(place, text)] = now; if (_fromPicture.Count > 16) _fromPicture.Remove(_fromPicture.MinBy(kv => kv.Value).Key); }
+                _status.BoxReadsFromPicture++;
+                Log.Info($"box read from its picture ({text.Length} characters, {keys} keys): the program did not answer");
+            }
+        }
         if (text is null) return;
         lock (_gate)
         {
@@ -193,6 +205,8 @@ internal sealed class UiaCollector : IDisposable
     private System.Drawing.Rectangle _boxPlace;
     // the last few boxes typed in: text, place, time (the next cell's typing must not hide what the last one held)
     private readonly List<(IntPtr hwnd, string text, System.Drawing.Rectangle place, DateTime t)> _boxHistory = new();
+    // box texts that came from the box's picture (look-alike characters are settled against the value the program shows later)
+    private readonly Dictionary<(System.Drawing.Rectangle place, string text), DateTime> _fromPicture = new();
     // when the field's own value event last reported what the user typed (a later re-read that differs is the program's replacement)
     private readonly Dictionary<string, DateTime> _ownTypedAt = new();
     private bool _firstWindow = true;
@@ -1921,6 +1935,8 @@ internal sealed class UiaCollector : IDisposable
             var here = hist.Where(b => b.text.Trim().Length > 0 && (batchT - b.t).TotalSeconds is >= -1 and <= 10 && b.place.Width > 0
                                        && FieldReads.Overlaps($"{b.place.Left},{b.place.Top} {b.place.Width}x{b.place.Height}", f.Position)).OrderBy(b => b.t).ToList();
             if (here.Count == 0) continue;
+            // a text read from the box's picture: look-alike characters (O and 0, I and 1) are settled by the cell's value
+            lock (_gate) here = here.Select(b => _fromPicture.ContainsKey((b.place, b.text)) ? (b.hwnd, FieldReads.ReconcilePixelText(b.text, f.Value), b.place, b.t) : b).ToList();
             // keys went into this cell, and its value is none of what they wrote (nor that number formatted): the program's (its default)
             if (!here.Any(b => FieldReads.ShowsTyped(f.Value, b.text))) { typed.Remove(f); filledCells.Add(f); continue; }
             // the cell holds far more than the keys wrote (a partial code a lookup completed): the partial is the user's
