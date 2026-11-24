@@ -276,6 +276,30 @@ internal sealed class UiaCollector : IDisposable
     }
 
     public bool IsAttached => _pid != 0;
+
+    // processes whose windows live inside the program's own windows (a WebView2 or Chromium page, an embedded viewer): their
+    // windows and controls are the program's; learned when one is seen inside, or owned by, a window of the program
+    private readonly HashSet<uint> _helperPids = new();
+    private bool IsProgramPid(int pid) => pid != 0 && ((uint)pid == _pid || HelperPid((uint)pid));
+    private bool HelperPid(uint pid) { lock (_helperPids) return _helperPids.Contains(pid); }
+
+    /// <summary>A window of the program, or a window of another process embedded in (or owned by) a window of the program.</summary>
+    private bool IsProgramWindow(IntPtr h)
+    {
+        if (h == IntPtr.Zero || _pid == 0) return false;
+        var pid = Win32.ProcessIdOf(h);
+        if (pid == _pid) return true;
+        if (HelperPid(pid)) return true;
+        var root = Win32.GetAncestor(h, Win32.GA_ROOT);
+        var owner = Win32.GetAncestor(h, Win32.GA_ROOTOWNER);
+        if ((root != IntPtr.Zero && Win32.ProcessIdOf(root) == _pid) || (owner != IntPtr.Zero && Win32.ProcessIdOf(owner) == _pid))
+        {
+            bool added; lock (_helperPids) added = _helperPids.Add(pid);
+            if (added) Log.Info($"process {pid} ({Win32.ClassName(h)}) draws inside the program's window: its windows count as the program's");
+            return true;
+        }
+        return false;
+    }
     public uint Pid => _pid;
     /// <summary>True while a window of the watched process is the foreground window.</summary>
     public bool InFront => _inFront;
@@ -426,6 +450,7 @@ internal sealed class UiaCollector : IDisposable
             {
                 enter = Win32.WentDown(Win32.VK_RETURN); tab = Win32.WentDown(Win32.VK_TAB); space = Win32.WentDown(Win32.VK_SPACE);
                 if (Win32.WentDown(Win32.VK_ESCAPE)) _escapeAt = now;
+                if (tab) _tabAt = now;
                 var keys = Win32.TypingKeysWentDown() + (space ? 1 : 0);
                 if (keys > 0) { _typingAt = now; _keysSinceFocus += keys; typedNow = true; }
             }
@@ -481,7 +506,7 @@ internal sealed class UiaCollector : IDisposable
                     try { el = _automation.FromHandle(box.hwnd); v = box.text; } catch { el = null; }
                 }
                 el ??= _automation.FocusedElement();
-                if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return;
+                if (el is null || !IsProgramPid(el.Properties.ProcessId.ValueOrDefault)) return;
                 var r = Describe(el, Acts.Value);
                 var late = (DateTime.Now - now).TotalMilliseconds;
                 Log.Info($"read at Enter: {r.Ct} '{r.Name}' {r.Aid} {(v is not null ? "from the text read before Enter" : $"after {late:0} ms")}");
@@ -561,7 +586,7 @@ internal sealed class UiaCollector : IDisposable
             try
             {
                 var el = _automation.FromPoint(pt);
-                if (el is not null && el.Properties.ProcessId.ValueOrDefault == _pid)
+                if (el is not null && IsProgramPid(el.Properties.ProcessId.ValueOrDefault))
                 {
                     // a tab header drawn by a toolkit: the point may name a part of the item, or the strip itself
                     el = TabItemAt(el, pt) ?? el;
@@ -666,7 +691,7 @@ internal sealed class UiaCollector : IDisposable
         public long WindowAt(int x, int y)
         {
             var h = Win32.WindowFromPoint(new Win32.Point { X = x, Y = y });
-            return h != IntPtr.Zero && Win32.ProcessIdOf(h) == _c._pid ? (long)h : 0;
+            return h != IntPtr.Zero && _c.IsProgramWindow(h) ? (long)h : 0;
         }
         public long RootOf(long hwnd) => hwnd == 0 ? 0 : (long)Win32.GetAncestor(new IntPtr(hwnd), Win32.GA_ROOT);
         public long DocumentOf(long hwnd)
@@ -712,8 +737,7 @@ internal sealed class UiaCollector : IDisposable
         // (both ways: a late event naming the program while another program is already in front does not put it in front)
         if (current != IntPtr.Zero && current != hwnd) hwnd = current;
         if (hwnd == IntPtr.Zero) { SetInFront(false); return; }
-        var pid = Win32.ProcessIdOf(hwnd);
-        var mine = pid == _pid && _pid != 0;
+        var mine = _pid != 0 && IsProgramWindow(hwnd);
         if (mine)
         {
             // the event may name a child control (a WinForms button has its own hwnd): always work with the top-level window
@@ -827,6 +851,8 @@ internal sealed class UiaCollector : IDisposable
     /// <summary>A menu closed: if an item was highlighted or focused just before, that item was chosen (unless a real press already said so).</summary>
     private void MenuOpened() { lock (_gate) { _menuOpenedAt = DateTime.Now; _tracker.MenuOpened(); } }
     private DateTime _escapeAt = DateTime.MinValue;
+    // when Tab last went down (the focus moves to the next field: a value that appears there at once is the program's)
+    private DateTime _tabAt = DateTime.MinValue;
 
     private void MenuClosed()
     {
@@ -911,7 +937,7 @@ internal sealed class UiaCollector : IDisposable
             try
             {
                 var el = _automation.FromPoint(pt);
-                if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return;
+                if (el is null || !IsProgramPid(el.Properties.ProcessId.ValueOrDefault)) return;
                 var r = Describe(el, Acts.Invoke);
                 if (!PressDecider.IsActionable(r.Ct) || r.Name.Length == 0) return;
                 lock (_gate) _decider.RememberPressed(new PressCandidate(r.Name, r.Aid, r.Ct, win), pt.X, pt.Y, t);
@@ -1463,6 +1489,7 @@ internal sealed class UiaCollector : IDisposable
                 var name = ""; try { name = (c.Properties.Name.ValueOrDefault ?? "").Trim(); } catch { }
                 if (name.Length == 0) continue;
                 var onScreen = false;
+                System.Drawing.Rectangle own = default; try { own = c.Properties.BoundingRectangle.ValueOrDefault; } catch { }
                 try
                 {
                     foreach (var child in c.CachedChildren)
@@ -1471,6 +1498,8 @@ internal sealed class UiaCollector : IDisposable
                         if (cct == "Button") continue; // a tab's own close button is always on screen
                         bool off = true; try { off = child.Properties.IsOffscreen.ValueOrDefault; } catch { }
                         var r = child.Properties.BoundingRectangle.ValueOrDefault;
+                        // the tab's own header (a WPF tab item holds its label text): always on screen, says nothing about the page
+                        if (own.Width > 0 && own.Contains(r)) continue;
                         if (!off && r.Width > 0 && r.Height > 0) { onScreen = true; break; }
                     }
                 }
@@ -1850,6 +1879,14 @@ internal sealed class UiaCollector : IDisposable
         // an arrival long ago (the same field name in an earlier document) says nothing about this change
         if (arrival != DateTime.MinValue && (at - arrival).TotalSeconds > 30) arrival = DateTime.MinValue;
         if (typing == DateTime.MinValue && !strict) return true; // no key ever seen: the key test cannot be made (see KeyedInto)
+        // a field without a window of its own, changed just after Tab ended the keys, its arrival not seen: the program filled it
+        // as the focus moved in (see KeyedInto)
+        if (!strict && arrival == DateTime.MinValue && !f.IsCell)
+        {
+            bool ownWindow; DateTime tabAt;
+            lock (_gate) { ownWindow = f.AutomationId.Length > 0 && _focusAids.ContainsValue(f.AutomationId); tabAt = _tabAt; }
+            if (!ownWindow && FieldReads.FilledOnTabArrival(typing, tabAt, at) && FocusedAid() == f.AutomationId) return false;
+        }
         if (strict && arrival == DateTime.MinValue && f.Type is not ("ComboBox" or "CheckBox" or "RadioButton")) return false;
         if (strict && f.Type is "ComboBox" or "CheckBox" or "RadioButton") typing = DateTime.MinValue; // a record load: only a click on it makes it the user's
         return FieldReads.UserChanged(f.Type, f.Position, at, typing, arrival, click);
@@ -2015,7 +2052,7 @@ internal sealed class UiaCollector : IDisposable
             using (Cache(withFilter: true, withValues: true).Activate())
             {
                 var el = _automation.FromPoint(new System.Drawing.Point(x + w / 2, y + h / 2));
-                if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return new();
+                if (el is null || !IsProgramPid(el.Properties.ProcessId.ValueOrDefault)) return new();
                 var walker = _automation.TreeWalkerFactory.GetControlViewWalker();
                 AutomationElement? row = el;
                 for (var i = 0; i < 4 && row is not null; i++)
@@ -2037,7 +2074,7 @@ internal sealed class UiaCollector : IDisposable
     {
         try
         {
-            if (el.Properties.ProcessId.ValueOrDefault != _pid) return;
+            if (!IsProgramPid(el.Properties.ProcessId.ValueOrDefault)) return;
             NoteInput();
             var r = Describe(el, Acts.Focus);
             if (r.Ct == "Window" || r.Ct == "Pane" && r.Name.Length == 0) return;
@@ -2108,13 +2145,27 @@ internal sealed class UiaCollector : IDisposable
         ApplyTab(hwnd, tabName, tab, viaEvent: true);
     }
 
-    private void OnValueChanged(AutomationElement el, PropertyId prop, object newValue)
+    private void OnValueChanged(AutomationElement el, PropertyId prop, object newValue) => HandleValue(el, newValue as string ?? newValue?.ToString());
+
+    /// <summary>
+    /// A field's new value, from its value event or its text event (WPF text boxes raise both): one test decides whether the
+    /// user typed it or the program filled it, for both.
+    /// </summary>
+    private void HandleValue(AutomationElement el, string? v)
     {
         try
         {
             NoteInput();
             var r = Describe(el, Acts.Value);
-            var v = newValue as string ?? newValue?.ToString();
+            if (FieldReads.IsItemPlaceholder(r.Name))
+            {
+                // a WPF grid editor names its row's item and column number: the column's header is its name
+                string pos = ""; try { var b = el.BoundingRectangle; pos = $"{b.Left},{b.Top} {b.Width}x{b.Height}"; } catch { }
+                var (rk, _, _, _, _) = ReadTarget();
+                List<ControlRow>? rows; lock (_gate) _fieldRows.TryGetValue(rk, out rows);
+                r.Name = rows is null ? "" : FieldReads.ColumnOfPlaceholder(r.Name, pos, rows);
+                if (r.Name.Length == 0) r.Name = Labels.Clean(r.Aid);
+            }
             r.Val = Masking.ForEvent(v, r.Name, r.Aid, r.IsPassword);
             if (!ChangedByUser(el, r) || !KeyedInto(r, el))
             {
@@ -2187,9 +2238,11 @@ internal sealed class UiaCollector : IDisposable
                 if (k.Length > 0 && _focusArrivedAt.TryGetValue(k, out var a) && a > arrival) arrival = a;
         }
         // the focus's arrival by the window handle, when the field has one (the UI Automation focus event can come late)
+        var ownWindow = false;
         try
         {
             var h = el.Properties.NativeWindowHandle.ValueOrDefault;
+            ownWindow = h != IntPtr.Zero;
             if (h != IntPtr.Zero) lock (_gate) { if (_focusSince.TryGetValue(h, out var since)) arrival = since; }
         }
         catch { }
@@ -2202,9 +2255,20 @@ internal sealed class UiaCollector : IDisposable
         if ((DateTime.Now - typing).TotalMilliseconds is >= 0 and <= 250) return true;
         // the field's focus arrival was never seen and keys went down in the last 8 s: under load UI Automation delivers a
         // value event seconds after the key (the second order of the r6 run lost its product code to the 3 s window)
+        // ... unless Tab went down after the last typing key and just now: the keys were the field the user left, and a field
+        // whose focus arrival is not seen yet (WPF and web pages raise the value before the focus) was filled by the program
+        DateTime tabAt; lock (_gate) tabAt = _tabAt;
+        // (only fields without a window of their own: WPF and web pages; a toolkit editor with its own window, Inform's, has its
+        // focus arrival read from the window, and its late value after Tab is still the keys')
+        // and only the field the focus moved INTO (it has the keyboard focus now); the field the user left reports its typed value
+        // on leaving it (web pages do), and that value is the keys'
+        if (arrival == DateTime.MinValue && !ownWindow && FieldReads.FilledOnTabArrival(typing, tabAt, DateTime.Now) && HasFocus(el)) return false;
         if (arrival == DateTime.MinValue && (DateTime.Now - typing).TotalSeconds is >= 0 and <= 8) return true;
         return FieldReads.UserChanged(r.Ct, pos, DateTime.Now, typing, arrival, click);
     }
+
+    private static bool HasFocus(AutomationElement el) { try { return el.Properties.HasKeyboardFocus.ValueOrDefault; } catch { return false; } }
+    private string FocusedAid() { try { return _automation.FocusedElement()?.Properties.AutomationId.ValueOrDefault ?? ""; } catch { return ""; } }
 
     private bool ChangedByUser(AutomationElement el, RawEvent r)
     {
@@ -2267,7 +2331,7 @@ internal sealed class UiaCollector : IDisposable
                 }
                 if (text.Length == 0 || text.Length > 300) return;
                 var el = _automation.FromPoint(p1);
-                if (el is null || el.Properties.ProcessId.ValueOrDefault != _pid) return;
+                if (el is null || !IsProgramPid(el.Properties.ProcessId.ValueOrDefault)) return;
                 var r = Describe(el, Acts.Hint);
                 if (r.Ct is not ("Button" or "SplitButton" or "MenuItem" or "CheckBox" or "RadioButton" or "Edit" or "ComboBox" or "Spinner" or "TabItem" or "Hyperlink" or "Image" or "Text")) return;
                 if (r.Name.Length == 0) return;
@@ -2341,7 +2405,6 @@ internal sealed class UiaCollector : IDisposable
         if (!_inFront) return; // reading the text is a cross-process call; skip it when nobody is recording anyway
         try
         {
-            var r = Describe(el, Acts.Value);
             string? v = null;
             try { v = el.Patterns.Value.PatternOrDefault?.Value.ValueOrDefault; } catch { }
             if (v is null)
@@ -2349,8 +2412,7 @@ internal sealed class UiaCollector : IDisposable
                 try { v = el.Patterns.Text.PatternOrDefault?.DocumentRange.GetText(500); } catch { }
             }
             if (v is null) return;
-            r.Val = Masking.ForEvent(v, r.Name, r.Aid, r.IsPassword);
-            Emit(r);
+            HandleValue(el, v); // the same test as a value event: typed by the user or filled by the program
         }
         catch { }
     }
@@ -2504,7 +2566,7 @@ internal sealed class UiaCollector : IDisposable
                     {
                         var cells = new List<string>();
                         var k = j + 1;
-                        for (; k < rows.Count && rows[k].Depth > r.Depth; k++) if (rows[k].Type is not ("Note") && rows[k].Name.Length > 0 && rows[k].Depth == r.Depth + 1) cells.Add(rows[k].Name);
+                        for (; k < rows.Count && rows[k].Depth > r.Depth; k++) if (rows[k].Type is not ("Note") && rows[k].Name.Length > 0 && rows[k].Depth == r.Depth + 1) cells.Add(FieldReads.IsItemPlaceholder(rows[k].Name) ? FieldReads.InnerText(rows, k) : rows[k].Name);
                         lines.Add(cells.Count > 0 ? string.Join(" | ", cells) : r.Name);
                         j = k - 1;
                         if (lines.Count >= maxRows) break;

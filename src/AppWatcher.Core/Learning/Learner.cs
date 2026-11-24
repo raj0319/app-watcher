@@ -33,7 +33,8 @@ public static class Learner
         Titles.MaskPatterns = masks;
     }
 
-    public static LearnInput LoadInput(AppPaths paths, string appName, WatcherConfig? config = null, DateTime? since = null)
+    /// <param name="knownEffects">effect files the learner has already counted (LearnState.EffectFiles): not read again, an incremental run then costs the new days only</param>
+    public static LearnInput LoadInput(AppPaths paths, string appName, WatcherConfig? config = null, DateTime? since = null, ISet<string>? knownEffects = null)
     {
         ApplyTitleMasks(config);
         var profile = config?.Profile is { Length: > 0 } pn ? Discovery.ProfileStore.ByName(pn) : null;
@@ -41,7 +42,7 @@ public static class Learner
         {
             AppName = appName,
             Events = EventReader.ReadAll(paths.Events, since),
-            Effects = EffectRecord.ReadAll(paths.Effects),
+            Effects = EffectRecord.ReadAll(paths.Effects, knownEffects),
             Latest = DataSnapshot.Load(paths.BeforeSnapshot),
             Screens = ScreenWriter.ReadAll(paths.Screens),
             SqlStatements = config?.SqlCapture.Enabled == true ? SqlLogReaders.ReadAll(config.SqlCapture.LogPath, config.App?.ProcessName) : new(),
@@ -128,19 +129,32 @@ public static class Learner
 
         var usedEffects = new HashSet<EffectRecord>();
         var usedSql = new HashSet<SqlStatement>();
-        foreach (var session in sessions)
+        // A session is committed (counted in the state, the watermark moved past it) when it is closed and ends before the start of
+        // every session that is not: those are read again from the watermark on. With one PC that is "all but the open one"; with
+        // several PCs working at the same time a closed session can overlap an open one and then waits with it.
+        var uncommittedFrom = DateTime.MaxValue;
+        foreach (var s in sessions) if (s[^1].T > cutoff && s[0].T < uncommittedFrom) uncommittedFrom = s[0].T;
+        for (var again = true; again;)
+        {
+            again = false;
+            foreach (var s in sessions) if (s[^1].T >= uncommittedFrom && s[0].T < uncommittedFrom) { uncommittedFrom = s[0].T; again = true; }
+        }
+        var ownSessions = sessions.Any(s => FlowLearner.MachineOf(s[0].Source).Length == 0);
+        foreach (var session in sessions.Where(s => s[^1].T < uncommittedFrom).Concat(sessions.Where(s => s[^1].T >= uncommittedFrom)))
         {
             var start = session[0].T; var end = session[^1].T;
-            var closed = end <= cutoff;
+            var closed = end < uncommittedFrom;
             if (!closed) Open();
-            var fx = effects.Where(f => !usedEffects.Contains(f) && f.T >= start && f.T <= end.AddMinutes(5)).ToList();
+            // effects belong to the PC they were captured on (legacy merged files without a tag go to any PC when no session is this PC's own)
+            var pc = FlowLearner.MachineOf(session[0].Source);
+            var fx = effects.Where(f => !usedEffects.Contains(f) && f.T >= start && f.T <= end.AddMinutes(5) && (f.Machine == pc || f.Machine.Length == 0 && !ownSessions)).ToList();
             var sq = sqls.Where(s => !usedSql.Contains(s) && s.T >= start && s.T <= end.AddMinutes(5)).ToList();
             foreach (var f in fx) usedEffects.Add(f);
             foreach (var s in sq) usedSql.Add(s);
             var oc = ocr.Where(o => !usedOcr.Contains(o) && o.T >= start.AddSeconds(-1) && o.T <= end.AddSeconds(5)).ToList();
             foreach (var o in oc) usedOcr.Add(o);
             ProcessSession(working, session, fx, sq, keyIndex, triggers, sessionWindows, flowCuts, oc, knownFields: knownFields);
-            if (closed && !openSeen) state.Watermark = end;
+            if (closed && !openSeen && (state.Watermark is null || end > state.Watermark)) state.Watermark = end;
         }
         // pictures outside any session (the collector pictured a state while no event was written)
         var loose = ocr.Where(o => !usedOcr.Contains(o)).ToList();

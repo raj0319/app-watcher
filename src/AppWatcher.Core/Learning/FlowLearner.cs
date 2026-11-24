@@ -44,18 +44,37 @@ public static class FlowLearner
         return (flows, nav, main, state.Sessions);
     }
 
+    /// <summary>
+    /// Sessions of one PC each: events of the same source machine (the tag in "events/2026-09-01.&lt;machine&gt;.jsonl" after a merge;
+    /// empty for the PC's own files) are cut at gaps of SessionGap on their own, so users working at the same time on different PCs
+    /// stay separate sessions instead of melting into one working day. Ordered by start time.
+    /// </summary>
     public static List<List<UiEvent>> Sessions(List<UiEvent> events)
     {
-        var sessions = new List<List<UiEvent>>();
-        List<UiEvent>? cur = null;
-        DateTime last = DateTime.MinValue;
+        var sessions = new List<(string machine, List<UiEvent> list)>();
+        var cur = new Dictionary<string, (List<UiEvent> list, DateTime last)>();
         foreach (var e in events.OrderBy(e => e.T))
         {
-            if (cur is null || e.T - last > SessionGap) { cur = new List<UiEvent>(); sessions.Add(cur); }
-            cur.Add(e);
-            last = e.T;
+            var m = MachineOf(e.Source);
+            if (!cur.TryGetValue(m, out var c) || e.T - c.last > SessionGap)
+            {
+                c = (new List<UiEvent>(), e.T);
+                sessions.Add((m, c.list));
+            }
+            c.list.Add(e);
+            cur[m] = (c.list, e.T);
         }
-        return sessions;
+        return sessions.OrderBy(s => s.list[0].T).ThenBy(s => s.machine, StringComparer.Ordinal).Select(s => s.list).ToList();
+    }
+
+    /// <summary>The PC tag of an event's source ("events/2026-09-01.a1b2c3d4.jsonl#L7" gives "a1b2c3d4"); empty for a day file of this PC.</summary>
+    public static string MachineOf(string? source)
+    {
+        if (string.IsNullOrEmpty(source) || !source.StartsWith("events/", StringComparison.Ordinal)) return "";
+        var end = source.IndexOf('#');
+        var name = end < 0 ? source[7..] : source[7..end];
+        if (name.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)) name = name[..^6];
+        return name.Length > 11 && name[10] == '.' ? name[11..] : "";
     }
 
     /// <summary>

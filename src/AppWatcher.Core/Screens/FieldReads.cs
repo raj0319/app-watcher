@@ -72,6 +72,7 @@ public static class FieldReads
                 if (r.Type is "DataItem" or "ListItem" or "TreeItem" or "Custom" && r.Depth == gridDepth + 1 || r.Type is "DataItem" && rowIndex < 0) { FlushRow(); rowIndex++; rowDepth = r.Depth; }
                 if (r.Value is null || !(r.Type is "Edit" or "Text" or "ComboBox" or "CheckBox" or "DataItem" or "Custom")) continue;
                 if (r.Type is "Custom" or "DataItem" && r.Value.Length == 0) continue;
+                if (IsItemPlaceholder(r.Value)) continue; // a WPF cell names its item, not its text: the editor inside it has the value
                 var header = CellHeader(r, headers);
                 if (header.Length == 0) continue;
                 if (rowCells.Any(c => c.Label == header)) continue;
@@ -102,6 +103,49 @@ public static class FieldReads
         }
         FlushRow();
         return result;
+    }
+
+    /// <summary>
+    /// WPF's DataGrid gives a cell the text "Item: Namespace.Type, Column Display Index: 2" when it has no automation value of
+    /// its own (the bound item's type name): never a value a user typed or the program showed.
+    /// </summary>
+    public static bool IsItemPlaceholder(string? value) =>
+        value is not null && value.StartsWith("Item: ", StringComparison.Ordinal) && value.Contains(", Column Display Index: ", StringComparison.Ordinal);
+
+    /// <summary>The first value (or text) of the controls inside the cell at <paramref name="index"/>: what a WPF cell shows.</summary>
+    public static string InnerText(IList<ControlRow> rows, int index)
+    {
+        for (var m = index + 1; m < rows.Count && rows[m].Depth > rows[index].Depth; m++)
+        {
+            var inner = rows[m].Value is { Length: > 0 } iv ? iv : rows[m].Type == "Text" ? rows[m].Name : "";
+            if (inner.Length > 0 && !IsItemPlaceholder(inner)) return inner;
+        }
+        return "(empty)";
+    }
+
+    /// <summary>
+    /// The column a WPF placeholder name points at ("Column Display Index: 2" is the third header, left to right, of the grid that
+    /// holds <paramref name="position"/>, or of the only grid read). Empty when it cannot be told.
+    /// </summary>
+    public static string ColumnOfPlaceholder(string name, string position, IList<ControlRow> rows)
+    {
+        if (!IsItemPlaceholder(name)) return "";
+        var tail = name[(name.LastIndexOf(':') + 1)..].Trim();
+        if (!int.TryParse(tail, out var index) || index < 0) return "";
+        Labels.TryRect(position, out var px, out var py, out _, out _);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var g = rows[i];
+            if (!GridTypes.Contains(g.Type)) continue;
+            var inside = position.Length == 0 || Labels.TryRect(g.Position, out var gx, out var gy, out var gw, out var gh) && px >= gx && px <= gx + gw && py >= gy && py <= gy + gh;
+            var headers = new List<(string name, int x)>();
+            for (var j = i + 1; j < rows.Count && rows[j].Depth > g.Depth; j++)
+                if (rows[j].Type is "HeaderItem" or "Header" && rows[j].Name.Length > 0 && Labels.TryRect(rows[j].Position, out var hx, out _, out _, out _)) headers.Add((rows[j].Name.Trim(), hx));
+            if (!inside || headers.Count == 0) continue;
+            var ordered = headers.GroupBy(h => h.name).Select(h => h.First()).OrderBy(h => h.x).ToList();
+            return index < ordered.Count ? ordered[index].name : "";
+        }
+        return "";
     }
 
     /// <summary>Column headers that number the lines of an order grid: a row keyed by its line number keeps its identity when a line is added above it.</summary>
@@ -228,6 +272,14 @@ public static class FieldReads
         return decimal.TryParse(Num(c), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var a)
             && decimal.TryParse(Num(t), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var b) && a == b;
     }
+
+    /// <summary>
+    /// A field changed whose focus arrival was not seen, just after Tab went down following the last typing key: the keys were
+    /// typed in the field the user left; this field's new value came with the focus moving in (the program filled it). Only Tab:
+    /// a value event that comes late after Enter is still the typed field's own (Inform's grid cells).
+    /// </summary>
+    public static bool FilledOnTabArrival(DateTime lastTypingKey, DateTime tabAt, DateTime valueAt) =>
+        tabAt != DateTime.MinValue && tabAt >= lastTypingKey && (valueAt - tabAt).TotalMilliseconds is >= -50 and <= 1500;
 
     /// <summary>
     /// A later read of the same box shows the keys the program had not drawn yet at the first read: the earlier text plus one
@@ -414,6 +466,8 @@ public static class FieldReads
                 {
                     var c = rows[k];
                     var text = c.Value is { Length: > 0 } ? c.Value : c.Name;
+                    // a WPF cell names its item, not its text: the first value of the editor or text inside it stands for it
+                    if (c.Depth == r.Depth + 1 && IsItemPlaceholder(text)) text = InnerText(rows, k);
                     if (c.Depth == r.Depth + 1 && text.Length > 0 && c.Type != "Note") cells.Add(text);
                 }
                 lines.Add(cells.Count > 0 ? string.Join(" | ", cells) : (r.Value is { Length: > 0 } ? r.Value : r.Name));

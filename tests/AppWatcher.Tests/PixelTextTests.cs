@@ -32,9 +32,46 @@ public class PixelTextTests
         => Assert.Equal(expected, FieldReads.ExtendsByKeys(earlier, later));
 
     [Theory]
-    [InlineData("客户名称", "aaaa")]   // letters without case
-    [InlineData("مرحبا", "aaaaa")]
-    [InlineData("Ⅻ½", "##")]           // number signs that are not digits
+    [InlineData(0, 300, 305, true)]      // keys, then Tab, then the next field filled 5 ms later: the program's
+    [InlineData(0, 300, 1400, true)]
+    [InlineData(0, 300, 2500, false)]    // long after the Tab: not decided by it
+    [InlineData(500, 300, 520, false)]   // a key after the Tab: typed in this field
+    [InlineData(300, 300, 700, true)]    // keys and Tab seen in the same read (typed in one burst): the Tab ends them
+    [InlineData(0, -1, 300, false)]      // no Tab at all (Enter, or nothing): not decided by it
+    public void A_value_that_comes_with_Tab_is_the_programs(int typingMs, int tabMs, int valueMs, bool expected)
+    {
+        var t0 = new DateTime(2026, 1, 1, 9, 0, 0);
+        var tab = tabMs < 0 ? DateTime.MinValue : t0.AddMilliseconds(tabMs);
+        Assert.Equal(expected, FieldReads.FilledOnTabArrival(t0.AddMilliseconds(typingMs), tab, t0.AddMilliseconds(valueMs)));
+    }
+
+    [Fact]
+    public void A_WPF_cell_placeholder_gives_way_to_the_editor_inside_it()
+    {
+        Assert.True(FieldReads.IsItemPlaceholder("Item: SampleWpf.OrderLine, Column Display Index: 1"));
+        Assert.False(FieldReads.IsItemPlaceholder("Item 5"));
+        var rows = new List<AppWatcher.Core.Screens.ControlRow>
+        {
+            new() { Depth = 0, Type = "DataGrid", Name = "Lines", Position = "0,0 400x100" },
+            new() { Depth = 1, Type = "HeaderItem", Name = "Quantity", Position = "0,0 100x20" },
+            new() { Depth = 1, Type = "DataItem", Name = "SampleWpf.OrderLine", Position = "0,20 400x20" },
+            new() { Depth = 2, Type = "Custom", Name = "Item: SampleWpf.OrderLine, Column Display Index: 0", Value = "Item: SampleWpf.OrderLine, Column Display Index: 0", Position = "0,20 100x20" },
+            new() { Depth = 3, Type = "Edit", Name = "", Value = "5", Position = "2,22 96x16" },
+        };
+        var cell = Assert.Single(FieldReads.FromRows(rows), f => f.Label == "Quantity");
+        Assert.Equal("5", cell.Value);
+        rows.Insert(2, new() { Depth = 1, Type = "HeaderItem", Name = "Unit price", Position = "100,0 100x20" });
+        Assert.Equal("Quantity", FieldReads.ColumnOfPlaceholder("Item: SampleWpf.OrderLine, Column Display Index: 0", "2,22 96x16", rows));
+        Assert.Equal("Unit price", FieldReads.ColumnOfPlaceholder("Item: SampleWpf.OrderLine, Column Display Index: 1", "102,22 96x16", rows));
+        Assert.Equal("", FieldReads.ColumnOfPlaceholder("Item: SampleWpf.OrderLine, Column Display Index: 7", "2,22 96x16", rows));
+        var lines = FieldReads.GridLines(rows, 0, 10);
+        Assert.Equal("5", lines[1]); // the row line shows the editor's value, not the placeholder
+    }
+
+    [Theory]
+    [InlineData("客户名称", "aaaa")]   // letters without case (Chinese)
+    [InlineData("مرحبا", "aaaaa")] // Arabic
+    [InlineData("Ⅻ½", "##")]   // number signs that are not digits
     public void A_shape_hides_letters_of_every_script(string value, string expected)
         => Assert.Equal(expected, AppWatcher.Core.Masking.Shape(value));
 

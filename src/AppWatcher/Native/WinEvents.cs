@@ -32,7 +32,7 @@ internal static class Win32
     public const int OBJID_WINDOW = 0;
     public const int OBJID_CLIENT = -4;
     public const int OBJID_MENU = -3;
-    public const uint GA_ROOT = 2;
+    public const uint GA_ROOT = 2, GA_ROOTOWNER = 3;
     public const uint GW_HWNDNEXT = 2;
     public const int VK_LBUTTON = 0x01, VK_TAB = 0x09, VK_RETURN = 0x0D, VK_SPACE = 0x20, VK_ESCAPE = 0x1B;
 

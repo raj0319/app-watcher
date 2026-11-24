@@ -137,6 +137,11 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   password box) and read with the Windows OCR; the text is kept only when the keys pressed could have written it
   (`FieldReads.PixelTextFits`), and look-alike characters (O/0, I/1) are settled by the value the program shows later
   (`FieldReads.ReconcilePixelText`). It goes to events as a typed value; memory still holds only its shape.
+- A window of another process drawn inside (or owned by) a window of the program, such as a WebView2 or Chromium page,
+  counts as the program's (`IsProgramWindow`, learned helper processes). WPF text boxes raise a value and a text event: both
+  go through one typed-or-filled test (`HandleValue`). A field with no window of its own that changes just after Tab ended
+  the keys, while it holds the keyboard focus, was filled by the program (`FieldReads.FilledOnTabArrival`). WPF grid cells
+  named "Item: …, Column Display Index: N" take the value inside them and their column's header (`IsItemPlaceholder`).
 - Text read from pictures reaches memory only as a field or column name the screen record knows (`OcrLogic.KnownFields`);
   personal fields the program fills (phone, e-mail, address, name) are shapes in the events; the profile's `titleMasks`
   hide the company name in the main title. A window the program opens by itself (no click in the 2 s before) is not a

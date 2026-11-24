@@ -34,7 +34,7 @@ public static class Merge
                 {
                     var stem = Path.GetFileNameWithoutExtension(f);
                     var date = stem.Length >= 10 ? stem[..10] : stem;
-                    var dest = Path.Combine(into.Events, $"{date}.{r.Machine}.jsonl");
+                    var dest = Path.Combine(into.Events, stem.Length > 11 && stem[10] == '.' ? Path.GetFileName(f) : $"{date}.{r.Machine}.jsonl"); // a file tagged by an earlier merge keeps its tag
                     if (File.Exists(dest) && new FileInfo(dest).Length == new FileInfo(f).Length) continue;
                     File.Copy(f, dest, true);
                     r.EventFiles++;
@@ -43,7 +43,10 @@ public static class Merge
             if (Directory.Exists(effects))
                 foreach (var f in Directory.GetFiles(effects, "*.json"))
                 {
-                    var dest = Path.Combine(into.Effects, Path.GetFileName(f));
+                    // tagged with the PC like the event files: two PCs can save in the same millisecond, and the learner keeps
+                    // a session's effects with that PC's session
+                    var stem = Path.GetFileNameWithoutExtension(f);
+                    var dest = Path.Combine(into.Effects, stem.Length > 24 && stem[23] == '.' ? Path.GetFileName(f) : $"{stem}.{r.Machine}.json"); // a file tagged by an earlier merge keeps its tag
                     if (File.Exists(dest)) continue;
                     File.Copy(f, dest);
                     r.EffectFiles++;

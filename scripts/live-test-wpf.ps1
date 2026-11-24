@@ -179,6 +179,20 @@ function RealClick($parent, [string]$automationId, [string]$what) {
     Start-Sleep -Milliseconds $SettleMs
     return $true
 }
+# real keystrokes (SendKeys) into the field, only while a window of the sample is in front; falls back to the pattern otherwise.
+# Pattern driving presses no key, and a watcher that never sees a key cannot tell what the user typed from what the program
+# filled in; this is what a real user does (type, then Tab out).
+function TypeReal($parent, [string]$automationId, [string]$text, [bool]$tabOut = $false) {
+    $e = Find $parent $automationId
+    $e.SetFocus(); Start-Sleep -Milliseconds 200
+    if ([LiveTest.Msg]::Visible([uint32]$app.Id) -notcontains [LiveTest.Mouse]::GetForegroundWindow()) {
+        $script:Inconclusive += "keys in $automationId"; Write-Host "   (no real keys for $automationId - the sample is not in front; set by pattern)"; SetVal $parent $automationId $text; return
+    }
+    [System.Windows.Forms.SendKeys]::SendWait("^a")
+    foreach ($ch in $text.ToCharArray()) { [System.Windows.Forms.SendKeys]::SendWait($(if ("+^%~(){}[]".Contains($ch)) { "{" + $ch + "}" } else { [string]$ch })); Start-Sleep -Milliseconds 60 }
+    Start-Sleep -Milliseconds 400
+    if ($tabOut) { [System.Windows.Forms.SendKeys]::SendWait("{TAB}"); Start-Sleep -Milliseconds 800 }
+}
 function Step([string]$what, [scriptblock]$do) {
     try { & $do } catch { Write-Host "   step failed: $what -> $($_.Exception.Message)" }
 }
@@ -205,12 +219,10 @@ Step "short code" { SetVal $main "txtCustomerCode" "AB" }
 Step "save (invalid)" { Act $main "btnSaveCustomer" }
 Start-Sleep -Milliseconds 2500
 # a known code: the program fills the name when the focus leaves the code box
-Step "code C001" { SetVal $main "txtCustomerCode" "C001" }
-Step "focus leaves" { FocusOn $main "txtCustomerName" }
+Step "code C001" { TypeReal $main "txtCustomerCode" "C001" $true }
 Step "save (valid)" { Act $main "btnSaveCustomer" }
 Start-Sleep -Milliseconds 2500
-Step "code C002" { SetVal $main "txtCustomerCode" "C002" }
-Step "focus leaves" { FocusOn $main "txtCustomerName" }
+Step "code C002" { TypeReal $main "txtCustomerCode" "C002" $true }
 Step "code ZZTEST-CUS-001" { SetVal $main "txtCustomerCode" "ZZTEST-CUS-001" }
 Step "name" { SetVal $main "txtCustomerName" "ZZTEST Customer One" }
 Step "save (valid)" { Act $main "btnSaveCustomer" }
@@ -247,7 +259,7 @@ Step "add line 1" { Act $main "btnAddLine" }
 Step "lookup Ga" { SetVal $main "cboProduct" "Ga"; Start-Sleep -Milliseconds 800; try { (Find $main "cboProduct").GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Collapse() } catch { } }
 Step "add line 2" { Act $main "btnAddLine" }
 foreach ($s in @(@("txtQty_1", "4"), @("txtPrice_1", "12.50"), @("txtQty_1", "3"), @("txtQty_2", "10"), @("txtPrice_2", "7"), @("txtPrice_1", "20"), @("txtQty_2", "6"))) {
-    Step "grid $($s[0])" { SetVal $main $s[0] $s[1]; Start-Sleep -Milliseconds 500 }
+    Step "grid $($s[0])" { TypeReal $main $s[0] $s[1] $true; Start-Sleep -Milliseconds 500 }
 }
 Start-Sleep -Milliseconds 800
 # Quote tab: a button that does nothing, pressed through the pattern and once with the real mouse
