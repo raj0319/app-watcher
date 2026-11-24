@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sample Web ERP</title>
+<style>
+body{font:14px Segoe UI,sans-serif;margin:0;background:#fff;color:#111}
+header{background:#234;color:#fff;padding:8px 16px;display:flex;justify-content:space-between;align-items:center}
+.row{margin:8px 16px;display:flex;align-items:center}.row label{width:130px}
+[role=tablist]{display:flex;margin:12px 16px 0;border-bottom:1px solid #999}
+[role=tab]{padding:6px 14px;border:1px solid #999;border-bottom:none;background:#eee;cursor:pointer}
+[role=tab][aria-selected=true]{background:#fff;font-weight:600}
+[role=tabpanel]{padding:8px 0}
+button{padding:4px 14px;margin-right:6px}
+table{border-collapse:collapse;margin:8px 16px}td,th{border:1px solid #bbb;padding:2px 6px}
+#productList{position:absolute;border:1px solid #888;background:#fff;min-width:160px;z-index:5}
+#productList div[role=option]{padding:3px 8px;cursor:pointer}
+dialog{border:1px solid #444;padding:16px;min-width:280px}
+.hidden{display:none}
+</style></head><body>
+
+<section id="loginView">
+  <header><h1 style="font-size:16px;margin:0">Sample Web ERP - Login</h1></header>
+  <form id="loginForm" aria-label="Login" onsubmit="return false">
+    <div class="row"><label for="txtUser">User</label><input id="txtUser" type="text" autocomplete="off"></div>
+    <div class="row"><label for="txtPassword">Password</label><input id="txtPassword" type="password" autocomplete="off"></div>
+    <div class="row"><label></label><button id="btnLogin" type="button">Sign in</button></div>
+  </form>
+</section>
+
+<section id="mainView" class="hidden">
+  <header><span>Sample Web ERP</span>
+    <span><button id="btnNewCustomer" type="button">New Customer</button><button id="btnExit" type="button">Exit</button></span></header>
+  <div role="tablist" aria-label="Workspace">
+    <div role="tab" id="tabCustomers" aria-selected="true" aria-controls="panelCustomers" tabindex="0">Customer Master</div>
+    <div role="tab" id="tabOrders" aria-selected="false" aria-controls="panelOrders" tabindex="-1">Orders</div>
+    <div role="tab" id="tabQuote" aria-selected="false" aria-controls="panelQuote" tabindex="-1">Quote</div>
+  </div>
+
+  <div role="tabpanel" id="panelCustomers" aria-labelledby="tabCustomers">
+    <div class="row"><label for="customerCode">Customer code</label><input id="customerCode" type="text" autocomplete="off"></div>
+    <div class="row"><label for="customerName">Name</label><input id="customerName" type="text" autocomplete="off"></div>
+    <div class="row"><label></label><button id="btnSaveCustomer" type="button">Save</button><button id="btnClear" type="button">Clear</button></div>
+  </div>
+
+  <div role="tabpanel" id="panelOrders" aria-labelledby="tabOrders" class="hidden">
+    <table aria-label="Order lines"><thead><tr><th>Product</th><th>Quantity</th><th>Unit price</th><th>Line total</th></tr></thead>
+      <tbody id="lines"></tbody></table>
+    <div class="row"><button id="btnAddLine" type="button">Add Line</button></div>
+    <div class="row" style="position:relative"><label for="productSearch">Product search</label>
+      <input id="productSearch" type="text" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="productList">
+      <div id="productList" role="listbox" aria-label="Products" class="hidden" style="top:28px;left:130px"></div></div>
+  </div>
+
+  <div role="tabpanel" id="panelQuote" aria-labelledby="tabQuote" class="hidden">
+    <div class="row"><label for="quoteNote">Quote note</label><input id="quoteNote" type="text" autocomplete="off"></div>
+  </div>
+</section>
+
+<dialog id="dlgMessage" aria-labelledby="dlgMessageText"><p id="dlgMessageText"></p><button id="btnMessageOk" type="button">OK</button></dialog>
+<dialog id="dlgNew" aria-label="New Customer"><h2 style="font-size:15px;margin-top:0">New Customer</h2>
+  <div class="row"><label for="newCode">Code</label><input id="newCode" type="text" autocomplete="off"></div>
+  <div class="row"><label for="newName">Name</label><input id="newName" type="text" autocomplete="off"></div>
+  <button id="btnNewOk" type="button">OK</button><button id="btnNewCancel" type="button">Cancel</button></dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const customers = {C001: "Contoso Test Ltd", C002: "Fabrikam Sample Inc"};
+const products = ["Widget", "Widget Pro", "Gadget", "Gadget Mini", "Gizmo"];
+
+function message(text) { $("dlgMessageText").textContent = text; $("dlgMessage").showModal(); $("btnMessageOk").focus(); }
+$("btnMessageOk").onclick = () => $("dlgMessage").close();
+
+$("btnLogin").onclick = () => {
+  $("loginView").classList.add("hidden"); $("mainView").classList.remove("hidden"); $("customerCode").focus();
+};
+
+function selectTab(tab) {
+  document.querySelectorAll("[role=tab]").forEach(t => { const on = t === tab; t.setAttribute("aria-selected", on); t.tabIndex = on ? 0 : -1; });
+  document.querySelectorAll("[role=tabpanel]").forEach(p => p.classList.toggle("hidden", p.id !== tab.getAttribute("aria-controls")));
+}
+document.querySelectorAll("[role=tab]").forEach(t => { t.onclick = () => selectTab(t); t.onkeydown = e => { if (e.key === "Enter" || e.key === " ") selectTab(t); }; });
+
+// the program fills the name when a known code is typed and the field loses focus
+$("customerCode").addEventListener("change", () => { $("customerName").value = customers[$("customerCode").value.trim().toUpperCase()] || ""; });
+$("btnSaveCustomer").onclick = () => {
+  if ($("customerCode").value.trim().length < 3) message("Customer code must have at least 3 characters.");
+  else message("Customer saved.");
+};
+$("btnClear").onclick = () => { $("customerCode").value = ""; $("customerName").value = ""; };
+
+$("btnNewCustomer").onclick = () => { $("newCode").value = ""; $("newName").value = ""; $("dlgNew").showModal(); $("newCode").focus(); };
+$("btnNewOk").onclick = () => { $("dlgNew").close(); message("Customer created."); };
+$("btnNewCancel").onclick = () => $("dlgNew").close();
+$("btnExit").onclick = () => window.chrome.webview.postMessage("exit");
+
+// orders: input cells, the line total is calculated by script
+function addLine() {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><input aria-label="Product" type="text" class="p"></td><td><input aria-label="Quantity" type="text" class="q"></td>` +
+    `<td><input aria-label="Unit price" type="text" class="u"></td><td><input aria-label="Line total" type="text" class="t" readonly></td>`;
+  const q = tr.querySelector(".q"), u = tr.querySelector(".u"), t = tr.querySelector(".t");
+  const calc = () => { const v = parseFloat(q.value) * parseFloat(u.value); t.value = isNaN(v) ? "" : v.toFixed(2); };
+  q.addEventListener("input", calc); u.addEventListener("input", calc);
+  $("lines").appendChild(tr);
+}
+$("btnAddLine").onclick = addLine; addLine();
+
+// product search: a popup list after 2+ characters
+const search = $("productSearch"), list = $("productList");
+search.addEventListener("input", () => {
+  const v = search.value.trim().toLowerCase();
+  list.innerHTML = "";
+  const hits = v.length >= 2 ? products.filter(p => p.toLowerCase().includes(v)) : [];
+  hits.forEach(p => { const d = document.createElement("div"); d.setAttribute("role", "option"); d.textContent = p;
+    d.onclick = () => { search.value = p; list.classList.add("hidden"); search.setAttribute("aria-expanded", "false"); }; list.appendChild(d); });
+  const open = hits.length > 0; list.classList.toggle("hidden", !open); search.setAttribute("aria-expanded", open);
+});
+</script></body></html>
