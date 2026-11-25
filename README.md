@@ -1,12 +1,70 @@
 ﻿# App Watcher
 
-A small Windows program that sits in the tray, watches one chosen desktop app while real people use
-it, and slowly writes down how that app works: its screens, fields, tables, rules and flows. Think of it
-as a quiet architect taking notes behind the user.
+[![Latest release](https://img.shields.io/github/v/release/raj0319/app-watcher?label=download)](https://github.com/raj0319/app-watcher/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
+![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)
+![Tests](https://img.shields.io/badge/tests-262%20passing-brightgreen)
 
-It does not watch other programs, it only shows a short notice near the clock now and then, and it never
-changes anything in the app it watches. It keeps pictures of the app's own window, one per state of each screen (never the desktop, never
-the same state twice), and that can be switched off.
+**Learn how any Windows business app works, just by watching people use it.**
+
+Most companies run on desktop software that nobody fully documents any more: an ERP, a billing system, an
+in-house tool. The knowledge lives in people's heads. App Watcher sits in the tray, watches **one** program
+while your team works as usual, and writes down how it works: its screens and fields, what the program fills
+in by itself, the calculations it does, its messages and rules, and the everyday flows, step by step.
+
+It is **read-only by design**: it never clicks or types in the program, installs no keyboard or mouse hook,
+never reads password boxes, and keeps everything on the PC.
+
+### What it writes, for example
+
+From a few minutes of normal use of a small order-entry program (`memory\logic.md`, test data):
+
+```text
+## Screen: Sample Web ERP
+- Filled in by the program:
+  - Typing Customer code fills Name (seen 2× of 3)
+  - Typing Unit price fills Line total (seen 4× of 4)
+- Calculations:
+  - Line total = Quantity × Unit price (seen 12× of 12)
+- Rules and messages:
+  - on OK: "Customer code must have at least # characters." (seen 1x)
+```
+
+Every line says how often it was seen and which evidence file proves it. Typed values never reach these files;
+only names, shapes (`#`, `A`, `a`) and counts do.
+
+### Who it is for
+
+- **Teams replacing or migrating a legacy app**: get the screens, fields, rules and flows before the last expert leaves.
+- **ERP consultants and business analysts**: document a client's real way of working in days, not weeks of interviews.
+- **IT leads who inherited software** with no documentation.
+- **Developers rebuilding an app** with an AI coding agent: the export is a blueprint with stable ids and evidence.
+- **Process-mining users**: the export includes an IEEE XES event log for PM4Py, ProM or Disco.
+
+### How it was proven
+
+| Test | Result |
+|---|---|
+| A real distribution ERP in daily use (WinForms, MDI documents, grids, lookups) | 26 of 26 checks at 100% in each of the last 5 driven rounds (41 rounds in all) |
+| A web-page app (WebView2) | 7 of 7 checks; `Line total = Quantity × Unit price` learned 12× of 12 |
+| A WPF app | 6 of 6 checks, including grids whose cells hold their own text boxes |
+| A five-person office, 30 working days (generated) | 328,796 events; full rebuild 9.3 s, one more day 3.4 s |
+| Idle cost | about 51 MB private memory, 0% CPU when the app is not in front |
+
+### Quick start (5 minutes)
+
+1. Download `AppWatcher-<version>-win-x64.zip` from the [latest release](https://github.com/raj0319/app-watcher/releases/latest) and unzip it.
+2. In that folder, run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File install.ps1
+   ```
+
+3. Answer the three questions (which program, anything private, a password) and use the program as usual.
+   The next morning, open the folder from the tray icon and read `memory\logic.md`.
+
+Details of each step, the settings and the honest limits follow below.
 
 ## What you get
 
@@ -43,12 +101,13 @@ export, send the folder for analysis, uninstall.
 
 You need a Windows 10 or 11 PC where the app to watch is used.
 
-1. Get `AppWatcher.exe`. Either download it from the releases of this repository, or build it yourself
+1. Get `AppWatcher.exe`. Either download the zip from the [releases](https://github.com/raj0319/app-watcher/releases)
+   of this repository (the exe and the install scripts, side by side), or build it yourself
    (install the .NET 8 SDK, then run `scripts\publish.ps1`; the exe appears in `publish\`).
-2. Open PowerShell in this folder and run:
+2. Open PowerShell in the unzipped folder and run `install.ps1` (in a clone of this repository: `scripts\install.ps1`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
    This copies the program to your user folder, makes it start at login, and starts it now.
@@ -440,8 +499,8 @@ Something like this can go on the notice board or in an e-mail:
 C# on .NET 8, WinForms for the tray and settings, FlaUI (UI Automation) for the collector with MSAA
 (IAccessible) fallbacks, Microsoft.Data.Sqlite / OleDb / SqlClient / Odbc as read-only readers, XELite for
 Extended Events files, TraceEvent for the one-time file access detection. `dotnet build`, `dotnet test`
-(135 tests), `scripts\live-test.ps1` (drives `tests\SampleApp` by UI Automation and checks what the watcher
-recorded), `scripts\scenario-run.ps1` (the same with a scenario file and a scorecard), `scripts\publish.ps1`. See `CLAUDE.md` for the folder layout and the rules the code follows,
+(262 tests), `scripts\live-test.ps1`, `live-test-wpf.ps1` and `live-test-web.ps1` (drive the WinForms, WPF and
+web-page sample apps in `tests\` by UI Automation and check what the watcher recorded), `scripts\scenario-run.ps1` (the same with a scenario file and a scorecard), `scripts\publish.ps1`. See `CLAUDE.md` for the folder layout and the rules the code follows,
 `docs\data-folder.md` for the file formats, and `docs\improvements.md` for what changed after the first real run.
 
 ### Verifying the watcher with a scenario
