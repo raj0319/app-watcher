@@ -92,7 +92,7 @@ public sealed class ValueDebouncer
     {
         // the same value, or the cell already shows more of it (a late keystroke of the editor); within twice the wait (the row
         // read can come 1.5 s after the editor's event when the program is busy)
-        bool Match(UiEvent c) => c.By is null && c.Ct == "DataItem" && Learning.Titles.Key(c.Win) == Learning.Titles.Key(editor.Win) && (c.Val == editor.Val || c.Val is { Length: > 0 } && editor.Val is { Length: > 0 } && c.Val.StartsWith(editor.Val, StringComparison.Ordinal) && c.Val.Length <= editor.Val.Length + 2)
+        bool Match(UiEvent c) => !ReferenceEquals(c, editor) && c.By is null && c.Ct == "DataItem" && Learning.Titles.Key(c.Win) == Learning.Titles.Key(editor.Win) && (c.Val == editor.Val || c.Val is { Length: > 0 } && editor.Val is { Length: > 0 } && c.Val.StartsWith(editor.Val, StringComparison.Ordinal) && c.Val.Length <= editor.Val.Length + 2)
                                  && Math.Abs((c.T - editor.T).TotalMilliseconds) <= 2 * CellWait.TotalMilliseconds;
         return taken.Any(t => Match(t.ev)) || _recentCells.Any(t => Match(t.ev)) || _pending.Values.Any(p => Match(p.ev));
     }

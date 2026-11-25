@@ -1,0 +1,17 @@
+{
+  "name": "excel",
+  "description": "Microsoft Excel used as a business tool (order sheets, price lists): every cell reports its own value, the ribbon's tabs are toolbars, and a read of the whole window is slow.",
+  "match": { "exe": ["excel"], "product": ["Microsoft Excel"], "toolkit": [] },
+  "effectTriggers": [],
+  "ignoreWindows": ["tooltip*", "*Backstage*"],
+  "sessionWindows": [],
+  "dialogWindows": [],
+  "tabDocuments": true,
+  "msaaFallback": true,
+  "pressInference": true,
+  "readAfterKeys": false,
+  "dumpDepth": 14,
+  "dumpRowCap": 3000,
+  "gridRowCap": 5,
+  "note": "Cells report their values themselves; the window is read after clicks only, so Excel stays as fast as without the watcher. Add the workbook as a data source to see what a save changes."
+}

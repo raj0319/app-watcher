@@ -30,6 +30,33 @@ public static partial class Labels
     [GeneratedRegex(@"^(?<x>-?\d+),(?<y>-?\d+) (?<w>\d+)x(?<h>\d+)$")]
     private static partial Regex Pos();
 
+    [GeneratedRegex(@"(\t.*$)|(\s+((Ctrl|Alt|Shift|Win)\s*\+\s*\S.*|Enter|Esc|F\d{1,2})$)", RegexOptions.IgnoreCase)]
+    private static partial Regex Shortcut();
+
+    /// <summary>
+    /// "Settings Alt+S" → "Settings", "OK Enter" → "OK", "Expand all\tCtrl + Num+" → "Expand all": toolkits (Qt) put the
+    /// keyboard shortcut into a button's or menu item's name; the shortcut is kept apart, the name is the words.
+    /// </summary>
+    public static string WithoutShortcut(string? name)
+    {
+        var s = (name ?? "").Trim();
+        var t = Shortcut().Replace(s, "").Trim();
+        return t.Length > 0 ? t : s;
+    }
+
+    [GeneratedRegex(@"^(Detail|Form Header|Form Footer|Page Header|Page Footer) Section,\s*|\s+(collapsed|expanded)$", RegexOptions.IgnoreCase)]
+    private static partial Regex AccessParts();
+
+    /// <summary>"Detail Section, Code" → "Code", "Customer Code collapsed" → "Customer Code": Access names the field that has the
+    /// focus after its form section, and a combo box after its state; the field is the words.</summary>
+    public static string WithoutSection(string? name)
+    {
+        var s = name ?? "";
+        if (s.Length == 0) return s;
+        var t = AccessParts().Replace(s, "").Trim();
+        return t.Length > 0 ? t : s;
+    }
+
     public static bool IsWrapperId(string? aid) =>
         !string.IsNullOrEmpty(aid) && WrapperSuffixes.Any(s => aid.EndsWith(s, StringComparison.OrdinalIgnoreCase));
 
@@ -75,7 +102,7 @@ public static partial class Labels
     /// <summary>The label of a field row: its Name, else the nearest Text to its left or above it, else its cleaned AutomationId.</summary>
     public static string Resolve(ControlRow field, IList<ControlRow> rows)
     {
-        var own = field.Name.Trim().TrimEnd(':', '*').Trim();
+        var own = WithoutSection(field.Name).Trim().TrimEnd(':', '*').Trim();
         // a name that is data (a phone, a city line, a record id) is never a label: the text next to it, its cleaned id or its shape stand in
         var data = own.Length > 0 && Masking.LooksLikeData(own);
         if (own.Length > 0 && !IsWrapperId(own) && !LooksLikeValue(own, field) && !data) return own;

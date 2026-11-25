@@ -282,6 +282,49 @@ public static class FieldReads
         tabAt != DateTime.MinValue && tabAt >= lastTypingKey && (valueAt - tabAt).TotalMilliseconds is >= -50 and <= 1500;
 
     /// <summary>
+    /// A grid cell the keyboard focus went into (<paramref name="visitedAt"/>) reports its first value since: typed there when a
+    /// character key went down within 2 s before the visit or after it, and the value comes within 15 s of the visit (Excel
+    /// reports a cell committed by Tab or Enter after the focus moved on, often late). A cell that changed with the user never
+    /// in it (a formula's result) is not one.
+    /// </summary>
+    public static bool CommittedCell(DateTime visitedAt, DateTime lastTypingKey, DateTime valueAt) =>
+        visitedAt != DateTime.MinValue && lastTypingKey != DateTime.MinValue && lastTypingKey >= visitedAt.AddSeconds(-2)
+        && (valueAt - visitedAt).TotalSeconds is >= 0 and <= 15;
+
+    /// <summary>"C5" → row 4, column 2 (zero-based), the address a spreadsheet's grid names its cells by; null for anything else.</summary>
+    public static (int row, int col)? CellAddress(string? name)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(name ?? "", @"^\$?([A-Z]{1,3})\$?([1-9][0-9]{0,6})$");
+        if (!m.Success) return null;
+        var col = 0;
+        foreach (var ch in m.Groups[1].Value) col = col * 26 + (ch - 'A' + 1);
+        return (int.Parse(m.Groups[2].Value) - 1, col - 1);
+    }
+
+    /// <summary>
+    /// The program reports a field's value again with nothing changed (Excel re-announces the cells around the one edited, many
+    /// times): the same value the program last filled into the same field within 10 s is no new fill.
+    /// </summary>
+    public static bool RepeatFill(string? lastValue, DateTime lastAt, string? value, DateTime now) =>
+        lastValue is not null && lastAt != DateTime.MinValue && lastValue == (value ?? "") && (now - lastAt).TotalSeconds is >= -1 and <= 10;
+
+    /// <summary>
+    /// The field already reported what the keys wrote (<paramref name="already"/>, recorded after the last key), then a click
+    /// landed outside it and the field changed again with no key since: the clicked button changed it (Character Map's Select
+    /// adds a character to what was typed), not the user's keys.
+    /// </summary>
+    public static bool ChangedAfterClick(string? already, DateTime ownAt, DateTime lastTypingKey, (int x, int y, DateTime t) click,
+        string position, string value, DateTime at)
+    {
+        if (string.IsNullOrEmpty(already) || already == value || ownAt == DateTime.MinValue || click.t == DateTime.MinValue) return false;
+        if (ownAt < lastTypingKey || click.t <= lastTypingKey || click.t < ownAt.AddMilliseconds(-200)) return false;
+        if ((at - click.t).TotalSeconds is < -0.5 or > 3) return false;
+        if (Labels.TryRect(position, out var x, out var y, out var w, out var h) && click.x >= x - 2 && click.x <= x + w + 2 && click.y >= y - 2 && click.y <= y + h + 2)
+            return false; // the click was in the field itself
+        return true;
+    }
+
+    /// <summary>
     /// A later read of the same box shows the keys the program had not drawn yet at the first read: the earlier text plus one
     /// to four more characters. The program's own answer (a name in place of a code) never passes.
     /// </summary>

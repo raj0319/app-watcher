@@ -8,6 +8,10 @@
 /// </summary>
 public static class TabDocuments
 {
+    /// <summary>A part of a ribbon (its name or class says "Ribbon"): a ribbon's tabs are toolbars, never documents.</summary>
+    public static bool IsRibbonPart(string? name, string? className) =>
+        (name ?? "").Contains("Ribbon", StringComparison.OrdinalIgnoreCase) || (className ?? "").Contains("Ribbon", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>One tab item as read from the tab strip.</summary>
     public readonly record struct TabItem(string Name, bool Selected);
 

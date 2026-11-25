@@ -306,6 +306,8 @@ public sealed class ClickTracker
     public bool MayCreditPointer(DateTime now) => ClickedWithin(now) && Decider.Pending is null && !PressedWithin(1000, now);
 
     public void MenuOpened() => _menuOpen = true;
+    /// <summary>A menu is open now (opened and not closed yet).</summary>
+    public bool MenuOpen => _menuOpen;
     public void MenuClosed(DateTime now) { _menuOpen = false; _menuClosedAt = now; }
 
     /// <summary>The same screen, or a window and one of its documents ("Main" and "Main › Order"), compared by title key.</summary>

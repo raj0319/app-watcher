@@ -65,6 +65,20 @@ public sealed class PressDecider
     public bool PressedWithin(int ms, DateTime now) => _last.t != DateTime.MinValue && (now - _last.t).TotalMilliseconds >= -50 && (now - _last.t).TotalMilliseconds < ms;
 
     /// <summary>True when a click began within the last <see cref="ClickAgeMs"/> (a toggle needs one, or focus on the tick box).</summary>
+    /// <summary>
+    /// One click, one press: a press reported by UI Automation or MSAA within a second of another such press, with no click and
+    /// no Enter or Space since that one, is the same click told twice (a button that renames itself when pressed, Search becoming
+    /// Reset, is reported once by each path under each name).
+    /// </summary>
+    public static bool SameClick(DateTime lastPressAt, string? lastHow, string? how, DateTime lastClickAt, DateTime lastKeyAt, DateTime now)
+    {
+        static bool Direct(string? h) => h is null or Models.PressHow.Uia or Models.PressHow.Msaa;
+        if (lastPressAt == DateTime.MinValue || !Direct(lastHow) || !Direct(how)) return false;
+        if ((now - lastPressAt).TotalMilliseconds is < 0 or >= 1000) return false;
+        // (the click that made the first press may be heard a moment after it: the button read runs every 50 ms)
+        return lastClickAt <= lastPressAt.AddMilliseconds(300) && lastKeyAt <= lastPressAt;
+    }
+
     public bool ClickedRecently(DateTime now) => _click.t != DateTime.MinValue && (now - _click.t).TotalMilliseconds <= ClickAgeMs;
 
     /// <summary>The click's target still waiting for something to confirm it, or null.</summary>

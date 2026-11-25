@@ -226,7 +226,8 @@ internal sealed class WatchService : IDisposable
             Write(e);
             if (e.By != ValueBy.App) _status.ValuesTyped++; // one typed value, after the keystrokes settled
             // a value the program filled in follows the user's own action, whose picture already shows it
-            if (e.By != ValueBy.App) ScheduleState("after-type-" + e.FieldKey, $"type {e.FieldKey}", readGrids: true);
+            // (not where typing must never cost a read of the window: Excel, whose window read takes seconds)
+            if (e.By != ValueBy.App && _config.Collector.ReadAfterKeys) ScheduleState("after-type-" + e.FieldKey, $"type {e.FieldKey}", readGrids: true);
         }
     }
 

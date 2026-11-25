@@ -18,3 +18,5 @@ app-watcher-v*-inform-evidence-*/
 
 # third-party code unpacked for audit (no licence file; never committed)
 external/
+
+__pycache__/

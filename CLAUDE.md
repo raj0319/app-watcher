@@ -1,4 +1,4 @@
-﻿# App Watcher - instructions for Claude Code
+# App Watcher - instructions for Claude Code
 
 This repository holds App Watcher, a small Windows tray program that watches ONE chosen desktop
 app and learns the logic behind it (fields, tables, rules, flows). Read this file once, then follow it.
@@ -14,10 +14,10 @@ src/AppWatcher/          the tray app: WinForms tray icon, three-step first-run 
 src/AppWatcher.Driver/   the scenario driver: runs scenarios/*.json on the original program with real input (test environments only, typed
                          confirmation, acts only while the target is in front); the one program here that clicks. Writes run.jsonl for --verify
 scenarios/               scenario files (sample-erp.json drives tests/SampleApp); the format is src/AppWatcher.Core/Verification/Scenario.cs
-profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office, ddi-inform
+profiles/                app profiles (JSON, embedded): generic, winforms, wpf, infragistics, devexpress, component-suite, electron, classic, java, custom-drawn, office (Access, Word), excel, ddi-inform
 tests/AppWatcher.Tests/  xunit tests with synthetic evidence (dotnet test); Fixtures/inform, inform-v0.8, inform-v0.9 and inform-v0.10 hold anonymised copies of four real sessions (see their READMEs; inform-v0.9/clicks.json holds every truth click with its point)
 tests/SampleApp/         a tiny WinForms "ERP" (login, tabs, menu, dialog, message windows) for the live test
-scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, scenario-run.ps1 (driver + scorecard on the sample app), check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts)
+scripts/                 publish.ps1, install.ps1, uninstall.ps1, appwatcher.cmd (CLI wrapper), live-test.ps1, scenario-run.ps1 (driver + scorecard on the sample app), check_skills.py, pm4py_example.py, sql/*.sql (DBA scripts), compat/ (compat_test.py: drives a real program of this PC with human-speed input and scores what the watcher recorded; apps.py, app_access.py)
 skills/                  portable Agent Skills: app-watcher-analyze (the architect review), app-watcher-ask (questions from memory)
 openclaw/                how to use the skills from OpenClaw
 prompts/analyst-prompt.md  the architect prompt shared by the analyze skill and the optional API/local analysis
@@ -34,7 +34,7 @@ kills only the two processes it started).
 The exe also has headless commands: `AppWatcher.exe --learn` (incremental), `--rebuild` (from day one),
 `--export`, `--payload`, `--status`, `--expect`, `--detect <exe>`, `--setup <exe> <password> [profile]`,
 `--merge <folder or zip>`, `--verify <scenario.json> <run.jsonl>` (scorecard of a driven run into `verification/`),
-`--trace-files <pid> <seconds> <out.json>` (admin), and the hidden `--render-ui <dir>`
+`--trace-files <pid> <seconds> <out.json>` (admin), `--install` / `--uninstall [--remove-data]` (a double-click on the downloaded exe installs it the same way), and the hidden `--render-ui <dir>`
 (pictures of the wizard and Settings for the docs, with a made-up program, never this PC's). Add `--portable` when the
 data lives in `AppWatcherData\` next to the exe. The exe is a windowed program, so from a shell use
 `scripts\appwatcher.cmd <command>` (start /wait) to get its output and exit code.
@@ -149,6 +149,32 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   inside a web page (a Window element below a Document, with buttons) are found in the read after a click or key
   (`DialogDetector.InPage`): a message is a dialog event, a small named form a window opened, each closed when it is gone.
   A field's focus arrival stops counting once the focus has arrived in another field since.
+- Learned from other programs (scripts/compat, 2026-11-25): a menu choice is the menu item read under the pointer when the
+  button went down inside an open menu, or over an untitled popup window of the program (WPF menus raise no menu event);
+  a menu-bar item or a greyed-out item is never one, and the choice is decided 0.4 s after the menu closed (`MenuChoice`,
+  a WPF item's focus comes late). Press names drop the shortcut a toolkit put in them (`Labels.WithoutShortcut`). One click,
+  one press: a second UI Automation or MSAA press within a second with no click or Enter since is the same click
+  (`PressDecider.SameClick`; a button renamed by its press, Search to Reset, keeps the name clicked). A tick box's own
+  state change right after its press is not another event. The program reporting a field again with the value it last
+  had is no new event (`FieldReads.RepeatFill`, 10 s); a field changed after a click outside it, with no key since its
+  typed value was recorded, was changed by the click (`ChangedAfterClick`). "Has the focus now" goes by place when the
+  field has no automation id (Qt). Values lose a trailing line break.
+- Keys: a key counts when it goes from up to down (bit 0 or bit 15 with the last read up: bit 0 alone is shared by every
+  program and Excel takes it first). The system's last-input time moving with the pointer still and no button down says a
+  key went down (`GetLastInputInfo`, a read, never a hook; which key is never known, it may be Tab): evidence for a grid
+  cell's commit only, never a typing key for a field's typed-or-filled test.
+- Grid cells that commit on Tab or Enter and report after the focus moved on (Excel): a cell the focus went into reports
+  its first value as typed when keys went down since (`FieldReads.CommittedCell`), and its next value within 1.5 s is the
+  same typing (a formula's result after a passing 0). A ribbon's tab strip is never the document strip. The field with the
+  keyboard focus at a read is typed in when keys went down lately, and an editor with an empty value is read by its Text
+  pattern (PowerShell ISE). Profile `readAfterKeys: false` (excel): typing, focus and cell changes never ask for a read of
+  the window or a picture (a read of Excel takes seconds and holds it back); instead the cell left is read once, by its
+  row and column through the grid's Grid pattern, never by searching the grid, when it reported nothing within 1.2 s.
+- A field with no window of its own (Access, Delphi, some web pages) is read once when the keys pause (150 ms after the
+  last one; the focused element, one UI Automation read), before Tab or Enter moves on: a new record clears the form before
+  any later read. Not where `readAfterKeys` is off. A link, button, label or pane is never a field, whatever value it
+  reports. Access's "Detail Section, " prefix and a combo box's "collapsed" are not part of a field's name
+  (`Labels.WithoutSection`).
 - Text read from pictures reaches memory only as a field or column name the screen record knows (`OcrLogic.KnownFields`);
   personal fields the program fills (phone, e-mail, address, name) are shapes in the events; the profile's `titleMasks`
   hide the company name in the main title. A window the program opens by itself (no click in the 2 s before) is not a

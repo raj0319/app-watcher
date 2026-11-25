@@ -50,7 +50,29 @@ internal static class Win32
     public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
     /// <summary>True when the key went down since the last time anyone asked (one read, consumed).</summary>
-    public static bool WentDown(int vKey) { try { return (GetAsyncKeyState(vKey) & 1) != 0; } catch { return false; } }
+    // (bit 0, "went down since the last read", is shared by every program on the desktop: one that reads the keys itself,
+    // Excel does, takes it first; bit 15, "down now", is read too, so a key held at the read is never lost)
+    public static bool WentDown(int vKey) { try { return Edge(vKey, GetAsyncKeyState(vKey)); } catch { return false; } }
+
+    // whether each key was down at its last read: a key held across two reads went down once
+    private static readonly bool[] WasDown = new bool[256];
+    private static bool Edge(int vKey, short state)
+    {
+        var down = (state & 0x8000) != 0;
+        var went = (state & 1) != 0 || down && !WasDown[vKey & 0xFF];
+        WasDown[vKey & 0xFF] = down;
+        return went;
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+    [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    /// <summary>When the last keyboard or mouse input came (a tick count; a read, never a hook). Advances with any key or move.</summary>
+    public static uint LastInputTick()
+    {
+        try { var li = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() }; return GetLastInputInfo(ref li) ? li.dwTime : 0; }
+        catch { return 0; }
+    }
 
     private static readonly int[] TypingKeys = BuildTypingKeys();
     private static int[] BuildTypingKeys()
@@ -75,7 +97,7 @@ internal static class Win32
     public static int TypingKeysWentDown()
     {
         var n = 0;
-        try { foreach (var v in TypingKeys) if ((GetAsyncKeyState(v) & 1) != 0) n++; } catch { }
+        try { foreach (var v in TypingKeys) if (Edge(v, GetAsyncKeyState(v))) n++; } catch { }
         return n;
     }
 

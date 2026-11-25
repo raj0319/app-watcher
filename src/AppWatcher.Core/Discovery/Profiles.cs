@@ -30,6 +30,11 @@ public sealed class AppProfile
     public List<string> TitleMasks { get; set; } = new();
     /// <summary>Read inner tab selection through the selection property (safe on Infragistics and DevExpress, never on plain WinForms).</summary>
     public bool? SelectionReads { get; set; }
+    /// <summary>
+    /// Read the document again right after Tab and Enter (default yes). Off where every cell reports its own value and a read of
+    /// the window is slow (Excel: a read of the window takes seconds and holds the program's answers back).
+    /// </summary>
+    public bool? ReadAfterKeys { get; set; }
     /// <summary>The kind of data server this program uses ("universe", "sqlserver", ...), for backends found by host name only.</summary>
     public string? BackendKind { get; set; }
     /// <summary>Plain-words note shown at setup.</summary>
@@ -55,6 +60,7 @@ public sealed class AppProfile
         if (MaskTitles is not null) cfg.Privacy.MaskTitles = MaskTitles.Value;
         foreach (var m in TitleMasks) if (!cfg.Privacy.TitleMasks.Contains(m)) cfg.Privacy.TitleMasks.Add(m);
         if (SelectionReads is not null) cfg.Collector.SelectionReads = SelectionReads.Value;
+        if (ReadAfterKeys is not null) cfg.Collector.ReadAfterKeys = ReadAfterKeys.Value;
     }
 
     /// <summary>The current settings as a profile the user can share.</summary>
@@ -68,7 +74,7 @@ public sealed class AppProfile
             ExcludeWindows = cfg.Privacy.ExcludeWindows.ToList(),
             TabDocuments = cfg.Collector.TabDocuments, MsaaFallback = cfg.Collector.MsaaFallback, PressInference = cfg.Collector.PressInference,
             DumpDepth = cfg.Collector.DumpDepth, DumpRowCap = cfg.Collector.DumpRowCap, GridRowCap = cfg.Collector.GridRowCap, MaskTitles = cfg.Privacy.MaskTitles,
-            TitleMasks = cfg.Privacy.TitleMasks.ToList(), SelectionReads = cfg.Collector.SelectionReads,
+            TitleMasks = cfg.Privacy.TitleMasks.ToList(), SelectionReads = cfg.Collector.SelectionReads, ReadAfterKeys = cfg.Collector.ReadAfterKeys,
         };
         if (cfg.App is not null) p.Match.Exe.Add(cfg.App.ProcessName.ToLowerInvariant());
         if (toolkit is not null) p.Match.Toolkit.Add(toolkit);

@@ -1,10 +1,10 @@
-﻿# App Watcher
+# App Watcher
 
 [![Latest release](https://img.shields.io/github/v/release/raj0319/app-watcher?label=download)](https://github.com/raj0319/app-watcher/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 ![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)
-![Tests](https://img.shields.io/badge/tests-262%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-304%20passing-brightgreen)
 
 **Learn how any Windows business app works, just by watching people use it.**
 
@@ -19,7 +19,7 @@ never reads password boxes, and keeps everything on the PC.
 ### Status: early beta
 
 App Watcher is an early beta. It has been tested in depth on one real distribution ERP, and on test runs with
-WinForms, WPF, web-page, Qt, classic Win32, Excel and PowerShell ISE programs. Please tell us how it works on
+WinForms, WPF, web-page, Qt, classic Win32, Access, Excel and PowerShell ISE programs. Please tell us how it works on
 your program with the **Did it work on your app?** form: [open the form](https://github.com/raj0319/app-watcher/issues/new/choose).
 
 ### What it writes, for example
@@ -55,6 +55,7 @@ only names, shapes (`#`, `A`, `a`) and counts do.
 | A real distribution ERP in daily use (WinForms, MDI documents, grids, lookups) | 26 of 26 checks at 100% in each of the last 5 driven rounds (41 rounds in all) |
 | A web-page app (WebView2) | 7 of 7 checks; `Line total = Quantity × Unit price` learned 12× of 12 |
 | A WPF app | 6 of 6 checks, including grids whose cells hold their own text boxes |
+| Five other real programs it was never tuned for: Access, Excel, PowerShell ISE (WPF), a Qt app, a classic Win32 app | 100% of the steps of a scripted, human-speed session in each ([details](docs/compat-results.md)) |
 | A five-person office, 30 working days (generated) | 328,796 events; full rebuild 9.3 s, one more day 3.4 s |
 | Idle cost | about 51 MB private memory, 0% CPU when the app is not in front |
 
@@ -521,7 +522,7 @@ Something like this can go on the notice board or in an e-mail:
 C# on .NET 8, WinForms for the tray and settings, FlaUI (UI Automation) for the collector with MSAA
 (IAccessible) fallbacks, Microsoft.Data.Sqlite / OleDb / SqlClient / Odbc as read-only readers, XELite for
 Extended Events files, TraceEvent for the one-time file access detection. `dotnet build`, `dotnet test`
-(262 tests), `scripts\live-test.ps1`, `live-test-wpf.ps1` and `live-test-web.ps1` (drive the WinForms, WPF and
+(304 tests), `scripts\live-test.ps1`, `live-test-wpf.ps1` and `live-test-web.ps1` (drive the WinForms, WPF and
 web-page sample apps in `tests\` by UI Automation and check what the watcher recorded), `scripts\scenario-run.ps1` (the same with a scenario file and a scorecard), `scripts\publish.ps1`. See `CLAUDE.md` for the folder layout and the rules the code follows,
 `docs\data-folder.md` for the file formats, and `docs\improvements.md` for what changed after the first real run.
 

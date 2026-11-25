@@ -169,6 +169,8 @@ public sealed class CollectorSettings
     public bool SelectionReads { get; set; }
     public int DumpDepth { get; set; } = 14;
     public int DumpRowCap { get; set; } = 3000;
+    /// <summary>Read the document again right after Tab and Enter (the profile turns it off where cells report themselves and reads are slow).</summary>
+    public bool ReadAfterKeys { get; set; } = true;
     /// <summary>Rows kept per grid or list in a tree dump; the rest becomes one note row with the count and column names.</summary>
     public int GridRowCap { get; set; } = 5;
     /// <summary>Re-dump a window whose first dump had fewer than ten controls, at most this often.</summary>
