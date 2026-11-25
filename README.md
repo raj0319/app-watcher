@@ -85,7 +85,7 @@ Get-FileHash AppWatcher-<version>-win-x64.zip
 ```
 
 Antivirus programs may also flag it, because it reads another program's screen and starts at login. It never
-writes to that program, installs no keyboard or mouse hook, and makes no network calls. Code signing is planned.
+writes to that program, installs no keyboard or mouse hook, and makes no network calls unless you switch on the optional AI review. Code signing is planned.
 
 Details of each step, the settings and the honest limits follow below.
 
