@@ -16,6 +16,12 @@ in by itself, the calculations it does, its messages and rules, and the everyday
 It is **read-only by design**: it never clicks or types in the program, installs no keyboard or mouse hook,
 never reads password boxes, and keeps everything on the PC.
 
+### Status: early beta
+
+App Watcher is an early beta. It has been tested in depth on one real distribution ERP, and on test runs with
+WinForms, WPF, web-page, Qt, classic Win32, Excel and PowerShell ISE programs. Please tell us how it works on
+your program with the **Did it work on your app?** form: [open the form](https://github.com/raj0319/app-watcher/issues/new/choose).
+
 ### What it writes, for example
 
 From a few minutes of normal use of a small order-entry program (`memory\logic.md`, test data):
@@ -63,6 +69,23 @@ only names, shapes (`#`, `A`, `a`) and counts do.
 
 3. Answer the three questions (which program, anything private, a password) and use the program as usual.
    The next morning, open the folder from the tray icon and read `memory\logic.md`.
+
+**Give it a day.** The useful part (`memory\logic.md`) appears after the first hour and grows overnight.
+A five-minute try shows little.
+
+#### Windows says it protected your PC
+
+The program is not code-signed yet, so Windows SmartScreen may warn you the first time you run it. Click
+**More info**, then **Run anyway**, but only if you downloaded it from the official
+[GitHub releases page](https://github.com/raj0319/app-watcher/releases/latest). You can check the download
+against the SHA-256 shown in the release notes:
+
+```powershell
+Get-FileHash AppWatcher-<version>-win-x64.zip
+```
+
+Antivirus programs may also flag it, because it reads another program's screen and starts at login. It never
+writes to that program, installs no keyboard or mouse hook, and makes no network calls. Code signing is planned.
 
 Details of each step, the settings and the honest limits follow below.
 

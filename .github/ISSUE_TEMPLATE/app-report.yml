@@ -1,0 +1,75 @@
+name: Did it work on your app?
+description: Tell us how App Watcher did on your program (early beta)
+title: "App report: "
+labels: ["app-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for trying App Watcher. This form helps us learn which programs it understands well.
+
+        **Please read before you paste.** `health.md` and the `--detect` output contain no typed values, but they can still hold
+        private words, such as a company name in a window title or a server name. Read both and remove anything private first.
+  - type: input
+    id: program
+    attributes:
+      label: Program name and version
+      description: You may write "an in-house ERP" if you prefer not to name it.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of program is it, if you know?
+      options:
+        - WinForms
+        - WPF
+        - Web-based / Electron / WebView2
+        - Java
+        - Delphi / VB6 / classic
+        - Qt
+        - Office / Access / Excel
+        - Don't know
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App Watcher version
+      placeholder: "0.13.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Worked well
+        - Partly
+        - Not at all
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What went wrong (or what was missing)?
+      description: Plain words are fine.
+  - type: textarea
+    id: detect
+    attributes:
+      label: Output of the detect command
+      description: 'Run `appwatcher --detect "<path to the program''s exe>"` and paste the result. Remove anything private first.'
+      render: text
+  - type: textarea
+    id: health
+    attributes:
+      label: Contents of memory\health.md
+      description: Paste the file from the data folder. Remove anything private first.
+      render: text
