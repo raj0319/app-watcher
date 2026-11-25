@@ -1,12 +1,26 @@
-# App Watcher
+<div align="center">
 
-[![Latest release](https://img.shields.io/github/v/release/raj0319/app-watcher?label=download)](https://github.com/raj0319/app-watcher/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
-![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)
-![Tests](https://img.shields.io/badge/tests-304%20passing-brightgreen)
+# 👁️ App Watcher
 
 **Learn how any Windows business app works, just by watching people use it.**
+
+[![Latest release](https://img.shields.io/github/v/release/raj0319/app-watcher?label=download&style=for-the-badge&color=2ea44f)](https://github.com/raj0319/app-watcher/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/raj0319/app-watcher/total?style=for-the-badge&color=blue)](https://github.com/raj0319/app-watcher/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=for-the-badge)](LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![.NET 8](https://img.shields.io/badge/.NET-8-512BD4?style=for-the-badge&logo=.net&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-304%20passing-brightgreen?style=for-the-badge)
+
+[⬇️ Download](https://github.com/raj0319/app-watcher/releases/latest) ·
+[🚀 Quick start](#quick-start-5-minutes) ·
+[🧪 Try it in 30 minutes](docs/demo-test.md) ·
+[🧠 How it learns](#how-it-learns) ·
+[📁 The data folder](docs/data-folder.md) ·
+[📝 What changed](docs/improvements.md)
+
+</div>
+
+---
 
 Most companies run on desktop software that nobody fully documents any more: an ERP, a billing system, an
 in-house tool. The knowledge lives in people's heads. App Watcher sits in the tray, watches **one** program
@@ -105,7 +119,7 @@ than three distinct observations; `inferred` means the structure suggests it but
 Every line also names the evidence file to open. `changelog.md` lists what changed since the last learn.
 
 The memory files never contain values that users typed. They contain names, shapes and counts. Window
-titles have their quoted parts masked ("Customer - 0002776 "Nate Test"" becomes "Customer - # "…"").
+titles have their quoted parts masked ("Customer - 0000001 "Test Customer"" becomes "Customer - # "…"").
 
 Next to the memory: `screens\<title>.md` with the control tree of every screen and `screens\shots\<screen>\`,
 one picture per state of that screen with an index saying which action led to it, so a person or an AI can
@@ -518,6 +532,13 @@ Something like this can go on the notice board or in an e-mail:
   it is shown; `logic.md` lists what it has not seen yet and the questions to ask.
 
 ## For developers
+
+![C#](https://img.shields.io/badge/C%23-%23239120.svg?style=for-the-badge&logo=csharp&logoColor=white)
+![.NET 8](https://img.shields.io/badge/.NET%208-5C2D91?style=for-the-badge&logo=.net&logoColor=white)
+![WinForms](https://img.shields.io/badge/WinForms-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![UI Automation](https://img.shields.io/badge/FlaUI%20(UIA3)-444444?style=for-the-badge)
+![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
+![xUnit](https://img.shields.io/badge/xUnit-304%20tests-2ea44f?style=for-the-badge)
 
 C# on .NET 8, WinForms for the tray and settings, FlaUI (UI Automation) for the collector with MSAA
 (IAccessible) fallbacks, Microsoft.Data.Sqlite / OleDb / SqlClient / Odbc as read-only readers, XELite for
