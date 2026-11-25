@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App Watcher social preview</title>
+<!-- Source of docs/images/social-preview.png (1280x640, GitHub social preview). Render:
+     msedge --headless --hide-scrollbars --window-size=1280,640 --screenshot=social-preview.png social-preview.html -->
+<style>
+  :root { --bg: #0D2226; --bg2: #0B4C52; --ink: #EAF3F1; --muted: #A9C2C2; --accent: #52C3BF; --mark: #F3C94F;
+          --card: #F7FAF9; --card-ink: #13232A; --card-muted: #5A6B70; --card-line: #DCE5E3; --ok: #0B6E73; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body { background: radial-gradient(120% 140% at 100% 0%, var(--bg2) 0%, var(--bg) 58%); color: var(--ink);
+         font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; position: relative; }
+  body::before { content: ""; position: absolute; inset: 0;
+         background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1.2px); background-size: 22px 22px; }
+  .left { position: absolute; left: 72px; top: 64px; width: 610px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 26px; font-weight: 600; letter-spacing: .2px; }
+  .brand svg { width: 46px; height: 46px; }
+  h1 { margin-top: 40px; font-size: 54px; line-height: 1.06; font-weight: 700; letter-spacing: -1.2px; }
+  .sub { margin-top: 18px; font-size: 30px; font-weight: 600; color: var(--mark); }
+  .chips { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { font-size: 18px; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(82,195,191,.55);
+          background: rgba(82,195,191,.12); color: var(--ink); }
+  .foot { position: absolute; left: 72px; bottom: 52px; font-size: 19px; color: var(--muted); }
+  .foot b { color: var(--ink); font-weight: 600; }
+  .card { position: absolute; right: 72px; top: 64px; width: 500px; background: var(--card); color: var(--card-ink);
+          border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(0,0,0,.55); overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--card-line);
+         font-family: "Cascadia Mono", Consolas, monospace; font-size: 15px; color: var(--card-muted); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: #D3DCDA; }
+  .body { padding: 18px 20px 20px; }
+  .h { font-size: 15px; font-weight: 700; color: var(--ok); text-transform: uppercase; letter-spacing: .8px; margin: 14px 0 8px; }
+  .h:first-child { margin-top: 0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0;
+         border-bottom: 1px dashed var(--card-line); font-size: 17.5px; }
+  .row:last-child { border-bottom: 0; }
+  .seen { flex: none; font-family: "Cascadia Mono", Consolas, monospace; font-size: 13.5px; color: var(--ok);
+          background: #DCEEEE; padding: 3px 8px; border-radius: 6px; }
+  .proof { position: absolute; right: 72px; bottom: 52px; width: 500px; display: flex; gap: 12px; }
+  .p { flex: 1; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; padding: 10px 14px; background: rgba(255,255,255,.04); }
+  .p b { display: block; font-size: 26px; font-weight: 700; color: var(--mark); }
+  .p span { font-size: 14.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="brand">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect width="48" height="48" rx="12" fill="#52C3BF"/>
+        <path d="M7 24c4.5-8 10.4-12 17-12s12.5 4 17 12c-4.5 8-10.4 12-17 12S11.5 32 7 24z" fill="#0D2226"/>
+        <circle cx="24" cy="24" r="7.5" fill="#F3C94F"/><circle cx="24" cy="24" r="3.2" fill="#0D2226"/>
+      </svg>
+      App Watcher
+    </div>
+    <h1>Learn how any Windows business app works</h1>
+    <div class="sub">just by watching people use it.</div>
+    <div class="chips">
+      <span class="chip">Read-only by design</span>
+      <span class="chip">No keyboard or mouse hook</span>
+      <span class="chip">Stays on the PC</span>
+      <span class="chip">WinForms · WPF · Web</span>
+    </div>
+  </div>
+  <div class="foot"><b>Open source</b> · MIT · Windows 10 / 11 &nbsp;·&nbsp; github.com/raj0319/app-watcher</div>
+
+  <div class="card">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;memory/logic.md</div>
+    <div class="body">
+      <div class="h">Filled in by the program</div>
+      <div class="row"><span>Typing Customer code fills Name</span><span class="seen">seen 2× of 3</span></div>
+      <div class="row"><span>Typing Unit price fills Line total</span><span class="seen">seen 4× of 4</span></div>
+      <div class="h">Calculations</div>
+      <div class="row"><span>Line total = Quantity × Unit price</span><span class="seen">seen 12× of 12</span></div>
+      <div class="h">Rules and screens</div>
+      <div class="row"><span>OK → "Code: at least # characters"</span><span class="seen">seen 1×</span></div>
+      <div class="row"><span>OK opens New Customer</span><span class="seen">seen 1×</span></div>
+    </div>
+  </div>
+  <div class="proof">
+    <div class="p"><b>26 / 26</b><span>checks, real ERP</span></div>
+    <div class="p"><b>262</b><span>automated tests</span></div>
+    <div class="p"><b>0%</b><span>CPU when idle</span></div>
+  </div>
+</body>
+</html>
