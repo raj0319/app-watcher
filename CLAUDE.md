@@ -138,7 +138,10 @@ and OpenClaw; `skills/app-watcher-ask` answers plain questions from the memory f
   (`FieldReads.PixelTextFits`), and look-alike characters (O/0, I/1) are settled by the value the program shows later
   (`FieldReads.ReconcilePixelText`). It goes to events as a typed value; memory still holds only its shape.
 - A window of another process drawn inside (or owned by) a window of the program, such as a WebView2 or Chromium page,
-  counts as the program's (`IsProgramWindow`, learned helper processes). WPF text boxes raise a value and a text event: both
+  counts as the program's (`IsProgramWindow`, learned helper processes). When the window in front closes or hides before a
+  foreground event names its successor, or a late event names an untitled drop-down, the window the user works in is picked
+  by `FrontWindow.Pick` (visible, titled, of the program; a drop-down hands over to its owner, never becomes the screen), on
+  the UI thread, never from inside a read (Inform r39 filed a lookup under the bare main title that way). WPF text boxes raise a value and a text event: both
   go through one typed-or-filled test (`HandleValue`). A field with no window of its own that changes just after Tab ended
   the keys, while it holds the keyboard focus, was filled by the program (`FieldReads.FilledOnTabArrival`). WPF grid cells
   named "Item: …, Column Display Index: N" take the value inside them and their column's header (`IsItemPlaceholder`).

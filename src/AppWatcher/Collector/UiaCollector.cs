@@ -747,21 +747,58 @@ internal sealed class UiaCollector : IDisposable
             lock (_gate) { if (_menuPopups.Contains(hwnd)) return; }
             var title = Win32.WindowText(hwnd);
             NoteInput();
-            // untitled helper windows (parking windows, drop-downs) do not change which screen the user is on
-            if (title.Length == 0) { if (!_perWindow.ContainsKey(hwnd) && Win32.IsTopLevel(hwnd)) RegisterWindow(hwnd, initial: false); return; }
-            if (hwnd == _foreground && title == _currentTitle) { PollTabs(hwnd, force: false); PollMdi(hwnd, force: false); return; }
-            if (title != _currentTitle) _previousTitle = _currentTitle;
-            _foreground = hwnd;
-            _currentTitle = title;
-            if (Excluded(title)) { _status.ExcludedEvents++; return; }
-            Emit(new RawEvent { Act = Acts.Foreground, Hwnd = hwnd, WindowTitle = CurrentTitle, Ct = "Window", Name = CurrentTitle });
-            if (!_perWindow.ContainsKey(hwnd) && Win32.IsTopLevel(hwnd)) RegisterWindow(hwnd, initial: false);
-            else MaybeRedump(hwnd, title);
-            InferPress("window changed", from: _previousTitle);
-            PollTabs(hwnd, force: true);
-            PollMdi(hwnd, force: true);
+            // untitled helper windows (parking windows, drop-downs) do not change which screen the user is on; when the window
+            // the user was in has gone meanwhile, its owner (the window the drop-down belongs to) is
+            if (title.Length == 0)
+            {
+                if (!_perWindow.ContainsKey(hwnd) && Win32.IsTopLevel(hwnd)) RegisterWindow(hwnd, initial: false);
+                if (!FrontStillThere()) FollowFront(hwnd, "untitled window in front");
+                return;
+            }
+            TakeFront(hwnd, title);
         }
         else SetInFront(false);
+    }
+
+    /// <summary>The window the user works in is now <paramref name="hwnd"/> (titled, of the program): the same steps for a
+    /// foreground event and for the hand-over after the window in front went away.</summary>
+    private void TakeFront(IntPtr hwnd, string title)
+    {
+        if (hwnd == _foreground && title == _currentTitle) { PollTabs(hwnd, force: false); PollMdi(hwnd, force: false); return; }
+        if (title != _currentTitle) _previousTitle = _currentTitle;
+        _foreground = hwnd;
+        _currentTitle = title;
+        if (Excluded(title)) { _status.ExcludedEvents++; return; }
+        Emit(new RawEvent { Act = Acts.Foreground, Hwnd = hwnd, WindowTitle = CurrentTitle, Ct = "Window", Name = CurrentTitle });
+        if (!_perWindow.ContainsKey(hwnd) && Win32.IsTopLevel(hwnd)) RegisterWindow(hwnd, initial: false);
+        else MaybeRedump(hwnd, title);
+        InferPress("window changed", from: _previousTitle);
+        PollTabs(hwnd, force: true);
+        PollMdi(hwnd, force: true);
+    }
+
+    /// <summary>The window the user was in is still a visible window.</summary>
+    private bool FrontStillThere() => _foreground != IntPtr.Zero && Win32.IsWindow(_foreground) && Win32.IsWindowVisible(_foreground);
+
+    /// <summary>
+    /// The window in front went away with no foreground event for its successor yet: the window in front now, or the owner of
+    /// the untitled drop-down in front, takes over (<see cref="FrontWindow.Pick"/>: never an untitled helper, never another
+    /// program). UI thread only, never from a read: a read takes what this decided.
+    /// </summary>
+    private void FollowFront(IntPtr start, string why)
+    {
+        var chain = new List<WindowFacts>();
+        var h = start == IntPtr.Zero ? IntPtr.Zero : Win32.GetAncestor(start, Win32.GA_ROOT);
+        for (var i = 0; i < 8 && h != IntPtr.Zero; i++)
+        {
+            var t = Win32.WindowText(h);
+            bool menu; lock (_gate) menu = _menuPopups.Contains(h);
+            chain.Add(new WindowFacts((long)h, t, Win32.IsWindowVisible(h), IsProgramWindow(h), menu, t.Length > 0 && Excluded(t)));
+            h = Win32.GetWindow(h, Win32.GW_OWNER);
+        }
+        if (FrontWindow.Pick(chain, (long)_foreground) is not { } next) return;
+        Log.Info($"window in front went away ({why}): {next.Hwnd} takes over");
+        TakeFront(new IntPtr(next.Hwnd), next.Title);
     }
 
     private void OnWindowEvent(uint ev, IntPtr hwnd, int idObject, int idChild)
@@ -801,6 +838,9 @@ internal sealed class UiaCollector : IDisposable
                 InferPress("window closed", from: title); // the button that closed it (OK, No, Cancel, Exit) is counted before the close
                 Emit(new RawEvent { Act = Acts.Close, Hwnd = hwnd, WindowTitle = title, Ct = "Window", Name = title });
                 if (_foreground != IntPtr.Zero && _foreground != hwnd) { PollTabs(_foreground, force: true); PollMdi(_foreground, force: true); }
+                // the window in front closed or hid (some programs hide a form instead of destroying it): the window in front
+                // now takes over at once when Windows already moved on, else the foreground event that follows does
+                else if (_foreground == hwnd && _inFront) FollowFront(Win32.GetForegroundWindow(), "closed");
                 break;
             case Win32.EVENT_OBJECT_NAMECHANGE:
                 bool mdiChild; lock (_gate) mdiChild = _mdiChildren.ContainsKey(hwnd);

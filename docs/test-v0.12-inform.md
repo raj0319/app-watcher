@@ -166,6 +166,16 @@ code's looked-up name had been taken for typed). Tried and taken back: letting t
 | Office scale (5 users × 30 days, 328,796 events) | full rebuild 9.3 s warm, one more day 3.4 s, peak 233 MB managed; incremental = rebuild; merge order-independent |
 | Idle watcher on this PC | 51 MB private, 12 MB in RAM, 0% CPU with Inform in the background |
 
+## v0.13.2 (2026-11-25): the window in front, handed over safely
+
+In r39 a trial change let the screen read follow whatever window Windows reported in front. When that was Inform's untitled
+lookup list, the lookup was filed under the bare main title instead of New Sales Order (every round from r20 to r40 except r39
+filed it right). The trial was taken back in v0.13.1. v0.13.2 does the useful part safely: when the window in front closes or
+hides before Windows names its successor, or a late event names an untitled drop-down, the next window is picked by
+`FrontWindow.Pick`: visible, titled, of the program; a drop-down hands over to its owner and never becomes the screen. It is
+decided on the UI thread, never inside a read. 7 new tests (262 in all); WinForms, WPF (6 of 6) and web (7 of 7) live tests
+pass. Inform r41: every row 100%, both lookups under New Sales Order; the hand-over was not needed in that run.
+
 ## Still not perfect, and why
 
 - **A partial code typed into a grid cell while Inform fills its lookup list** (the "100" of the second order line): before
