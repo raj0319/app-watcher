@@ -5,6 +5,7 @@ using AppWatcher.Core.Discovery;
 using AppWatcher.Core.Events;
 using AppWatcher.Core.Export;
 using AppWatcher.Core.Learning;
+using AppWatcher.Core.Setup;
 using AppWatcher.Core.Verification;
 
 namespace AppWatcher;
@@ -37,6 +38,14 @@ internal static class Program
         var cmd = args.FirstOrDefault(a => a.StartsWith("--") && a != "--portable");
         if (cmd is not null && cmd != "--tray") return Cli(cmd, args);
 
+        // a double-click on the downloaded exe installs it the way scripts\install.ps1 does, starts the installed copy
+        // (its first-run wizard is the only window) and leaves; if that copy cannot be started, this one runs instead
+        var exePath = Environment.ProcessPath ?? "";
+        var choice = SelfInstall.Decide(exePath, args, Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            portableFolderNextToExe: Directory.Exists(Path.Combine(AppContext.BaseDirectory, SelfInstall.PortableFolder)),
+            singleFile: string.IsNullOrEmpty(typeof(Program).Assembly.Location));
+        if (choice == StartChoice.InstallAndHandOver && Installer.Install().Started) return 0;
+
         using var mutex = new Mutex(true, @"Local\AppWatcher.SingleInstance", out var createdNew);
         if (!createdNew)
         {
@@ -44,12 +53,15 @@ internal static class Program
             Log.Info("second copy started and left; App Watcher is already running");
             return 0;
         }
+        // an update (the double-click install or --install) sets this to stop the copy whose file it replaces
+        using var stop = new EventWaitHandle(false, EventResetMode.ManualReset, SelfInstall.StopEventName(exePath));
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => Log.Error("Unhandled UI exception", e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error("Unhandled exception", e.ExceptionObject as Exception);
         Log.Info("App Watcher starting");
-        Application.Run(new TrayContext());
+        var tray = new TrayContext(stop);
+        if (!tray.Ended) Application.Run(tray);
         Log.Info("App Watcher stopped");
         return 0;
     }
@@ -67,6 +79,8 @@ internal static class Program
     ///   AppWatcher.exe --detect [exe]     toolkit, matching profile and backends of a program file (default: the watched app)
     ///   AppWatcher.exe --merge path       fold another PC's data folder or zip into this app's folder, then learn
     ///   AppWatcher.exe --trace-files pid seconds out.json   (admin) record the files one process touches
+    ///   AppWatcher.exe --install          copy to %LOCALAPPDATA%\AppWatcher, start at login, start it (a double-click does the same)
+    ///   AppWatcher.exe --uninstall [--remove-data]   stop it, remove the login start and the program folder (data kept unless asked)
     /// Add --portable to use the AppWatcherData folder next to the exe instead of %ProgramData%.
     /// </summary>
     private static int Cli(string cmd, string[] args)
@@ -78,9 +92,17 @@ internal static class Program
             switch (cmd)
             {
                 case "--help":
-                    Console.WriteLine("AppWatcher.exe [--tray] | --learn | --rebuild | --export | --payload | --status | --expect | --detect [exe] | --merge <folder or zip> | --verify <scenario.json> <run.jsonl> | --trace-files <pid> <seconds> <out.json>   (add --portable to use a folder next to the exe)");
+                    Console.WriteLine("AppWatcher.exe [--tray] | --install | --uninstall [--remove-data] | --learn | --rebuild | --export | --payload | --status | --expect | --detect [exe] | --merge <folder or zip> | --verify <scenario.json> <run.jsonl> | --trace-files <pid> <seconds> <out.json>   (add --portable to use a folder next to the exe)");
                     Console.WriteLine("From a shell use scripts\\appwatcher.cmd <command> so the shell waits for the output.");
                     return 0;
+                case "--install":
+                {
+                    var r = Installer.Install();
+                    foreach (var line in r.Lines) Console.WriteLine(line);
+                    return r.Failed ? 1 : 0;
+                }
+                case "--uninstall":
+                    return Installer.Uninstall(removeData: args.Contains("--remove-data"));
                 case "--status":
                     Console.WriteLine(cfg.App is null ? "Not set up yet." : $"Watching {cfg.App.DisplayName} ({cfg.App.ProcessName}). Data: {Paths.ForApp(cfg.App.DisplayName).Root}. Sources: {cfg.DataSources.Count(s => s.Enabled)}. SQL capture: {(cfg.SqlCapture.Enabled ? "on" : "off")}. Profile: {cfg.Profile ?? "none"}. Toolkit: {cfg.Toolkit ?? "unknown"}. Last learn: {cfg.LastLearn?.ToString("yyyy-MM-dd HH:mm") ?? "never"}.");
                     return 0;
