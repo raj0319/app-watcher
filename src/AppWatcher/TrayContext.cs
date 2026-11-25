@@ -35,11 +35,21 @@ internal sealed class TrayContext : ApplicationContext
     private int _busy;
     private Process? _trace;
     private string _traceFile = "";
+    private readonly SynchronizationContext _ui;
+    private RegisteredWaitHandle? _stopWait;
+    private SetupWizard? _wizard;
 
-    public TrayContext()
+    /// <summary>Set once the tray has ended (Quit, a cancelled wizard, or an update stopping it); Program then skips the message loop.</summary>
+    public bool Ended { get; private set; }
+
+    public TrayContext(WaitHandle? stop = null)
     {
         _config = ConfigStore.Load();
         var menu = new ContextMenuStrip();
+        _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        // an update replacing this exe asks it to stop: the same clean stop as Quit, without the password
+        if (stop is not null)
+            _stopWait = ThreadPool.RegisterWaitForSingleObject(stop, (_, _) => _ui.Post(_ => StopForUpdate(), null), null, Timeout.Infinite, executeOnlyOnce: true);
         menu.Items.AddRange(new ToolStripItem[] { _status, new ToolStripSeparator(), _pause, _resume, _learn, _export, _open, new ToolStripSeparator(), _settings, new ToolStripSeparator(), _quit });
         _icon = new NotifyIcon { Icon = IconFactory.Create(false), Text = "App Watcher", Visible = true, ContextMenuStrip = menu };
         _icon.DoubleClick += (_, _) => Balloon(StatusText() + ". Right-click me for more.", ToolTipIcon.Info);
@@ -57,8 +67,10 @@ internal sealed class TrayContext : ApplicationContext
         var justSetUp = false;
         if (_config.IsFirstRun)
         {
-            using var w = new SetupWizard();
-            if (w.ShowDialog() != DialogResult.OK) { ExitThread(); return; }
+            using var w = _wizard = new SetupWizard();
+            var answer = w.ShowDialog();
+            _wizard = null;
+            if (answer != DialogResult.OK || Ended) { ExitThread(); return; }
             _config = w.Config;
             ConfigStore.Save(_config);
             justSetUp = true;
@@ -355,6 +367,26 @@ internal sealed class TrayContext : ApplicationContext
         _icon.Visible = false;
         _icon.Dispose();
         ExitThread();
+    }
+
+    /// <summary>A newer copy is being installed over this exe: stop cleanly so the file can be replaced; the installer starts the new one.</summary>
+    private void StopForUpdate()
+    {
+        if (Ended) return;
+        Log.Info("stopping so an update can replace the program file");
+        if (_wizard is not null) { Ended = true; _wizard.DialogResult = DialogResult.Cancel; return; }
+        _minute.Stop(); _soon.Stop();
+        _watch?.Dispose();
+        ExitThread();
+    }
+
+    protected override void ExitThreadCore()
+    {
+        Ended = true;
+        _stopWait?.Unregister(null);
+        _stopWait = null;
+        try { _icon.Visible = false; _icon.Dispose(); } catch { }
+        base.ExitThreadCore();
     }
 }
 

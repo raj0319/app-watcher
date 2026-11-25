@@ -55,12 +55,7 @@ only names, shapes (`#`, `A`, `a`) and counts do.
 ### Quick start (5 minutes)
 
 1. Download `AppWatcher-<version>-win-x64.zip` from the [latest release](https://github.com/raj0319/app-watcher/releases/latest) and unzip it.
-2. In that folder, run:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File install.ps1
-   ```
-
+2. Double-click `AppWatcher.exe`. It installs itself for you (no PowerShell, no admin rights) and starts.
 3. Answer the three questions (which program, anything private, a password) and use the program as usual.
    The next morning, open the folder from the tray icon and read `memory\logic.md`.
 
@@ -104,14 +99,16 @@ You need a Windows 10 or 11 PC where the app to watch is used.
 1. Get `AppWatcher.exe`. Either download the zip from the [releases](https://github.com/raj0319/app-watcher/releases)
    of this repository (the exe and the install scripts, side by side), or build it yourself
    (install the .NET 8 SDK, then run `scripts\publish.ps1`; the exe appears in `publish\`).
-2. Open PowerShell in the unzipped folder and run `install.ps1` (in a clone of this repository: `scripts\install.ps1`):
+2. Double-click `AppWatcher.exe` in the unzipped folder. That is the whole install: it copies itself to
+   your user folder (`%LOCALAPPDATA%\AppWatcher`), makes itself start at login, and starts from there.
+   No PowerShell and no admin rights are needed. Double-clicking a newer version later updates it the same way.
+
+   The install script does the same and is still there if you prefer it, for example when your IT wants a
+   scheduled task instead of the login entry (in a clone of this repository: `scripts\install.ps1`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1 -ScheduledTask
 ```
-
-   This copies the program to your user folder, makes it start at login, and starts it now.
-   Add `-ScheduledTask` if your IT prefers a scheduled task over the Run key.
 3. A small window asks three questions, one per step, with **Back** and **Next**. Everything else is
    already decided for you, set to "collect everything that is safe and stays on this PC".
 
@@ -368,13 +365,14 @@ is rebuilt). health.md then counts users and PCs (names are hashed, never stored
 
 - **Pause for an hour** from the tray to stop recording for a while.
 - Quit from the tray to stop until the next login.
-- To remove it completely:
+- To remove it completely, open a command prompt and run:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\uninstall.ps1
+```
+"%LOCALAPPDATA%\AppWatcher\AppWatcher.exe" --uninstall
 ```
 
-  The learned data is kept; add `-RemoveData` to delete it too.
+  The learned data is kept; add `--remove-data` to delete it too. `scripts\uninstall.ps1` (with
+  `-RemoveData`) does the same.
 
 ## Command line
 
@@ -385,6 +383,7 @@ next to the exe by the installer) does:
 appwatcher --status | --learn | --rebuild | --export | --expect | --detect <exe> | --merge <folder or zip>
 appwatcher --verify <scenario.json> <run.jsonl>
 appwatcher --setup <exe> <password> [profile]
+appwatcher --install | --uninstall [--remove-data]
 ```
 
 The output also works when redirected, for example `appwatcher --detect C:\Apps\erp.exe > out.txt`.
